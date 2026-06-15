@@ -1,0 +1,22 @@
+# Local development: just the database. App runs on the host via `pnpm dev`.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hame-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hame}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-prod}
+      POSTGRES_DB: ${POSTGRES_DB:-hame}
+    ports:
+      - '5432:5432'
+    volumes:
+      - hame-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-hame}']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  hame-pgdata:

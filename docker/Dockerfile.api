@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+
+# ---- Build stage ----
+FROM node:22-alpine AS build
+RUN apk add --no-cache python3 make g++ libc6-compat
+RUN npm install -g pnpm@11.7.0
+WORKDIR /app
+
+# Manifests first for better layer caching
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/api/package.json apps/api/
+RUN pnpm install --frozen-lockfile
+
+# Source
+COPY tsconfig.base.json ./
+COPY packages/shared packages/shared
+COPY apps/api apps/api
+
+RUN pnpm --filter @hame/shared build \
+  && pnpm --filter @hame/api db:generate
+
+# ---- Runtime stage ----
+FROM node:22-alpine AS runtime
+RUN apk add --no-cache libc6-compat
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app /app
+EXPOSE 4000
+# Apply migrations then start the API.
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma && node_modules/.bin/tsx apps/api/src/index.ts"]

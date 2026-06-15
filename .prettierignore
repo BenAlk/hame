@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+apps/api/prisma/migrations
+
+# Hand-aligned design docs — keep manual table formatting
+hame-specification.md
+hame-specification-public.md

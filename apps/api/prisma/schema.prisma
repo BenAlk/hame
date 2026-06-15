@@ -1,0 +1,32 @@
+// Hame database schema.
+//
+// Phase 0 establishes the foundation with the `User` model only.
+// Subsequent phases add models per the build roadmap in hame-specification.md
+// (each phase = its own migration, for a clean history).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String // argon2 hashed
+  name      String
+  avatarUrl String?
+  colour    String // hex, e.g. "#3B82F6"
+  dob       DateTime @db.Date // birthday — no time component
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
