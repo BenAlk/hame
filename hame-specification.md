@@ -974,11 +974,13 @@ Prisma generates DB types → Express returns typed data → Zod validates input
 
 ## 10. Build Roadmap
 
-### Phase 0 — Foundation
+### Phase 0 — Foundation ✅ Complete (15-06-2026)
 
 Monorepo setup, Vite + React + Tailwind + shadcn/ui scaffolded, Express + Prisma scaffolded, PostgreSQL container, Docker Compose, ESLint + Prettier, GitHub repo, initial Prisma schema with `User`, shared Zod package wired up.
 
 **Goal**: `pnpm dev` brings up the full stack working together.
+
+**Delivered**: pnpm workspace (`apps/web`, `apps/api`, `packages/shared`); Vite/React/Tailwind/shadcn web with TanStack Query; Express/Prisma API with env validation, error handling, `GET /api/setup/status` + `/api/health`; shared Zod schemas; PostgreSQL via Docker Compose (+ prod compose, Dockerfiles, nginx); GitHub Actions CI (lint, format, typecheck, test, build); Husky + lint-staged; initial Prisma migration + seed. Verified end-to-end: typecheck/lint/format/tests/builds green, DB migrated + seeded, live API smoke-tested.
 
 ### Phase 1 — Auth & Setup Wizard
 
