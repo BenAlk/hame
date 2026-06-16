@@ -12,40 +12,76 @@ export default {
     },
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--input))',
-        ring: 'hsl(var(--ring))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
+        // Hearth palette — design source of truth (design-specification.md §3)
+        bg: 'var(--bg)',
+        surface: 'var(--surface)',
+        ink: 'var(--ink)',
+        line: 'var(--line)',
+        sage: 'var(--sage)',
+        warning: 'var(--warning)',
+        bin: {
+          burgundy: 'var(--bin-burgundy)',
+          blue: 'var(--bin-blue)',
+          grey: 'var(--bin-grey)',
+        },
+
+        // shadcn/ui semantic names — remapped onto the Hearth tokens above
+        border: 'var(--line)',
+        input: 'var(--line)',
+        ring: 'var(--accent)',
+        background: 'var(--bg)',
+        foreground: 'var(--ink)',
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--accent)',
+          foreground: 'var(--primary-foreground)',
         },
         secondary: {
-          DEFAULT: 'hsl(var(--secondary))',
-          foreground: 'hsl(var(--secondary-foreground))',
+          DEFAULT: 'var(--sage)',
+          foreground: 'var(--secondary-foreground)',
         },
         muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+          DEFAULT: 'var(--accent-soft)',
+          foreground: 'var(--muted)',
         },
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: 'var(--accent)',
+          soft: 'var(--accent-soft)',
+          foreground: 'var(--accent-foreground)',
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
+          DEFAULT: 'var(--warning)',
+          foreground: 'var(--destructive-foreground)',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'var(--card)',
+          foreground: 'var(--ink)',
+        },
+        popover: {
+          DEFAULT: 'var(--surface)',
+          foreground: 'var(--ink)',
         },
       },
+      fontFamily: {
+        // design-specification.md §4
+        sans: ['Hanken Grotesk', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['Newsreader', 'ui-serif', 'Georgia', 'serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+      },
       borderRadius: {
+        // design-specification.md §5
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        control: '10px',
+        inner: '14px',
+        card: '20px',
+        pill: '999px',
+        frame: '26px',
+        'frame-phone': '38px',
+      },
+      boxShadow: {
+        // Single ambient shadow — device frame only (design spec §5)
+        ambient: '0 20px 50px -28px rgba(60, 40, 20, 0.45)',
       },
     },
   },

@@ -4,44 +4,46 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 217 91% 60%;
-    --radius: 0.5rem;
+    /* Hearth design tokens — design/design-specification.md §3 */
+    --bg: #f4ede1;
+    --surface: #fffdf8;
+    --card: #fffdf8;
+    --ink: #2c2622;
+    --muted: #857a6c;
+    --line: #e6dcc9;
+    --accent: #d16a6a;
+    --accent-soft: #f2e7d8;
+    --sage: #6f8169;
+    --warning: #c0492f;
+
+    /* Status colours — shared across light/dark */
+    --bin-burgundy: #7d2b3e;
+    --bin-blue: #2f6fb0;
+    --bin-grey: #9aa0a6;
+
+    /* Contrast pairs with no direct Hearth token (consumed via Tailwind) */
+    --primary-foreground: #fffdf8;
+    --secondary-foreground: #fffdf8;
+    --accent-foreground: #fffdf8;
+    --destructive-foreground: #fffdf8;
+
+    --radius: 0.625rem; /* 10px — control radius */
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 217 91% 60%;
+    --bg: #221d18;
+    --surface: #2b251f;
+    --card: #2b251f;
+    --ink: #f3eade;
+    --muted: #b1a594;
+    --line: #3b342c;
+    --accent: #d16a6a;
+    --accent-soft: #34291f;
+    --sage: #93a487;
+    --warning: #c0492f;
+
+    /* Sage lightens in dark, so its text flips to the dark ink for contrast */
+    --secondary-foreground: #221d18;
   }
 }
 
@@ -50,7 +52,11 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    /* Light/dark colour transitions — design spec §5 */
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
     font-feature-settings:
       'rlig' 1,
       'calt' 1;
