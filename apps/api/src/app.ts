@@ -7,6 +7,7 @@ import { pinoHttp } from 'pino-http'
 import { env } from './lib/env.js'
 import { logger } from './lib/logger.js'
 import { apiRouter } from './routes/index.js'
+import { ensureCsrfCookie } from './middleware/csrf.js'
 import { notFoundHandler } from './middleware/not-found.js'
 import { errorHandler } from './middleware/error.js'
 
@@ -29,6 +30,9 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }))
   app.use(cookieParser())
   app.use(pinoHttp({ logger }))
+
+  // Ensure every client has a readable CSRF token to echo back on mutations.
+  app.use(ensureCsrfCookie)
 
   // Brute-force protection on auth endpoints (5 attempts / 15 min per IP).
   app.use(

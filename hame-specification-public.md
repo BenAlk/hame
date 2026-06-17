@@ -257,7 +257,8 @@ model User {
   id          String   @id @default(uuid())
   username    String   @unique
   password    String                            // argon2 hashed
-  name        String
+  firstName   String
+  surname     String
   avatarUrl   String?
   colour      String                            // hex, e.g. "#3B82F6"
   dob         DateTime @db.Date                 // birthday — no time component
@@ -661,7 +662,7 @@ model IdleModeSettings {
 - **Admin dashboard**: create/edit/delete users
   - Members can edit their own profile (avatar, colour, password)
   - Members cannot change their own role
-- **Profile fields**: username, name, avatar, colour, DOB
+- **Profile fields**: username, first name, surname, avatar, colour, DOB
 
 ### 8.2 Tags
 
@@ -920,7 +921,8 @@ import { z } from 'zod'
 export const CreateUserSchema = z.object({
 	username: z.string().min(3).max(30),
 	password: z.string().min(8),
-	name: z.string().min(1),
+	firstName: z.string().min(1),
+	surname: z.string().min(1),
 	colour: z.string().regex(/^#[0-9a-f]{6}$/i),
 	dob: z.coerce.date(),
 })
@@ -981,11 +983,13 @@ Monorepo setup, Vite + React + Tailwind + shadcn/ui scaffolded, Express + Prisma
 
 **Delivered**: pnpm workspace (`apps/web`, `apps/api`, `packages/shared`); Vite/React/Tailwind/shadcn web with TanStack Query; Express/Prisma API with env validation, error handling, `GET /api/setup/status` + `/api/health`; shared Zod schemas; PostgreSQL via Docker Compose (+ prod compose, Dockerfiles, nginx); GitHub Actions CI (lint, format, typecheck, test, build); Husky + lint-staged; initial Prisma migration + seed. Verified end-to-end: typecheck/lint/format/tests/builds green, DB migrated + seeded, live API smoke-tested.
 
-### Phase 1 — Auth & Setup Wizard
+### Phase 1 — Auth & Setup Wizard ✅ Complete (17-06-2026)
 
 Setup wizard for first-run admin creation, login/logout, JWT middleware, protected routes, basic profile page, admin user management.
 
 **Goal**: You can log in to Hame.
+
+**Delivered**: First-run setup wizard (`POST /api/setup`, guarded so it only ever creates the first admin) and `/api/auth/{login,logout,me}`; argon2 password hashing with timing-equalised login failures; a single httpOnly **session cookie** signed with `jose`. The session **slides** on every authenticated request, with a **network-aware idle window** — on-LAN clients (private-range IP, no Cloudflare headers) get the long `JWT_REFRESH_EXPIRY` window so the wall tablet effectively never logs out, while off-LAN clients get the short `JWT_ACCESS_EXPIRY` window and re-authenticate sooner (`LOCAL_NETWORK_CIDRS` is the configurable boundary). Double-submit **CSRF** protection (readable token cookie + `x-csrf-token` header) on authenticated state-changing routes; `requireAuth`/`requireAdmin` middleware; user CRUD with self-delete and last-admin guards. Frontend: a bootstrap auth gate (setup → login → app, with an admin-only route guard), Setup/Login/Profile and admin Users pages built on shared Zod schemas, and a CSRF-aware API client. Verified end-to-end: typecheck/lint/format/tests/builds green (30 tests incl. the network-aware session and CSRF logic), plus a live API smoke test of the full setup → login → profile-edit → logout flow.
 
 ### Phase 2 — Daily-Use Foundation (MVP) 🚨
 

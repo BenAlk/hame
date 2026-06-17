@@ -21,8 +21,21 @@ const EnvSchema = z.object({
         .filter(Boolean),
     ),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  // External (off-LAN) session idle window — short, re-auth required after it lapses.
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
+  // Local (on-LAN) session idle window + hard cap on the session JWT.
   JWT_REFRESH_EXPIRY: z.string().default('7d'),
+  // Comma-separated CIDRs treated as the local network: on-LAN clients get the
+  // longer (refresh) idle window, off-LAN clients the short (access) one. See spec §11.
+  LOCAL_NETWORK_CIDRS: z
+    .string()
+    .default('127.0.0.1/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
+    .transform((value) =>
+      value
+        .split(',')
+        .map((cidr) => cidr.trim())
+        .filter(Boolean),
+    ),
   ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-f]{64}$/i, 'ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),

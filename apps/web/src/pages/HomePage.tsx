@@ -1,72 +1,64 @@
-import { useHealth, useSetupStatus } from '@/api/queries'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { Link } from 'react-router-dom'
+import type { PublicUser } from '@hame/shared'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { useCurrentUser, useLogout } from '@/api/auth'
 
-type StatusTone = 'ok' | 'warn' | 'pending'
-
-function StatusDot({ tone }: { tone: StatusTone }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'inline-block size-2 rounded-pill',
-        tone === 'ok' && 'bg-sage',
-        tone === 'warn' && 'bg-warning',
-        tone === 'pending' && 'bg-muted-foreground',
-      )}
-    />
-  )
-}
-
-function StatusRow({ label, tone, value }: { label: string; tone: StatusTone; value: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="flex items-center gap-2">
-        <StatusDot tone={tone} />
-        <span>{value}</span>
-      </dd>
-    </div>
-  )
+function greeting(date = new Date()): string {
+  const h = date.getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 18) return 'Good afternoon'
+  return 'Good evening'
 }
 
 export function HomePage() {
-  const health = useHealth()
-  const setup = useSetupStatus()
+  const { data: user } = useCurrentUser()
+  const logout = useLogout()
 
-  const healthRow: { tone: StatusTone; value: string } = health.isPending
-    ? { tone: 'pending', value: 'checking…' }
-    : health.isError
-      ? { tone: 'warn', value: 'unreachable' }
-      : { tone: 'ok', value: health.data.status }
-
-  const setupRow: { tone: StatusTone; value: string } = setup.isPending
-    ? { tone: 'pending', value: 'checking…' }
-    : setup.isError
-      ? { tone: 'warn', value: 'unknown' }
-      : setup.data.requiresSetup
-        ? { tone: 'warn', value: 'create admin' }
-        : { tone: 'ok', value: 'ready' }
+  // The auth gate guarantees a user here, but guard for the loading frame.
+  const current = user as PublicUser | null
 
   return (
-    <main className="container flex min-h-screen flex-col items-center justify-center gap-8 py-12">
-      <div className="text-center">
-        <h1 className="font-serif text-5xl font-medium tracking-tight text-ink">Hame</h1>
-        <p className="mt-2 text-muted-foreground">Your household, all in one place.</p>
-      </div>
+    <main className="container flex min-h-screen flex-col gap-8 py-10">
+      <header className="flex items-start justify-between">
+        <div>
+          <p className="font-serif text-4xl font-medium text-ink">
+            {greeting()}
+            {current ? `, ${current.firstName}` : ''}.
+          </p>
+          <p className="mt-1 text-muted-foreground">Welcome to your household.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to="/profile" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            Profile
+          </Link>
+          {current?.role === 'ADMIN' && (
+            <Link to="/admin/users" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              Users
+            </Link>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => logout.mutate()}
+            disabled={logout.isPending}
+          >
+            Log out
+          </Button>
+        </div>
+      </header>
 
-      <div className="w-full max-w-md rounded-card border border-line bg-card p-6">
-        <h2 className="mb-4 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-          Stack status
-        </h2>
-        <dl className="space-y-3 text-sm">
-          <StatusRow label="API health" tone={healthRow.tone} value={healthRow.value} />
-          <StatusRow label="Requires setup" tone={setupRow.tone} value={setupRow.value} />
-        </dl>
-        <Button className="mt-6 w-full" onClick={() => health.refetch()}>
-          Refresh
-        </Button>
-      </div>
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle>Dashboard</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Widgets land here in Phase 2. For now, you&apos;re logged in — the foundations are
+            ready.
+          </p>
+        </CardContent>
+      </Card>
     </main>
   )
 }

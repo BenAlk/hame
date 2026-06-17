@@ -17,7 +17,8 @@ model User {
   id        String   @id @default(uuid())
   username  String   @unique
   password  String // argon2 hashed
-  name      String
+  firstName String
+  surname   String
   avatarUrl String?
   colour    String // hex, e.g. "#3B82F6"
   dob       DateTime @db.Date // birthday — no time component

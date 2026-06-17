@@ -19,7 +19,8 @@ async function main() {
     create: {
       username: 'ben',
       password,
-      name: 'Ben',
+      firstName: 'Ben',
+      surname: 'Alkureishi',
       colour: '#3B82F6',
       dob: new Date('1990-01-01'),
       role: 'ADMIN',
