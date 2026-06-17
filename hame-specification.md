@@ -38,14 +38,13 @@ This is both a **functional product** (genuinely useful to the household) and a 
 
 ### Homelab Environment
 
-The app runs alongside the following self-hosted stack on TrueNAS Scale:
+The app runs alongside a self-hosted stack on TrueNAS Scale:
 
-- **Docker containers**: Immich, Sonarr, Radarr, Prowlarr, Clonarr, Jellyfin, Seer, LastGLANCE, Memos, Nginx Proxy Manager, SABnzbd, qBittorrent, Shelfmark
+- **Docker containers**: Immich (photo library), Memos (notes), Nginx Proxy Manager, plus various other self-hosted services
 - **Virtual Machines**: Home Assistant OS (HAOS)
 - **External access**: Cloudflare proxy + DDNS for domain → home IP
   - Most subdomains use Cloudflare proxy (orange cloud)
-  - Jellyfin uses DNS-only (grey cloud) to bypass Cloudflare's streaming restrictions
-- **Sensitive admin apps** (Sonarr, Radarr, qBittorrent, TrueNAS UI) are NOT exposed publicly — internal access only
+- **Sensitive admin apps** (e.g. the TrueNAS UI) are NOT exposed publicly — internal access only
 
 ### Why Build From Scratch
 
@@ -764,7 +763,7 @@ model IdleModeSettings {
 ### 8.9 Bins
 
 - **Manual entry in v1** (auto-scraping is a future enhancement, see §12)
-- **Schedule example** (South Lanarkshire / Stonehouse area):
+- **Schedule example** (illustrative UK council kerbside collection):
   | Bin | Day | Frequency |
   |---|---|---|
   | Burgundy (food/garden) | Tuesday | Fortnightly |
@@ -1091,9 +1090,9 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - Modular per-council scraper pattern:
   ```
   /scrapers
-    /south-lanarkshire.ts
-    /renfrewshire.ts
-    /east-renfrewshire.ts
+    /council-a.ts
+    /council-b.ts
+    /council-c.ts
   ```
 - Common interface (e.g., `parseSchedule(streetUrl: string): Schedule[]`)
 - Hame integrates by calling the scraper as a library
@@ -1105,7 +1104,6 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - Budget & bill tracking
 - Energy monitoring widget (HA energy data)
 - Notes (could replace Memos)
-- Watchlist (Jellyfin/Seer tie-in)
 - Home maintenance log (boiler service, MOT etc.)
 - Document storage (warranties, manuals)
 - Birthday reminders (DOB already in User model)
