@@ -1,8 +1,9 @@
 // Hame database schema.
 //
-// Phase 0 establishes the foundation with the `User` model only.
-// Subsequent phases add models per the build roadmap in hame-specification.md
-// (each phase = its own migration, for a clean history).
+// Models are added per the build roadmap in hame-specification.md
+// (each phase = its own migration, for a clean history):
+//   Phase 0–1 — User & auth
+//   Phase 2   — Tags, Items, Shopping lists, Storage locations, Pantry
 
 generator client {
   provider = "prisma-client-js"
@@ -25,9 +26,106 @@ model User {
   role      Role     @default(MEMBER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relations (added per phase as the referenced models land)
+  itemsCreated         Item[]
+  shoppingListsCreated ShoppingList[]
+  shoppingItemsAdded   ShoppingListItem[]
+  pantryEntriesAdded   PantryEntry[]
 }
 
 enum Role {
   ADMIN
   MEMBER
+}
+
+// ── Phase 2: Tags & Items (foundation layer) ─────────────────────────────────
+
+model Tag {
+  id     String  @id @default(uuid())
+  name   String  @unique // "dairy", "frozen", "quick-add", "tesco"
+  colour String? // hex for chip display
+  items  Item[]  @relation("ItemTags")
+}
+
+model Item {
+  id              String             @id @default(uuid())
+  name            String             @unique
+  defaultQuantity Float?
+  defaultUnit     String? // "g", "ml", "pack"
+  baseUnit        String? // canonical unit for stock maths — see spec §9.2
+  minimumQuantity Float? // triggers low stock (expressed in baseUnit)
+  isStaple        Boolean            @default(false) // pantry staple — excluded from generated shopping lists
+  createdById     String
+  createdBy       User               @relation(fields: [createdById], references: [id])
+  tags            Tag[]              @relation("ItemTags")
+  shoppingItems   ShoppingListItem[]
+  pantryEntries   PantryEntry[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+// ── Phase 2: Shopping ────────────────────────────────────────────────────────
+
+model ShoppingList {
+  id          String             @id @default(uuid())
+  name        String // "Weekly Shop"
+  status      ListStatus         @default(ACTIVE)
+  createdById String
+  createdBy   User               @relation(fields: [createdById], references: [id])
+  items       ShoppingListItem[]
+  archivedAt  DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model ShoppingListItem {
+  id               String             @id @default(uuid())
+  listId           String
+  list             ShoppingList       @relation(fields: [listId], references: [id], onDelete: Cascade)
+  itemId           String
+  item             Item               @relation(fields: [itemId], references: [id])
+  quantity         Float?
+  unit             String?
+  notes            String?
+  isBought         Boolean            @default(false)
+  boughtAt         DateTime?
+  addedById        String
+  addedBy          User               @relation(fields: [addedById], references: [id])
+  rolledOverFromId String? // self-relation: the item this one was rolled over from
+  rolledOverFrom   ShoppingListItem?  @relation("ItemRollover", fields: [rolledOverFromId], references: [id])
+  rolledOverTo     ShoppingListItem[] @relation("ItemRollover")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+}
+
+enum ListStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+// ── Phase 2: Pantry ──────────────────────────────────────────────────────────
+
+model StorageLocation {
+  id          String        @id @default(uuid())
+  name        String        @unique // "Main Fridge"
+  icon        String?
+  pantryItems PantryEntry[]
+  createdAt   DateTime      @default(now())
+}
+
+model PantryEntry {
+  id                 String          @id @default(uuid())
+  itemId             String
+  item               Item            @relation(fields: [itemId], references: [id])
+  locationId         String
+  location           StorageLocation @relation(fields: [locationId], references: [id])
+  quantity           Float
+  unit               String?
+  expiryDate         DateTime?       @db.Date
+  addedById          String
+  addedBy            User            @relation(fields: [addedById], references: [id])
+  fromShoppingItemId String? // soft reference for traceability (no FK)
+  addedAt            DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 }

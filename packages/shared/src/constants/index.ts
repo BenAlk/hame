@@ -16,3 +16,17 @@ export const HEX_COLOUR_REGEX = /^#[0-9a-f]{6}$/i
  */
 export const CSRF_COOKIE = 'hame_csrf'
 export const CSRF_HEADER = 'x-csrf-token'
+
+// ── Phase 2: Shopping, items & pantry ────────────────────────────────────────
+
+export const LIST_STATUSES = ['ACTIVE', 'ARCHIVED'] as const
+export type ListStatus = (typeof LIST_STATUSES)[number]
+
+/**
+ * Semantic tag whose presence makes an Item appear in the shopping-list
+ * quick-add dropdown (spec §8.2). Not enforced in the schema — just a name.
+ */
+export const QUICK_ADD_TAG = 'quick-add'
+
+/** Items expiring within this many days surface in the "expiring soon" widget. */
+export const EXPIRY_SOON_DAYS = 3

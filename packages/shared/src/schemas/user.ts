@@ -46,6 +46,14 @@ export const UpdateUserSchema = ProfileFields.extend({
 }).refine(atLeastOneField, atLeastOneFieldMessage)
 export type UpdateUserInput = z.infer<typeof UpdateUserSchema>
 
+/** Minimal user shape for "who added/completed this" attribution (with colour). */
+export const MemberSummarySchema = z.object({
+  id: z.string().uuid(),
+  firstName: z.string(),
+  colour: z.string(),
+})
+export type MemberSummary = z.infer<typeof MemberSummarySchema>
+
 /** Public-safe representation of a user (never includes the password hash). */
 export const PublicUserSchema = z.object({
   id: z.string().uuid(),

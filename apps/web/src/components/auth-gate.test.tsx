@@ -42,13 +42,13 @@ describe('AuthGate', () => {
 
   it('shows the dashboard to an authenticated user', () => {
     renderAt('/', { requiresSetup: false, user: adminUser })
-    expect(screen.getByText(/Welcome to your household/i)).toBeInTheDocument()
+    expect(screen.getByText(/happening at home/i)).toBeInTheDocument()
   })
 
   it('keeps a non-admin out of the admin users page', () => {
     renderAt('/admin/users', { requiresSetup: false, user: { ...adminUser, role: 'MEMBER' } })
     // Redirected to dashboard rather than the user-management screen.
     expect(screen.queryByText('Household users')).not.toBeInTheDocument()
-    expect(screen.getByText(/Welcome to your household/i)).toBeInTheDocument()
+    expect(screen.getByText(/happening at home/i)).toBeInTheDocument()
   })
 })

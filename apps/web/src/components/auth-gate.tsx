@@ -3,6 +3,8 @@ import type { PublicUser } from '@hame/shared'
 import { SetupPage } from '@/pages/SetupPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { HomePage } from '@/pages/HomePage'
+import { ShoppingPage } from '@/pages/ShoppingPage'
+import { PantryPage } from '@/pages/PantryPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 
@@ -38,6 +40,8 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/shopping" element={<ShoppingPage />} />
+      <Route path="/pantry" element={<PantryPage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route
         path="/admin/users"

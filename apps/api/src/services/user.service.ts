@@ -1,5 +1,11 @@
 import type { User } from '@prisma/client'
-import type { CreateUserInput, PublicUser, UpdateProfileInput, UpdateUserInput } from '@hame/shared'
+import type {
+  CreateUserInput,
+  MemberSummary,
+  PublicUser,
+  UpdateProfileInput,
+  UpdateUserInput,
+} from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { hashPassword } from '../lib/password.js'
 import { HttpError } from '../lib/http-error.js'
@@ -8,6 +14,11 @@ import { HttpError } from '../lib/http-error.js'
 export function toPublicUser(user: User): PublicUser {
   const { password: _password, ...rest } = user
   return rest
+}
+
+/** Minimal "who did this" attribution shape (id + first name + colour). */
+export function toMemberSummary(user: Pick<User, 'id' | 'firstName' | 'colour'>): MemberSummary {
+  return { id: user.id, firstName: user.firstName, colour: user.colour }
 }
 
 export async function listUsers(): Promise<PublicUser[]> {

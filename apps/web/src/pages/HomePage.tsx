@@ -1,8 +1,9 @@
-import { Link } from 'react-router-dom'
 import type { PublicUser } from '@hame/shared'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { useCurrentUser, useLogout } from '@/api/auth'
+import { AppNav } from '@/components/app-nav'
+import { ActiveShoppingWidget } from '@/components/features/widgets/active-shopping-widget'
+import { ExpiringSoonWidget } from '@/components/features/widgets/expiring-soon-widget'
+import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
+import { useCurrentUser } from '@/api/auth'
 
 function greeting(date = new Date()): string {
   const h = date.getHours()
@@ -13,52 +14,26 @@ function greeting(date = new Date()): string {
 
 export function HomePage() {
   const { data: user } = useCurrentUser()
-  const logout = useLogout()
-
-  // The auth gate guarantees a user here, but guard for the loading frame.
   const current = user as PublicUser | null
 
   return (
     <main className="container flex min-h-screen flex-col gap-8 py-10">
-      <header className="flex items-start justify-between">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-serif text-4xl font-medium text-ink">
             {greeting()}
             {current ? `, ${current.firstName}` : ''}.
           </p>
-          <p className="mt-1 text-muted-foreground">Welcome to your household.</p>
+          <p className="mt-1 text-muted-foreground">Here&apos;s what&apos;s happening at home.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link to="/profile" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-            Profile
-          </Link>
-          {current?.role === 'ADMIN' && (
-            <Link to="/admin/users" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-              Users
-            </Link>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
-          >
-            Log out
-          </Button>
-        </div>
+        <AppNav user={current} />
       </header>
 
-      <Card className="max-w-md">
-        <CardHeader>
-          <CardTitle>Dashboard</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Widgets land here in Phase 2. For now, you&apos;re logged in — the foundations are
-            ready.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ActiveShoppingWidget />
+        <ExpiringSoonWidget />
+        <LowStockWidget />
+      </div>
     </main>
   )
 }
