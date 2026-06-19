@@ -26,6 +26,18 @@ export async function listUsers(): Promise<PublicUser[]> {
   return users.map(toPublicUser)
 }
 
+/**
+ * Non-sensitive household roster (id + first name + colour) for assignment
+ * pickers — available to any member, unlike the admin-only {@link listUsers}.
+ */
+export async function listMembers(): Promise<MemberSummary[]> {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, firstName: true, colour: true },
+  })
+  return users.map(toMemberSummary)
+}
+
 export async function getUserById(id: string): Promise<PublicUser> {
   const user = await prisma.user.findUnique({ where: { id } })
   if (!user) throw HttpError.notFound('User not found')
@@ -69,7 +81,34 @@ export async function deleteUser(actingUserId: string, id: string): Promise<void
   await assertNotLastAdmin(id, 'delete the last admin')
   const existing = await prisma.user.findUnique({ where: { id } })
   if (!existing) throw HttpError.notFound('User not found')
-  await prisma.user.delete({ where: { id } })
+
+  // Reassign everything the departing member created, was assigned, or completed
+  // to the acting admin so no foreign-key references dangle, drop them from any
+  // chore rotations, then delete. History is preserved but reattributed.
+  await prisma.$transaction([
+    prisma.item.updateMany({ where: { createdById: id }, data: { createdById: actingUserId } }),
+    prisma.shoppingList.updateMany({
+      where: { createdById: id },
+      data: { createdById: actingUserId },
+    }),
+    prisma.shoppingListItem.updateMany({
+      where: { addedById: id },
+      data: { addedById: actingUserId },
+    }),
+    prisma.pantryEntry.updateMany({ where: { addedById: id }, data: { addedById: actingUserId } }),
+    prisma.chore.updateMany({ where: { createdById: id }, data: { createdById: actingUserId } }),
+    prisma.chore.updateMany({ where: { assignedToId: id }, data: { assignedToId: actingUserId } }),
+    prisma.choreInstance.updateMany({
+      where: { assignedToId: id },
+      data: { assignedToId: actingUserId },
+    }),
+    prisma.choreInstance.updateMany({
+      where: { completedById: id },
+      data: { completedById: actingUserId },
+    }),
+    prisma.user.update({ where: { id }, data: { choresRotation: { set: [] } } }),
+    prisma.user.delete({ where: { id } }),
+  ])
 }
 
 // ── internals ──────────────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { AppNav } from '@/components/app-nav'
 import { ActiveShoppingWidget } from '@/components/features/widgets/active-shopping-widget'
 import { ExpiringSoonWidget } from '@/components/features/widgets/expiring-soon-widget'
 import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
+import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-widget'
+import { PetRemindersWidget } from '@/components/features/widgets/pet-reminders-widget'
 import { useCurrentUser } from '@/api/auth'
 
 function greeting(date = new Date()): string {
@@ -31,6 +33,8 @@ export function HomePage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <ActiveShoppingWidget />
+        <TodaysChoresWidget />
+        <PetRemindersWidget />
         <ExpiringSoonWidget />
         <LowStockWidget />
       </div>

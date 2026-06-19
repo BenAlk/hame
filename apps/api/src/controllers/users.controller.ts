@@ -4,6 +4,7 @@ import {
   adminUpdateUser,
   createUser,
   deleteUser,
+  listMembers,
   listUsers,
   updateProfile,
 } from '../services/user.service.js'
@@ -11,6 +12,15 @@ import {
 export const listUsersController: RequestHandler = async (_req, res, next) => {
   try {
     res.json(await listUsers())
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** GET /api/users/members — non-sensitive roster for assignment pickers. */
+export const listMembersController: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await listMembers())
   } catch (err) {
     next(err)
   }

@@ -6,6 +6,7 @@ import { verifyCsrf } from '../middleware/csrf.js'
 import {
   createUserController,
   deleteUserController,
+  listMembersController,
   listUsersController,
   updateProfileController,
   updateUserController,
@@ -14,6 +15,9 @@ import {
 export const usersRouter = Router()
 
 usersRouter.get('/', requireAuth, requireAdmin, listUsersController)
+
+// Roster for assignment pickers — any member, minimal fields. Before "/:id".
+usersRouter.get('/members', requireAuth, listMembersController)
 
 usersRouter.post(
   '/',

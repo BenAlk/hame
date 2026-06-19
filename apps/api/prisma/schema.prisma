@@ -4,6 +4,7 @@
 // (each phase = its own migration, for a clean history):
 //   Phase 0–1 — User & auth
 //   Phase 2   — Tags, Items, Shopping lists, Storage locations, Pantry
+//   Phase 3   — Pets, Chores, Chore instances
 
 generator client {
   provider = "prisma-client-js"
@@ -32,6 +33,11 @@ model User {
   shoppingListsCreated ShoppingList[]
   shoppingItemsAdded   ShoppingListItem[]
   pantryEntriesAdded   PantryEntry[]
+  choresCreated        Chore[]           @relation("ChoreCreator")
+  choresAssigned       Chore[]           @relation("ChoreAssignee")
+  choresRotation       Chore[]           @relation("ChoreRotation")
+  instancesAssigned    ChoreInstance[]   @relation("InstanceAssignee")
+  instancesCompleted   ChoreInstance[]   @relation("InstanceCompleter")
 }
 
 enum Role {
@@ -46,6 +52,7 @@ model Tag {
   name   String  @unique // "dairy", "frozen", "quick-add", "tesco"
   colour String? // hex for chip display
   items  Item[]  @relation("ItemTags")
+  chores Chore[] @relation("ChoreTags")
 }
 
 model Item {
@@ -128,4 +135,87 @@ model PantryEntry {
   fromShoppingItemId String? // soft reference for traceability (no FK)
   addedAt            DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
+}
+
+// ── Phase 3: Pets ────────────────────────────────────────────────────────────
+
+model Pet {
+  id        String    @id @default(uuid())
+  name      String
+  species   Species
+  breed     String?
+  dob       DateTime? @db.Date
+  imageUrl  String?
+  chores    Chore[]
+  createdAt DateTime  @default(now())
+}
+
+// ── Phase 3: Chores ──────────────────────────────────────────────────────────
+
+model Chore {
+  id             String         @id @default(uuid())
+  title          String
+  description    String?
+  recurrenceType RecurrenceType
+  intervalDays   Int? // for INTERVAL
+  weekdays       Weekday[] // for WEEKLY
+  dayOfMonth     Int? // for DATE_OF_MONTH (clamped to month length — spec §8.7)
+  oneOffDate     DateTime?      @db.Date // for ONE_OFF
+  assignmentMode AssignmentMode @default(FIXED)
+  assignedToId   String?
+  assignedTo     User?          @relation("ChoreAssignee", fields: [assignedToId], references: [id])
+  rotatingUsers  User[]         @relation("ChoreRotation")
+  petId          String?
+  pet            Pet?           @relation(fields: [petId], references: [id])
+  tags           Tag[]          @relation("ChoreTags")
+  isActive       Boolean        @default(true)
+  createdById    String
+  createdBy      User           @relation("ChoreCreator", fields: [createdById], references: [id])
+  instances      ChoreInstance[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model ChoreInstance {
+  id            String    @id @default(uuid())
+  choreId       String
+  chore         Chore     @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  assignedToId  String
+  assignedTo    User      @relation("InstanceAssignee", fields: [assignedToId], references: [id])
+  dueDate       DateTime  @db.Date
+  completedAt   DateTime?
+  completedById String?
+  completedBy   User?     @relation("InstanceCompleter", fields: [completedById], references: [id])
+  notes         String?
+  createdAt     DateTime  @default(now())
+}
+
+enum RecurrenceType {
+  INTERVAL
+  WEEKLY
+  DATE_OF_MONTH
+  ONE_OFF
+}
+
+enum AssignmentMode {
+  FIXED
+  ROTATING
+}
+
+enum Species {
+  DOG
+  CAT
+  BIRD
+  RABBIT
+  OTHER
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
 }

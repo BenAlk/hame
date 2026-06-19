@@ -1,8 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CreateUserInput, PublicUser, UpdateProfileInput, UpdateUserInput } from '@hame/shared'
+import type {
+  CreateUserInput,
+  MemberSummary,
+  PublicUser,
+  UpdateProfileInput,
+  UpdateUserInput,
+} from '@hame/shared'
 import { apiFetch } from './client'
 
 const USERS_KEY = ['users'] as const
+
+/** Non-sensitive household roster (any member) for assignment pickers. */
+export function useMembers() {
+  return useQuery<MemberSummary[]>({
+    queryKey: ['members'],
+    queryFn: () => apiFetch<MemberSummary[]>('/api/users/members'),
+  })
+}
 
 /** Admin: list all household users. */
 export function useUsers(enabled = true) {

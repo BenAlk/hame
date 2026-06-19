@@ -12,6 +12,7 @@ import { FormField } from '@/components/form-field'
 import { Input } from '@/components/ui/input'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/api/users'
@@ -25,6 +26,7 @@ export function UsersPage() {
   const deleteUser = useDeleteUser()
   const [actionError, setActionError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<PublicUser | null>(null)
 
   const {
     register,
@@ -67,6 +69,12 @@ export function UsersPage() {
     void runAction(
       updateUser.mutateAsync({ id: user.id, role: user.role === 'ADMIN' ? 'MEMBER' : 'ADMIN' }),
     )
+  }
+
+  async function confirmDeleteUser() {
+    if (!confirmDelete) return
+    await runAction(deleteUser.mutateAsync(confirmDelete.id))
+    setConfirmDelete(null)
   }
 
   return (
@@ -113,7 +121,7 @@ export function UsersPage() {
                   variant="destructive"
                   size="sm"
                   disabled={user.id === me?.id}
-                  onClick={() => void runAction(deleteUser.mutateAsync(user.id))}
+                  onClick={() => setConfirmDelete(user)}
                 >
                   Delete
                 </Button>
@@ -172,6 +180,35 @@ export function UsersPage() {
           </form>
         </CardContent>
       </Card>
+
+      <Modal
+        open={confirmDelete !== null}
+        onClose={() => setConfirmDelete(null)}
+        title="Delete member?"
+      >
+        <p className="text-sm text-ink">
+          Delete{' '}
+          <span className="font-semibold">
+            {confirmDelete?.firstName} {confirmDelete?.surname}
+          </span>
+          ? Their chores, lists, items and history will be reassigned to{' '}
+          <span className="font-semibold">{(me as PublicUser | null)?.firstName ?? 'you'}</span>.
+          This can&apos;t be undone.
+        </p>
+        {actionError && <p className="mt-3 text-sm text-warning">{actionError}</p>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmDelete(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={deleteUser.isPending}
+            onClick={() => void confirmDeleteUser()}
+          >
+            {deleteUser.isPending ? 'Deleting…' : 'Delete member'}
+          </Button>
+        </div>
+      </Modal>
     </main>
   )
 }

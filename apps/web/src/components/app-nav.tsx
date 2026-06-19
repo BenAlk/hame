@@ -8,6 +8,8 @@ const LINKS = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/shopping', label: 'Shopping' },
   { to: '/pantry', label: 'Pantry' },
+  { to: '/chores', label: 'Chores' },
+  { to: '/pets', label: 'Pets' },
 ] as const
 
 /** Primary in-app navigation, shared across pages. */

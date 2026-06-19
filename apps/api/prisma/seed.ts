@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import argon2 from 'argon2'
 import { PrismaClient } from '@prisma/client'
+import { firstDueDate } from '@hame/shared'
 
 // Load the repo-root .env so DATABASE_URL is available when run via tsx.
 const here = dirname(fileURLToPath(import.meta.url))
@@ -27,6 +28,21 @@ async function main() {
     },
   })
   console.log(`✅ Seeded admin user: ${admin.username} (password: changeme123)`)
+
+  // A second household member so rotating chores have someone to cycle to.
+  const partner = await prisma.user.upsert({
+    where: { username: 'partner' },
+    update: {},
+    create: {
+      username: 'partner',
+      password,
+      firstName: 'Robin',
+      surname: 'Alkureishi',
+      colour: '#6f8169',
+      dob: new Date('1991-05-02'),
+      role: 'MEMBER',
+    },
+  })
 
   // ── Tags ───────────────────────────────────────────────────────────────────
   const tagNames: { name: string; colour?: string }[] = [
@@ -177,6 +193,64 @@ async function main() {
       ],
     })
     console.log('✅ Seeded pantry entries')
+  }
+
+  // ── Pets & chores (Phase 3) ──────────────────────────────────────────────—
+  // Guarded so re-seeding an existing database leaves chore history untouched.
+  if ((await prisma.chore.count()) === 0) {
+    const rex = await prisma.pet.create({
+      data: { name: 'Rex', species: 'DOG', breed: 'Border Collie', dob: new Date('2021-03-14') },
+    })
+
+    interface ChoreSpec {
+      title: string
+      recurrenceType: 'INTERVAL' | 'WEEKLY' | 'DATE_OF_MONTH' | 'ONE_OFF'
+      intervalDays?: number
+      weekdays?: (
+        | 'MONDAY'
+        | 'TUESDAY'
+        | 'WEDNESDAY'
+        | 'THURSDAY'
+        | 'FRIDAY'
+        | 'SATURDAY'
+        | 'SUNDAY'
+      )[]
+      petId?: string
+      rotating?: boolean
+    }
+    const choreSpecs: ChoreSpec[] = [
+      { title: 'Rex worming', recurrenceType: 'INTERVAL', intervalDays: 30, petId: rex.id },
+      { title: 'Rex flea treatment', recurrenceType: 'INTERVAL', intervalDays: 30, petId: rex.id },
+      { title: 'Hoover downstairs', recurrenceType: 'WEEKLY', weekdays: ['SATURDAY'] },
+      { title: 'Defrost dog food', recurrenceType: 'INTERVAL', intervalDays: 3, rotating: true },
+    ]
+
+    for (const spec of choreSpecs) {
+      const rotating = spec.rotating === true
+      const dueDate = firstDueDate({
+        recurrenceType: spec.recurrenceType,
+        intervalDays: spec.intervalDays,
+        weekdays: spec.weekdays,
+      })
+      const firstAssigneeId = admin.id // rotation starts at the admin
+      await prisma.chore.create({
+        data: {
+          title: spec.title,
+          recurrenceType: spec.recurrenceType,
+          intervalDays: spec.intervalDays ?? null,
+          weekdays: spec.weekdays ?? [],
+          petId: spec.petId ?? null,
+          assignmentMode: rotating ? 'ROTATING' : 'FIXED',
+          assignedToId: rotating ? null : admin.id,
+          createdById: admin.id,
+          ...(rotating && { rotatingUsers: { connect: [{ id: admin.id }, { id: partner.id }] } }),
+          ...(dueDate && {
+            instances: { create: { assignedToId: firstAssigneeId, dueDate } },
+          }),
+        },
+      })
+    }
+    console.log('✅ Seeded Rex + starter chores')
   }
 }
 

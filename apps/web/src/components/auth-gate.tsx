@@ -5,6 +5,9 @@ import { LoginPage } from '@/pages/LoginPage'
 import { HomePage } from '@/pages/HomePage'
 import { ShoppingPage } from '@/pages/ShoppingPage'
 import { PantryPage } from '@/pages/PantryPage'
+import { ChoresPage } from '@/pages/ChoresPage'
+import { PetsPage } from '@/pages/PetsPage'
+import { PetProfilePage } from '@/pages/PetProfilePage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 
@@ -42,6 +45,9 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
       <Route path="/" element={<HomePage />} />
       <Route path="/shopping" element={<ShoppingPage />} />
       <Route path="/pantry" element={<PantryPage />} />
+      <Route path="/chores" element={<ChoresPage />} />
+      <Route path="/pets" element={<PetsPage />} />
+      <Route path="/pets/:id" element={<PetProfilePage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route
         path="/admin/users"

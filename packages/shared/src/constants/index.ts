@@ -30,3 +30,26 @@ export const QUICK_ADD_TAG = 'quick-add'
 
 /** Items expiring within this many days surface in the "expiring soon" widget. */
 export const EXPIRY_SOON_DAYS = 3
+
+// ── Phase 3: Chores & pets ───────────────────────────────────────────────────
+
+export const RECURRENCE_TYPES = ['INTERVAL', 'WEEKLY', 'DATE_OF_MONTH', 'ONE_OFF'] as const
+export type RecurrenceType = (typeof RECURRENCE_TYPES)[number]
+
+export const ASSIGNMENT_MODES = ['FIXED', 'ROTATING'] as const
+export type AssignmentMode = (typeof ASSIGNMENT_MODES)[number]
+
+export const SPECIES = ['DOG', 'CAT', 'BIRD', 'RABBIT', 'OTHER'] as const
+export type Species = (typeof SPECIES)[number]
+
+/** Ordered Monday-first so day arithmetic and UI both read naturally. */
+export const WEEKDAYS = [
+  'MONDAY',
+  'TUESDAY',
+  'WEDNESDAY',
+  'THURSDAY',
+  'FRIDAY',
+  'SATURDAY',
+  'SUNDAY',
+] as const
+export type Weekday = (typeof WEEKDAYS)[number]

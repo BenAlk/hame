@@ -1,4 +1,9 @@
-import { differenceInCalendarDays } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
+
+/** Absolute calendar date in UK format, e.g. "14-03-2021". */
+export function formatDate(date: Date | string): string {
+  return format(new Date(date), 'dd-MM-yyyy')
+}
 
 /**
  * Human relative day for an expiry/due date, never colour-only (design §10):

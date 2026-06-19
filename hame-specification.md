@@ -999,11 +999,13 @@ Tag system, Item library, shopping lists (multi-list, quick-add, archive flow), 
 
 **Delivered**: A single Phase 2 migration adding `Tag`, `Item`, `ShoppingList`, `ShoppingListItem`, `StorageLocation` and `PantryEntry` (with the `ListStatus` enum and `User` back-relations). Shared `@hame/shared` gains the unit-normalisation module (§9.2) — a display→base-unit conversion map (`g`/`ml`/`unit`) that excludes-and-flags incompatible units rather than summing them — plus Zod schemas for tags, items, shopping and pantry. API vertical slices (thin controllers, thick services) for tags, items (incl. `quick-add` filtering and find-or-create by name), storage locations, pantry (incl. expiring-soon and unit-aware low-stock), and shopping lists — the latter covering tick-to-buy, the archive→pantry flow and rollover-to-new-list inside a transaction with full validation. Frontend: TanStack Query hooks for every resource, a Hearth-styled dashboard (active-shopping, expiring-soon and low-stock widgets), a Shopping page (multi-list selector, quick-add with datalist, tag-grouped check rows, archive dialog) and a Pantry page (locations, stock entry, expiry chips). Verified end-to-end: typecheck/lint/format green, 48 tests pass (incl. unit conversion, archive guards and low-stock aggregation), web build clean, and a live API smoke test of the full create-list → add → tick → archive→pantry → rollover → widgets flow.
 
-### Phase 3 — Chores, Pets & Reminders
+### Phase 3 — Chores, Pets & Reminders ✅ Complete (19-06-2026)
 
 Pet CRUD, chore CRUD with all recurrence types, assignment/rotation, completion tracking, instance auto-generation, chore dashboard widget.
 
 **Goal**: Pet care reminders out of your head.
+
+**Delivered**: A single Phase 3 migration adding `Pet`, `Chore` and `ChoreInstance` (with the `RecurrenceType` / `AssignmentMode` / `Species` / `Weekday` enums, the `User` back-relations and the `Chore`↔`Tag` link). Shared `@hame/shared` gains a pure recurrence engine — `firstDueDate` / `nextDueDate` covering all four recurrence types, with day-of-month clamping (31 → 28/29 Feb, 30 Apr) and INTERVAL counting from the completion date while WEEKLY / DATE_OF_MONTH advance from the scheduled due date — plus Zod schemas for pets and chores whose cross-field refinement enforces each recurrence type's required field and each assignment mode's assignee(s). API vertical slices (thin controllers, thick services) for pets and chores implement **event-driven instance generation**: the opening occurrence is created with the chore, the next is generated on completion inside a transaction with the rotation advanced round the household, plus an `uncomplete` undo, schedule-change reconciliation on edit, a `GET /api/chore-instances?due=today` feed for the dashboard, per-pet treatment-history assembly, and a non-sensitive `GET /api/users/members` roster so members can assign chores without admin access. Frontend: TanStack Query hooks for every resource, a Chores page (due-now / upcoming split, circle check-rows per design §6, a recurrence-aware create/edit form), a Pets page and per-pet profile with a treatment-history timeline and the Hearth photo placeholder, and Today's-chores + Pet-reminders dashboard widgets wired into the nav and home grid. Verified end-to-end: typecheck / lint / format green, 67 tests pass (incl. the recurrence engine's clamping/rotation cases and the chore-service generation/rotation/guards), web build clean, and a live API smoke test of the full create-pet → create-rotating-chore → today-feed → complete → next-instance-with-rotation-advanced → pet treatment-history flow.
 
 ### Phase 4 — Recipes & Meal Planning ⭐
 
@@ -1112,6 +1114,12 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - "Pulling your weight" stats dashboard
 - Streak tracking gamification
 - Family announcement / notice board widget
+
+### Deferred Decisions
+
+Choices intentionally left open, to revisit when the need is real:
+
+- **Rotating-chore order (Phase 3).** A rotating chore stores its people as an unordered set, so "whose turn is next" currently cycles by member account-creation date — deterministic and fair, but not hand-pickable. If a household ever wants to choose the sequence explicitly, this needs an ordered join (e.g. a `position` column on the rotation), not the implicit many-to-many. Not worth the extra model for a two-person household today.
 
 ---
 
