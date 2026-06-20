@@ -1017,6 +1017,22 @@ Recipe CRUD (manual + URL import via schema.org), meal plan calendar (week + mon
 
 > Note: the meal-plan **monthly** calendar view is deferred to Phase 5, where it can ride on the FullCalendar component the aggregated calendar introduces; the weekly grid ships here.
 
+### Phase 4.5 — Ingredient Normalisation Strategies
+
+Pluggable normalisation of free-text ingredients ("large tomato", "pinch of sugar") into clean, linkable `Item` data, so generate-shopping-list (§8.6) warns less and totals more. Three layered strategies behind one interface; the household picks one, and the default needs no setup.
+
+**Goal**: Messy recipe ingredients become clean shopping-list lines — with or without an LLM.
+
+Design only — no build yet (see §12 "Ingredient Normalisation"):
+
+- **Layered, not parallel.** One base layer plus two optional enrichment layers, each overriding the one below and falling back to it when it has no answer: `[1]` the regex parser (today's `parseIngredientLine`, always the floor and guaranteed fallback) → `[2]` a dictionary lookup → `[3]` an LLM. So "what we have today" is layer 1 standing alone.
+- **One contract.** An `IngredientNormaliser` interface — `normalise(rawLines: string[]) → NormalisedIngredient[]`, where `NormalisedIngredient = { canonicalName, quantity, unit, baseUnit, isStaple, typicalUnitGrams? }` — so recipe import and `findOrCreateItemByName` don't care which strategy ran. It takes the whole list so the LLM makes **one call per recipe**, not one per ingredient.
+- **Three implementations.** `BasicNormaliser` wraps the existing parser (zero setup, ships by default). `DictionaryNormaliser` runs Basic, then looks each item up in a bundled `@hame/shared` table mapping common items to a canonical name / typical unit weight / staple flag; unknown items pass straight through; no external dependency. `LlmNormaliser` runs Basic/Dictionary first as a fallback, then a batched Ollama call canonicalises and overrides — degrading gracefully to the fallback (with a warning, never a failed import) if Ollama is unreachable.
+- **Config.** A household-level choice on `HouseholdSettings` — `ingredientNormaliser: BASIC | DICTIONARY | LLM` (default `BASIC`) — plus an `OllamaConfig` singleton (URL + model name) mirroring `HomeAssistantConfig` / `ImmichConfig`. A factory reads the setting and returns the right normaliser.
+- **Runs upstream, stays deterministic.** Normalisation happens at ingestion (URL import / manual add), is reviewed by the user before save, and persists onto `Item` (e.g. `baseUnit`, `isStaple`, a new `typicalUnitGrams` for count→weight maths). `generate-shopping-list` (§8.6) is untouched and stays a fast, reproducible, deterministic engine — the LLM never does the arithmetic, only the fuzzy text → structured-data step.
+
+**Why split out of Phase 4**: the deterministic engine ships first and works; this layer is the quality pass that tackles the fuzzy long tail without making the shopping-list maths depend on a model being present or reproducible.
+
 ### Phase 5 — Bins, Calendar & Events
 
 Bin schedules (manual), custom events, iCal sync, aggregated calendar endpoint, FullCalendar component.
@@ -1091,6 +1107,12 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - On new Item creation, prompt LLM with item name → suggested tags from existing tag pool
 - User confirms/edits before save
 - Endpoint: `POST /api/items/suggest-tags`
+
+### Ingredient Normalisation
+
+- Companion to LLM auto-tagging, scheduled as **Phase 4.5** (§10) — see that roadmap entry for the full design.
+- Turns free-text recipe ingredients ("large tomato", "pinch of sugar") into clean `Item` data via one of three layered, swappable strategies selected per household: the regex parser (today), a bundled dictionary, or an LLM.
+- Reuses the same self-hosted **Ollama** as auto-tagging. The LLM normalises names/quantities and flags staples; the deterministic generate-shopping-list (§8.6) keeps doing the maths.
 
 ### UK Bin Scraper (Separate Repo)
 
