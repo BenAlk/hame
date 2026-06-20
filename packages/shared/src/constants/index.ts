@@ -53,3 +53,12 @@ export const WEEKDAYS = [
   'SUNDAY',
 ] as const
 export type Weekday = (typeof WEEKDAYS)[number]
+
+// ── Phase 4: Recipes & meal planning ─────────────────────────────────────────
+
+/** Ordered through the day so meal-plan grids read top-to-bottom naturally. */
+export const MEAL_TYPES = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] as const
+export type MealType = (typeof MEAL_TYPES)[number]
+
+/** Servings a recipe assumes when none is given — the scaling baseline (§8.5). */
+export const DEFAULT_SERVINGS = 4

@@ -92,16 +92,30 @@ export async function deleteItem(id: string): Promise<void> {
 }
 
 /**
- * Resolve an item by free-text name, creating it (untagged) if new. Used by
- * the shopping and pantry quick-add flows. Matching is case-insensitive.
+ * Resolve an item by free-text name, creating it (untagged) if new. Used by the
+ * shopping/pantry quick-add and recipe-import flows. Matching is
+ * case-insensitive. `defaults` (a base unit inferred from the ingredient's unit,
+ * a staple flag) are only applied when the item is freshly minted — never
+ * overwriting an existing item's settings.
  */
-export async function findOrCreateItemByName(name: string, userId: string): Promise<string> {
+export async function findOrCreateItemByName(
+  name: string,
+  userId: string,
+  defaults: { baseUnit?: string | null; isStaple?: boolean } = {},
+): Promise<string> {
   const trimmed = name.trim()
   const existing = await prisma.item.findFirst({
     where: { name: { equals: trimmed, mode: 'insensitive' } },
   })
   if (existing) return existing.id
-  const created = await prisma.item.create({ data: { name: trimmed, createdById: userId } })
+  const created = await prisma.item.create({
+    data: {
+      name: trimmed,
+      createdById: userId,
+      baseUnit: defaults.baseUnit ?? null,
+      isStaple: defaults.isStaple ?? false,
+    },
+  })
   return created.id
 }
 

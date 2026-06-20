@@ -11,6 +11,9 @@ import { shoppingListsRouter } from './shopping-lists.js'
 import { petsRouter } from './pets.js'
 import { choresRouter } from './chores.js'
 import { choreInstancesRouter } from './chore-instances.js'
+import { recipesRouter } from './recipes.js'
+import { mealPlansRouter } from './meal-plans.js'
+import { householdSettingsRouter } from './household-settings.js'
 
 export const apiRouter = Router()
 
@@ -26,3 +29,6 @@ apiRouter.use('/shopping-lists', shoppingListsRouter)
 apiRouter.use('/pets', petsRouter)
 apiRouter.use('/chores', choresRouter)
 apiRouter.use('/chore-instances', choreInstancesRouter)
+apiRouter.use('/recipes', recipesRouter)
+apiRouter.use('/meal-plans', mealPlansRouter)
+apiRouter.use('/household-settings', householdSettingsRouter)

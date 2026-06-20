@@ -252,6 +252,136 @@ async function main() {
     }
     console.log('✅ Seeded Rex + starter chores')
   }
+
+  // ── Household settings (Phase 4) ─────────────────────────────────────────—
+  await prisma.householdSettings.upsert({
+    where: { id: 'singleton' },
+    update: {},
+    create: { id: 'singleton', enabledMealTypes: ['DINNER'] },
+  })
+
+  // ── Recipes & meal plan (Phase 4) ────────────────────────────────────────—
+  // Guarded so re-seeding leaves any hand-entered recipes untouched.
+  if ((await prisma.recipe.count()) === 0) {
+    // Ingredient items, minted with base units so generate-shopping-list maths work.
+    interface RecipeItemSpec {
+      name: string
+      baseUnit?: string
+      isStaple?: boolean
+    }
+    async function ensureItem(spec: RecipeItemSpec): Promise<string> {
+      const existing = await prisma.item.findFirst({
+        where: { name: { equals: spec.name, mode: 'insensitive' } },
+      })
+      if (existing) return existing.id
+      const created = await prisma.item.create({
+        data: {
+          name: spec.name,
+          baseUnit: spec.baseUnit ?? null,
+          isStaple: spec.isStaple ?? false,
+          createdById: admin.id,
+        },
+      })
+      return created.id
+    }
+
+    interface IngredientSpec extends RecipeItemSpec {
+      quantity?: number | null
+      unit?: string | null
+      notes?: string | null
+    }
+    interface RecipeSpec {
+      title: string
+      description: string
+      servings: number
+      prepTimeMinutes?: number
+      cookTimeMinutes?: number
+      ingredients: IngredientSpec[]
+      steps: string[]
+    }
+    const recipeSpecs: RecipeSpec[] = [
+      {
+        title: 'Spaghetti Bolognese',
+        description: 'A weeknight classic the whole household will eat.',
+        servings: 4,
+        prepTimeMinutes: 15,
+        cookTimeMinutes: 40,
+        ingredients: [
+          { name: 'Spaghetti', baseUnit: 'g', quantity: 400, unit: 'g' },
+          { name: 'Beef mince', baseUnit: 'g', quantity: 500, unit: 'g' },
+          { name: 'Onion', baseUnit: 'unit', quantity: 1, unit: 'unit' },
+          { name: 'Chopped tomatoes', baseUnit: 'unit', quantity: 2, unit: 'can' },
+          { name: 'Salt', baseUnit: 'g', isStaple: true, quantity: null, notes: 'to taste' },
+        ],
+        steps: [
+          'Brown the mince in a large pan over medium-high heat.',
+          'Add the diced onion and cook until soft.',
+          'Stir in the chopped tomatoes and simmer for 30 minutes.',
+          'Meanwhile cook the spaghetti, then combine and season.',
+        ],
+      },
+      {
+        title: 'Veggie Stir-Fry',
+        description: 'Fast, fresh and endlessly adaptable.',
+        servings: 2,
+        prepTimeMinutes: 10,
+        cookTimeMinutes: 10,
+        ingredients: [
+          { name: 'Rice', baseUnit: 'g', quantity: 200, unit: 'g' },
+          { name: 'Mixed vegetables', baseUnit: 'g', quantity: 400, unit: 'g' },
+          { name: 'Soy sauce', baseUnit: 'ml', quantity: 30, unit: 'ml' },
+        ],
+        steps: [
+          'Cook the rice to packet instructions.',
+          'Stir-fry the vegetables on high heat for 5 minutes.',
+          'Add soy sauce, toss through and serve over the rice.',
+        ],
+      },
+    ]
+
+    let firstRecipeId: string | null = null
+    for (const spec of recipeSpecs) {
+      const ingredientRows = []
+      for (const [order, ing] of spec.ingredients.entries()) {
+        const itemId = await ensureItem(ing)
+        ingredientRows.push({
+          itemId,
+          quantity: ing.quantity ?? null,
+          unit: ing.unit ?? null,
+          notes: ing.notes ?? null,
+          order,
+        })
+      }
+      const recipe = await prisma.recipe.create({
+        data: {
+          title: spec.title,
+          description: spec.description,
+          servings: spec.servings,
+          prepTimeMinutes: spec.prepTimeMinutes ?? null,
+          cookTimeMinutes: spec.cookTimeMinutes ?? null,
+          createdById: admin.id,
+          ingredients: { create: ingredientRows },
+          steps: { create: spec.steps.map((text, order) => ({ text, order })) },
+        },
+      })
+      firstRecipeId ??= recipe.id
+    }
+
+    // Plan the Bolognese for dinner tonight so the dashboard has something to show.
+    if (firstRecipeId) {
+      const today = new Date()
+      today.setUTCHours(0, 0, 0, 0)
+      await prisma.mealPlanEntry.create({
+        data: {
+          date: today,
+          mealType: 'DINNER',
+          recipeId: firstRecipeId,
+          createdById: admin.id,
+        },
+      })
+    }
+    console.log("✅ Seeded starter recipes + tonight's meal")
+  }
 }
 
 main()

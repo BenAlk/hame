@@ -1,6 +1,7 @@
 import type { PublicUser } from '@hame/shared'
 import { AppNav } from '@/components/app-nav'
 import { ActiveShoppingWidget } from '@/components/features/widgets/active-shopping-widget'
+import { TodaysMealsWidget } from '@/components/features/widgets/todays-meals-widget'
 import { ExpiringSoonWidget } from '@/components/features/widgets/expiring-soon-widget'
 import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
 import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-widget'
@@ -32,6 +33,7 @@ export function HomePage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <TodaysMealsWidget />
         <ActiveShoppingWidget />
         <TodaysChoresWidget />
         <PetRemindersWidget />

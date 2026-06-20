@@ -31,6 +31,12 @@ const UNIT_TABLE: Record<string, { base: BaseUnit; factor: number }> = {
   l: { base: 'ml', factor: 1000 },
   litre: { base: 'ml', factor: 1000 },
   cl: { base: 'ml', factor: 10 },
+  // cooking spoon/cup measures (metric-ish standards) → millilitres
+  tsp: { base: 'ml', factor: 5 },
+  teaspoon: { base: 'ml', factor: 5 },
+  tbsp: { base: 'ml', factor: 15 },
+  tablespoon: { base: 'ml', factor: 15 },
+  cup: { base: 'ml', factor: 240 },
   // count → unit
   unit: { base: 'unit', factor: 1 },
   pack: { base: 'unit', factor: 1 },

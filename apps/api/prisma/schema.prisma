@@ -5,6 +5,7 @@
 //   Phase 0–1 — User & auth
 //   Phase 2   — Tags, Items, Shopping lists, Storage locations, Pantry
 //   Phase 3   — Pets, Chores, Chore instances
+//   Phase 4   — Recipes, Meal plan entries, Household settings
 
 generator client {
   provider = "prisma-client-js"
@@ -33,11 +34,13 @@ model User {
   shoppingListsCreated ShoppingList[]
   shoppingItemsAdded   ShoppingListItem[]
   pantryEntriesAdded   PantryEntry[]
-  choresCreated        Chore[]           @relation("ChoreCreator")
-  choresAssigned       Chore[]           @relation("ChoreAssignee")
-  choresRotation       Chore[]           @relation("ChoreRotation")
-  instancesAssigned    ChoreInstance[]   @relation("InstanceAssignee")
-  instancesCompleted   ChoreInstance[]   @relation("InstanceCompleter")
+  choresCreated        Chore[]            @relation("ChoreCreator")
+  choresAssigned       Chore[]            @relation("ChoreAssignee")
+  choresRotation       Chore[]            @relation("ChoreRotation")
+  instancesAssigned    ChoreInstance[]    @relation("InstanceAssignee")
+  instancesCompleted   ChoreInstance[]    @relation("InstanceCompleter")
+  recipesCreated       Recipe[]
+  mealPlanEntries      MealPlanEntry[]
 }
 
 enum Role {
@@ -48,11 +51,12 @@ enum Role {
 // ── Phase 2: Tags & Items (foundation layer) ─────────────────────────────────
 
 model Tag {
-  id     String  @id @default(uuid())
-  name   String  @unique // "dairy", "frozen", "quick-add", "tesco"
-  colour String? // hex for chip display
-  items  Item[]  @relation("ItemTags")
-  chores Chore[] @relation("ChoreTags")
+  id      String   @id @default(uuid())
+  name    String   @unique // "dairy", "frozen", "quick-add", "tesco"
+  colour  String? // hex for chip display
+  items   Item[]   @relation("ItemTags")
+  chores  Chore[]  @relation("ChoreTags")
+  recipes Recipe[] @relation("RecipeTags")
 }
 
 model Item {
@@ -68,6 +72,7 @@ model Item {
   tags            Tag[]              @relation("ItemTags")
   shoppingItems   ShoppingListItem[]
   pantryEntries   PantryEntry[]
+  recipeUses      RecipeIngredient[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 }
@@ -153,27 +158,27 @@ model Pet {
 // ── Phase 3: Chores ──────────────────────────────────────────────────────────
 
 model Chore {
-  id             String         @id @default(uuid())
+  id             String          @id @default(uuid())
   title          String
   description    String?
   recurrenceType RecurrenceType
   intervalDays   Int? // for INTERVAL
   weekdays       Weekday[] // for WEEKLY
   dayOfMonth     Int? // for DATE_OF_MONTH (clamped to month length — spec §8.7)
-  oneOffDate     DateTime?      @db.Date // for ONE_OFF
-  assignmentMode AssignmentMode @default(FIXED)
+  oneOffDate     DateTime?       @db.Date // for ONE_OFF
+  assignmentMode AssignmentMode  @default(FIXED)
   assignedToId   String?
-  assignedTo     User?          @relation("ChoreAssignee", fields: [assignedToId], references: [id])
-  rotatingUsers  User[]         @relation("ChoreRotation")
+  assignedTo     User?           @relation("ChoreAssignee", fields: [assignedToId], references: [id])
+  rotatingUsers  User[]          @relation("ChoreRotation")
   petId          String?
-  pet            Pet?           @relation(fields: [petId], references: [id])
-  tags           Tag[]          @relation("ChoreTags")
-  isActive       Boolean        @default(true)
+  pet            Pet?            @relation(fields: [petId], references: [id])
+  tags           Tag[]           @relation("ChoreTags")
+  isActive       Boolean         @default(true)
   createdById    String
-  createdBy      User           @relation("ChoreCreator", fields: [createdById], references: [id])
+  createdBy      User            @relation("ChoreCreator", fields: [createdById], references: [id])
   instances      ChoreInstance[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
 model ChoreInstance {
@@ -218,4 +223,75 @@ enum Weekday {
   FRIDAY
   SATURDAY
   SUNDAY
+}
+
+// ── Phase 4: Recipes ─────────────────────────────────────────────────────────
+
+model Recipe {
+  id              String             @id @default(uuid())
+  title           String
+  description     String?
+  imageUrl        String?
+  sourceUrl       String? // set when URL-imported (spec §8.5)
+  prepTimeMinutes Int?
+  cookTimeMinutes Int?
+  servings        Int                @default(4)
+  createdById     String
+  createdBy       User               @relation(fields: [createdById], references: [id])
+  ingredients     RecipeIngredient[]
+  steps           RecipeStep[]
+  tags            Tag[]              @relation("RecipeTags")
+  mealEntries     MealPlanEntry[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model RecipeIngredient {
+  id       String  @id @default(uuid())
+  recipeId String
+  recipe   Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  itemId   String
+  item     Item    @relation(fields: [itemId], references: [id])
+  quantity Float? // null for unquantified staples ("salt to taste")
+  unit     String? // free-form display unit; normalised via Item.baseUnit for maths
+  notes    String? // "finely chopped"
+  optional Boolean @default(false)
+  order    Int
+}
+
+model RecipeStep {
+  id       String @id @default(uuid())
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  order    Int
+  text     String
+}
+
+// ── Phase 4: Meal planning ───────────────────────────────────────────────────
+
+model MealPlanEntry {
+  id          String   @id @default(uuid())
+  date        DateTime @db.Date
+  mealType    MealType
+  recipeId    String? // null for non-recipe meals (customLabel)
+  recipe      Recipe?  @relation(fields: [recipeId], references: [id])
+  customLabel String? // "Takeaway", "Leftovers"
+  servings    Int? // overrides recipe default when set
+  notes       String?
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model HouseholdSettings {
+  id               String     @id @default("singleton") // enforce single row
+  enabledMealTypes MealType[] @default([DINNER])
+  updatedAt        DateTime   @updatedAt
+}
+
+enum MealType {
+  BREAKFAST
+  LUNCH
+  DINNER
+  SNACK
 }
