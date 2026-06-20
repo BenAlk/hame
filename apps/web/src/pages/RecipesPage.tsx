@@ -5,6 +5,7 @@ import { AppNav } from '@/components/app-nav'
 import { RecipeCard } from '@/components/features/recipes/recipe-card'
 import { RecipeForm, type RecipeFormInitial } from '@/components/features/recipes/recipe-form'
 import { UrlImport } from '@/components/features/recipes/url-import'
+import { NormalisationReview } from '@/components/features/recipes/normalisation-review'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
@@ -30,6 +31,8 @@ function draftToInitial(draft: ImportedRecipeDraft): RecipeFormInitial {
       notes: ing.notes ?? '',
       optional: false,
       isStaple: ing.isStaple,
+      baseUnit: ing.baseUnit,
+      typicalUnitGrams: ing.typicalUnitGrams,
     })),
     steps: draft.steps.map((s) => s.text),
   }
@@ -44,10 +47,13 @@ export function RecipesPage() {
 
   const [formOpen, setFormOpen] = useState(false)
   const [initial, setInitial] = useState<RecipeFormInitial | undefined>(undefined)
+  // A freshly imported draft awaiting the user's review before it seeds the form.
+  const [reviewDraft, setReviewDraft] = useState<ImportedRecipeDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   function openNew() {
     setInitial(undefined)
+    setReviewDraft(null)
     setError(null)
     setFormOpen(true)
   }
@@ -97,20 +103,35 @@ export function RecipesPage() {
         </div>
       )}
 
-      <Modal open={formOpen} onClose={() => setFormOpen(false)} title="New recipe">
-        <div className="flex flex-col gap-4">
-          <UrlImport onImported={(draft) => setInitial(draftToInitial(draft))} />
-          <RecipeForm
-            // Remount when a draft arrives so the form re-seeds from it.
-            key={initial ? 'imported' : 'blank'}
-            initial={initial}
-            tags={tags ?? []}
-            onSubmit={handleSubmit}
-            onCancel={() => setFormOpen(false)}
-            submitting={createRecipe.isPending}
-            error={error}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={reviewDraft ? 'Review imported ingredients' : 'New recipe'}
+      >
+        {reviewDraft ? (
+          <NormalisationReview
+            draft={reviewDraft}
+            onAccept={() => {
+              setInitial(draftToInitial(reviewDraft))
+              setReviewDraft(null)
+            }}
+            onDiscard={() => setReviewDraft(null)}
           />
-        </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <UrlImport onImported={setReviewDraft} />
+            <RecipeForm
+              // Remount when a draft arrives so the form re-seeds from it.
+              key={initial ? 'imported' : 'blank'}
+              initial={initial}
+              tags={tags ?? []}
+              onSubmit={handleSubmit}
+              onCancel={() => setFormOpen(false)}
+              submitting={createRecipe.isPending}
+              error={error}
+            />
+          </div>
+        )}
       </Modal>
     </main>
   )

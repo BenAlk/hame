@@ -14,6 +14,7 @@ import { HttpError } from '../lib/http-error.js'
 import { itemInclude, findOrCreateItemByName, toItem } from './item.service.js'
 import { toTag } from './tag.service.js'
 import { importRecipeFromUrl } from '../integrations/recipe-import/index.js'
+import { getNormaliser } from './normaliser.service.js'
 
 const ingredientInclude = { item: { include: itemInclude } } as const
 
@@ -171,10 +172,35 @@ export async function deleteRecipe(id: string): Promise<void> {
 
 /** Import a recipe draft from a URL (spec §8.5) — not persisted until saved. */
 export async function importRecipe(url: string): Promise<ImportedRecipeDraft> {
-  return importRecipeFromUrl(url)
+  const normaliser = await getNormaliser()
+  return importRecipeFromUrl(url, normaliser)
 }
 
 // ── internals ──────────────────────────────────────────────────────────────
+
+/**
+ * Choose the canonical base unit for a freshly minted Item (spec §9.2, §10
+ * Phase 4.5). Priority:
+ *   1. the display unit's family, when it's a known measure ("tbsp" → ml), so
+ *      display and base always agree and generate-shopping-list can total it;
+ *   2. for a bare count with no display unit ("8 chicken breasts"), `unit` —
+ *      a discrete countable item, not the dictionary's weight hint;
+ *   3. the normalisation hint, for a bulk item written without a unit
+ *      ("200 flour" → g);
+ *   4. `null` when there's nothing to go on.
+ */
+function deriveItemBaseUnit(ing: RecipeIngredientInput): string | null {
+  const fromUnit = ing.unit ? baseUnitOf(ing.unit) : null
+  if (fromUnit) return fromUnit
+  if (!ing.unit && ing.quantity != null) {
+    // A discrete countable item (has a typical unit weight), or one with no
+    // weight hint at all, is counted by the unit; only a genuine weight/volume
+    // hint keeps its measure.
+    if (ing.typicalUnitGrams != null) return 'unit'
+    return ing.baseUnit ?? 'unit'
+  }
+  return ing.baseUnit ?? null
+}
 
 /**
  * Turn ingredient inputs into `RecipeIngredient` create rows, resolving each to
@@ -199,9 +225,9 @@ async function resolveIngredients(
     const itemId =
       ing.itemId ??
       (await findOrCreateItemByName(ing.itemName!, userId, {
-        // A unit infers its base; a unit-less quantity is a countable "unit".
-        baseUnit: ing.unit ? baseUnitOf(ing.unit) : ing.quantity != null ? 'unit' : null,
+        baseUnit: deriveItemBaseUnit(ing),
         isStaple: ing.isStaple ?? false,
+        typicalUnitGrams: ing.typicalUnitGrams ?? null,
       }))
     resolved.push({
       itemId,

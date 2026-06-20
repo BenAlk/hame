@@ -12,6 +12,7 @@ import { MealPlanPage } from '@/pages/MealPlanPage'
 import { PetsPage } from '@/pages/PetsPage'
 import { PetProfilePage } from '@/pages/PetProfilePage'
 import { ProfilePage } from '@/pages/ProfilePage'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { UsersPage } from '@/pages/admin/UsersPage'
 
 interface AuthGateProps {
@@ -58,6 +59,10 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
       <Route
         path="/admin/users"
         element={user.role === 'ADMIN' ? <UsersPage /> : <Navigate to="/" replace />}
+      />
+      <Route
+        path="/settings"
+        element={user.role === 'ADMIN' ? <SettingsPage /> : <Navigate to="/" replace />}
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

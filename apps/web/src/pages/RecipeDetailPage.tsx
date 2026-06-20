@@ -7,6 +7,7 @@ import { RecipeForm } from '@/components/features/recipes/recipe-form'
 import { TagChip } from '@/components/features/tag-chip'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useTags } from '@/api/tags'
@@ -25,6 +26,8 @@ export function RecipeDetailPage() {
 
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [doneSteps, setDoneSteps] = useState<Set<string>>(new Set())
 
   async function handleSubmit(input: UpdateRecipeInput) {
@@ -40,12 +43,12 @@ export function RecipeDetailPage() {
 
   async function handleDelete() {
     if (!recipe) return
-    if (!window.confirm(`Delete "${recipe.title}"?`)) return
+    setDeleteError(null)
     try {
       await deleteRecipe.mutateAsync(recipe.id)
       navigate('/recipes')
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.message : 'Could not delete the recipe.')
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete the recipe.')
     }
   }
 
@@ -126,7 +129,14 @@ export function RecipeDetailPage() {
             <Pencil className="size-4" />
             Edit
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => void handleDelete()}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setDeleteError(null)
+              setConfirmDelete(true)
+            }}
+          >
             <Trash2 className="size-4" />
             Delete
           </Button>
@@ -215,6 +225,18 @@ export function RecipeDetailPage() {
           error={error}
         />
       </Modal>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete recipe?"
+        confirmLabel="Delete recipe"
+        pending={deleteRecipe.isPending}
+        error={deleteError}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setConfirmDelete(false)}
+      >
+        Delete <span className="font-semibold">{recipe.title}</span>? This can&apos;t be undone.
+      </ConfirmDialog>
     </main>
   )
 }

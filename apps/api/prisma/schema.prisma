@@ -64,8 +64,9 @@ model Item {
   name            String             @unique
   defaultQuantity Float?
   defaultUnit     String? // "g", "ml", "pack"
-  baseUnit        String? // canonical unit for stock maths — see spec §9.2
-  minimumQuantity Float? // triggers low stock (expressed in baseUnit)
+  baseUnit         String? // canonical unit for stock maths — see spec §9.2
+  typicalUnitGrams Float? // grams of one countable unit (1 onion ≈ 110g) — see spec §10 Phase 4.5
+  minimumQuantity  Float? // triggers low stock (expressed in baseUnit)
   isStaple        Boolean            @default(false) // pantry staple — excluded from generated shopping lists
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
@@ -284,9 +285,10 @@ model MealPlanEntry {
 }
 
 model HouseholdSettings {
-  id               String     @id @default("singleton") // enforce single row
-  enabledMealTypes MealType[] @default([DINNER])
-  updatedAt        DateTime   @updatedAt
+  id                  String             @id @default("singleton") // enforce single row
+  enabledMealTypes    MealType[]         @default([DINNER])
+  ingredientNormaliser NormaliserStrategy @default(BASIC) // spec §10 Phase 4.5
+  updatedAt           DateTime           @updatedAt
 }
 
 enum MealType {
@@ -294,4 +296,24 @@ enum MealType {
   LUNCH
   DINNER
   SNACK
+}
+
+// ── Phase 4.5: Ingredient normalisation ──────────────────────────────────────
+
+enum NormaliserStrategy {
+  BASIC
+  DICTIONARY
+  LLM
+}
+
+/// Ollama connection for the LLM ingredient normaliser (spec §10 Phase 4.5, §12).
+/// Singleton mirroring the HomeAssistant/Immich config pattern. Ollama on the
+/// homelab is unauthenticated, so there is no secret to encrypt at rest.
+model OllamaConfig {
+  id              String    @id @default("singleton") // enforce single row
+  url             String?
+  model           String    @default("llama3.1")
+  isActive        Boolean   @default(false)
+  lastConnectedAt DateTime?
+  updatedAt       DateTime  @updatedAt
 }

@@ -15,6 +15,9 @@ interface IngredientRow {
   optional: boolean
   /** Carried through from URL import; staples are kept off generated lists. */
   isStaple: boolean
+  /** Normalisation hints carried from import for a freshly minted Item (§9.2). */
+  baseUnit?: string | null
+  typicalUnitGrams?: number | null
 }
 
 export interface RecipeFormInitial {
@@ -114,6 +117,9 @@ export function RecipeForm({
         notes: r.notes.trim() || null,
         optional: r.optional,
         isStaple: r.isStaple,
+        // Hints only land on a newly minted item; harmless when one already exists.
+        baseUnit: r.baseUnit ?? null,
+        typicalUnitGrams: r.typicalUnitGrams ?? null,
       }))
     if (cleanIngredients.length === 0) return setLocalError('Add at least one ingredient.')
     if (cleanIngredients.some((r) => r.quantity != null && !(r.quantity > 0)))

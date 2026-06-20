@@ -298,6 +298,7 @@ model Item {
   defaultQuantity Float?
   defaultUnit     String?                       // "g", "ml", "pack"
   baseUnit        String?                       // canonical unit for stock maths — see §9.2
+  typicalUnitGrams Float?                       // grams of one countable unit (1 onion ≈ 110g) — see §10 Phase 4.5
   minimumQuantity Float?                        // triggers low stock (expressed in baseUnit)
   isStaple        Boolean             @default(false)  // pantry staple (salt, water) — excluded from generated shopping lists
   createdById     String
@@ -451,9 +452,10 @@ model MealPlanEntry {
 }
 
 model HouseholdSettings {
-  id               String     @id @default("singleton")   // enforce single row
-  enabledMealTypes MealType[] @default([DINNER])
-  updatedAt        DateTime   @updatedAt
+  id                   String             @id @default("singleton")   // enforce single row
+  enabledMealTypes     MealType[]         @default([DINNER])
+  ingredientNormaliser NormaliserStrategy @default(BASIC)             // §10 Phase 4.5
+  updatedAt            DateTime           @updatedAt
 }
 
 enum MealType {
@@ -461,6 +463,12 @@ enum MealType {
   LUNCH
   DINNER
   SNACK
+}
+
+enum NormaliserStrategy {
+  BASIC                                          // regex parser only (default, zero setup)
+  DICTIONARY                                     // + bundled lookup table
+  LLM                                            // + batched Ollama pass, degrades to dictionary
 }
 ```
 
@@ -596,6 +604,17 @@ model HomeAssistantConfig {
   url             String
   accessToken     String                            // ENCRYPT AT REST
   isActive        Boolean   @default(true)
+  lastConnectedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
+model OllamaConfig {
+  // Singleton (§10 Phase 4.5) — Ollama server for the LLM ingredient normaliser.
+  // Homelab Ollama is unauthenticated, so there is no token to encrypt.
+  id              String    @id @default("singleton")
+  url             String?
+  model           String    @default("llama3.1")
+  isActive        Boolean   @default(false)
   lastConnectedAt DateTime?
   updatedAt       DateTime  @updatedAt
 }
@@ -1017,13 +1036,19 @@ Recipe CRUD (manual + URL import via schema.org), meal plan calendar (week + mon
 
 > Note: the meal-plan **monthly** calendar view is deferred to Phase 5, where it can ride on the FullCalendar component the aggregated calendar introduces; the weekly grid ships here.
 
-### Phase 4.5 — Ingredient Normalisation Strategies
+### Phase 4.5 — Ingredient Normalisation Strategies ✅ Complete (20-06-2026)
 
 Pluggable normalisation of free-text ingredients ("large tomato", "pinch of sugar") into clean, linkable `Item` data, so generate-shopping-list (§8.6) warns less and totals more. Three layered strategies behind one interface; the household picks one, and the default needs no setup.
 
 **Goal**: Messy recipe ingredients become clean shopping-list lines — with or without an LLM.
 
-Design only — no build yet (see §12 "Ingredient Normalisation"):
+**Delivered**: A single Phase 4.5 migration adding `Item.typicalUnitGrams`, the `HouseholdSettings.ingredientNormaliser` choice (the new `NormaliserStrategy` enum, default `BASIC`) and the `OllamaConfig` singleton. Shared `@hame/shared` gains the `IngredientNormaliser` contract and the two dependency-free layers — `BasicNormaliser` (wraps `parseIngredientLine`, the always-on floor) and `DictionaryNormaliser` (enriches Basic from a bundled ~150-entry table of canonical names / base units / typical unit weights / staple flags, tolerant of plurals, descriptors and synonyms; unknown items pass straight through). The API adds `LlmNormaliser` (`integrations/ollama`: a single batched `/api/chat` call per recipe over the dictionary result, overriding only where the model gives a usable answer and degrading to the fallback **with a warning that names the actual reason — unreachable vs. e.g. a model-not-found 404 — never a failed import**), a `getNormaliser` factory that reads the household setting and assembles the stack, an `OllamaConfig` service/controller/route (admin-only), and wiring of the configured normaliser into URL import and `findOrCreateItemByName` so the reviewed hints persist onto freshly minted items only.
+
+The pipeline is hardened so the deterministic data always wins where it should: the parser's explicit **quantities are authoritative** (the model can override with a real number but never null one out); a line that ends up with a unit but **no count defaults to 1** ("coriander leaves, to serve"); and a minted item's **base unit is derived from its display unit's family** ("4 tbsp" → ml) so display and base always agree, with a **bare count and no unit** ("8 chicken breasts") defaulting to `unit` rather than the dictionary's weight hint — keeping `generate-shopping-list` (§8.6) totalling cleanly. That endpoint is itself untouched — the LLM never does the arithmetic.
+
+The web adds an admin **Settings** page (strategy selector + an Ollama form that **discovers the server's installed models on blur and offers them as a dropdown**, so there's nothing to type and no save-before-test) and a post-import **review step** showing the strategy, any fallback warnings and a before/after of every ingredient line, which the user confirms before it seeds the editable recipe form. Verified end-to-end: typecheck / lint / format green, 105 tests pass (incl. the dictionary overrides/passthrough, the layered fallback, the LLM JSON parse, quantity-preservation, unit-defaulting and graceful degrade, and the factory selection), web build clean, plus live testing of the full URL-import → LLM-normalise → review → generate-shopping-list flow.
+
+Design (still the shape that shipped — see §12 "Ingredient Normalisation"):
 
 - **Layered, not parallel.** One base layer plus two optional enrichment layers, each overriding the one below and falling back to it when it has no answer: `[1]` the regex parser (today's `parseIngredientLine`, always the floor and guaranteed fallback) → `[2]` a dictionary lookup → `[3]` an LLM. So "what we have today" is layer 1 standing alone.
 - **One contract.** An `IngredientNormaliser` interface — `normalise(rawLines: string[]) → NormalisedIngredient[]`, where `NormalisedIngredient = { canonicalName, quantity, unit, baseUnit, isStaple, typicalUnitGrams? }` — so recipe import and `findOrCreateItemByName` don't care which strategy ran. It takes the whole list so the LLM makes **one call per recipe**, not one per ingredient.

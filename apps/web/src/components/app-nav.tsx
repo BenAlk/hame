@@ -52,19 +52,34 @@ export function AppNav({ user }: { user: PublicUser | null }) {
         Profile
       </NavLink>
       {user?.role === 'ADMIN' && (
-        <NavLink
-          to="/admin/users"
-          className={({ isActive }) =>
-            cn(
-              'rounded-control px-3 py-1.5 text-sm font-medium transition-colors',
-              isActive
-                ? 'bg-accent-soft text-accent'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )
-          }
-        >
-          Users
-        </NavLink>
+        <>
+          <NavLink
+            to="/admin/users"
+            className={({ isActive }) =>
+              cn(
+                'rounded-control px-3 py-1.5 text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )
+            }
+          >
+            Users
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              cn(
+                'rounded-control px-3 py-1.5 text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )
+            }
+          >
+            Settings
+          </NavLink>
+        </>
       )}
       <Button variant="ghost" size="sm" onClick={() => logout.mutate()} disabled={logout.isPending}>
         Log out

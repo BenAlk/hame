@@ -7,6 +7,7 @@ import { ChoreCheckRow } from '@/components/features/chores/chore-check-row'
 import { ChoreForm } from '@/components/features/chores/chore-form'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useMembers } from '@/api/users'
@@ -40,6 +41,8 @@ export function ChoresPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Chore | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Chore | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const sorted = useMemo(
     () => [...(chores ?? [])].sort((a, b) => dueRank(a) - dueRank(b)),
@@ -78,9 +81,15 @@ export function ChoresPage() {
     }
   }
 
-  async function handleDelete(chore: Chore) {
-    if (!window.confirm(`Delete "${chore.title}" and its history?`)) return
-    await deleteChore.mutateAsync(chore.id)
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    setDeleteError(null)
+    try {
+      await deleteChore.mutateAsync(pendingDelete.id)
+      setPendingDelete(null)
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete the chore.')
+    }
   }
 
   function renderRows(list: Chore[]) {
@@ -92,7 +101,10 @@ export function ChoresPage() {
             chore={chore}
             onComplete={(instanceId) => void completeInstance.mutateAsync({ id: instanceId })}
             onEdit={() => openEdit(chore)}
-            onDelete={() => void handleDelete(chore)}
+            onDelete={() => {
+              setDeleteError(null)
+              setPendingDelete(chore)
+            }}
             disabled={completeInstance.isPending}
           />
         ))}
@@ -154,6 +166,19 @@ export function ChoresPage() {
           error={error}
         />
       </Modal>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete chore?"
+        confirmLabel="Delete chore"
+        pending={deleteChore.isPending}
+        error={deleteError}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+      >
+        Delete <span className="font-semibold">{pendingDelete?.title}</span> and its completion
+        history? This can&apos;t be undone.
+      </ConfirmDialog>
     </main>
   )
 }

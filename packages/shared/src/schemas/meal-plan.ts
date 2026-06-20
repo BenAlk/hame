@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MEAL_TYPES } from '../constants/index.js'
+import { MEAL_TYPES, NORMALISER_STRATEGIES } from '../constants/index.js'
 import { MemberSummarySchema } from './user.js'
 import { RecipeSummarySchema } from './recipe.js'
 import { ShoppingListSchema } from './shopping.js'
@@ -89,14 +89,22 @@ export type GenerateShoppingListResult = z.infer<typeof GenerateShoppingListResu
 
 // ── Household settings (spec §7.5) ───────────────────────────────────────────
 
-/** Which meal types appear across the meal-plan UI (default: just dinner). */
+export const NormaliserStrategySchema = z.enum(NORMALISER_STRATEGIES)
+
+/** Household-wide settings: meal-plan UI + ingredient-normalisation strategy. */
 export const HouseholdSettingsSchema = z.object({
   enabledMealTypes: z.array(MealTypeSchema),
+  /** Which ingredient-normalisation layer runs on import (spec §10 Phase 4.5). */
+  ingredientNormaliser: NormaliserStrategySchema,
   updatedAt: z.coerce.date(),
 })
 export type HouseholdSettings = z.infer<typeof HouseholdSettingsSchema>
 
-export const UpdateHouseholdSettingsSchema = z.object({
-  enabledMealTypes: z.array(MealTypeSchema).min(1, 'Enable at least one meal type'),
-})
+export const UpdateHouseholdSettingsSchema = z
+  .object({
+    enabledMealTypes: z.array(MealTypeSchema).min(1, 'Enable at least one meal type'),
+    ingredientNormaliser: NormaliserStrategySchema,
+  })
+  .partial()
+  .refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided' })
 export type UpdateHouseholdSettingsInput = z.infer<typeof UpdateHouseholdSettingsSchema>

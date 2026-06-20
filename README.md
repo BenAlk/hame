@@ -59,3 +59,12 @@ pnpm dev
 | `pnpm db:migrate` | Run Prisma migrations                       |
 | `pnpm db:seed`    | Seed demo data                              |
 | `pnpm db:studio`  | Open Prisma Studio                          |
+
+## Optional: LLM ingredient normalisation
+
+Recipe imports clean up free-text ingredients into linkable items. By default this uses a built-in
+parser (and an optional bundled dictionary) — no setup required. For best results you can point Hame
+at a self-hosted [Ollama](https://ollama.com) server: in the app, go to **Settings → Ingredient
+normalisation**, choose **Language model**, enter the server URL (its installed models load into a
+dropdown), and save. If Ollama is unreachable, imports fall back to the dictionary/parser
+automatically — it's never required.

@@ -62,3 +62,18 @@ export type MealType = (typeof MEAL_TYPES)[number]
 
 /** Servings a recipe assumes when none is given — the scaling baseline (§8.5). */
 export const DEFAULT_SERVINGS = 4
+
+// ── Phase 4.5: Ingredient normalisation ──────────────────────────────────────
+
+/**
+ * Layered ingredient-normalisation strategies (spec §10 Phase 4.5). Each layer
+ * builds on the one before it: `BASIC` is the regex parser alone (the always-on
+ * floor), `DICTIONARY` overrides it with a bundled lookup table, and `LLM` adds
+ * a batched Ollama pass on top — every layer falls back to the one below.
+ * The household picks one; the default needs no setup.
+ */
+export const NORMALISER_STRATEGIES = ['BASIC', 'DICTIONARY', 'LLM'] as const
+export type NormaliserStrategy = (typeof NORMALISER_STRATEGIES)[number]
+
+/** Default Ollama model used for ingredient normalisation when none is set. */
+export const DEFAULT_OLLAMA_MODEL = 'llama3.1'

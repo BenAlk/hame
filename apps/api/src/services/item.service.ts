@@ -16,6 +16,7 @@ export function toItem(item: ItemWithTags): Item {
     defaultQuantity: item.defaultQuantity,
     defaultUnit: item.defaultUnit,
     baseUnit: item.baseUnit,
+    typicalUnitGrams: item.typicalUnitGrams,
     minimumQuantity: item.minimumQuantity,
     isStaple: item.isStaple,
     tags: item.tags.map(toTag),
@@ -49,6 +50,7 @@ export async function createItem(input: CreateItemInput, userId: string): Promis
       defaultQuantity: input.defaultQuantity ?? null,
       defaultUnit: input.defaultUnit ?? null,
       baseUnit: input.baseUnit ?? null,
+      typicalUnitGrams: input.typicalUnitGrams ?? null,
       minimumQuantity: input.minimumQuantity ?? null,
       isStaple: input.isStaple ?? false,
       createdById: userId,
@@ -69,6 +71,7 @@ export async function updateItem(id: string, input: UpdateItemInput): Promise<It
       ...(input.defaultQuantity !== undefined && { defaultQuantity: input.defaultQuantity }),
       ...(input.defaultUnit !== undefined && { defaultUnit: input.defaultUnit }),
       ...(input.baseUnit !== undefined && { baseUnit: input.baseUnit }),
+      ...(input.typicalUnitGrams !== undefined && { typicalUnitGrams: input.typicalUnitGrams }),
       ...(input.minimumQuantity !== undefined && { minimumQuantity: input.minimumQuantity }),
       ...(input.isStaple !== undefined && { isStaple: input.isStaple }),
       // `tagIds` fully replaces the item's tag set when present.
@@ -101,7 +104,7 @@ export async function deleteItem(id: string): Promise<void> {
 export async function findOrCreateItemByName(
   name: string,
   userId: string,
-  defaults: { baseUnit?: string | null; isStaple?: boolean } = {},
+  defaults: { baseUnit?: string | null; isStaple?: boolean; typicalUnitGrams?: number | null } = {},
 ): Promise<string> {
   const trimmed = name.trim()
   const existing = await prisma.item.findFirst({
@@ -114,6 +117,7 @@ export async function findOrCreateItemByName(
       createdById: userId,
       baseUnit: defaults.baseUnit ?? null,
       isStaple: defaults.isStaple ?? false,
+      typicalUnitGrams: defaults.typicalUnitGrams ?? null,
     },
   })
   return created.id

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useCreatePet, useDeletePet, usePets } from '@/api/pets'
@@ -27,13 +28,17 @@ export function PetsPage() {
   const { data: pets, isPending } = usePets()
   const deletePet = useDeletePet()
   const [formOpen, setFormOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Pet | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  async function handleDelete(pet: Pet) {
-    if (!window.confirm(`Remove ${pet.name}?`)) return
+  async function confirmDelete() {
+    if (!pendingDelete) return
+    setDeleteError(null)
     try {
-      await deletePet.mutateAsync(pet.id)
+      await deletePet.mutateAsync(pendingDelete.id)
+      setPendingDelete(null)
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.message : 'Could not remove pet.')
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not remove pet.')
     }
   }
 
@@ -68,7 +73,10 @@ export function PetsPage() {
                 </Link>
                 <button
                   type="button"
-                  onClick={() => void handleDelete(pet)}
+                  onClick={() => {
+                    setDeleteError(null)
+                    setPendingDelete(pet)
+                  }}
                   aria-label={`Remove ${pet.name}`}
                   className="shrink-0 rounded-control p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
                 >
@@ -83,6 +91,20 @@ export function PetsPage() {
       <Modal open={formOpen} onClose={() => setFormOpen(false)} title="Add pet">
         <PetForm onDone={() => setFormOpen(false)} />
       </Modal>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove pet?"
+        confirmLabel="Remove pet"
+        pendingLabel="Removing…"
+        pending={deletePet.isPending}
+        error={deleteError}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+      >
+        Remove <span className="font-semibold">{pendingDelete?.name}</span>? This can&apos;t be
+        undone.
+      </ConfirmDialog>
     </main>
   )
 }

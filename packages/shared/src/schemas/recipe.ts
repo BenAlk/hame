@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { NORMALISER_STRATEGIES } from '../constants/index.js'
 import { ItemSchema } from './item.js'
 import { TagSchema } from './tag.js'
 
@@ -23,6 +24,10 @@ export const RecipeIngredientInputSchema = z
     optional: z.boolean().optional(),
     /** Hint for a newly minted item: a non-shoppable staple (salt, water). */
     isStaple: z.boolean().optional(),
+    /** Hint for a newly minted item: its canonical base unit (spec §9.2). */
+    baseUnit: z.string().max(20).nullish(),
+    /** Hint for a newly minted item: grams of one countable unit (1 onion ≈ 110 g). */
+    typicalUnitGrams: z.number().positive().nullish(),
   })
   .refine((d) => Boolean(d.itemId) !== Boolean(d.itemName), {
     message: 'Provide either itemId or itemName, not both',
@@ -113,8 +118,30 @@ export const RecipeSummarySchema = z.object({
 export type RecipeSummary = z.infer<typeof RecipeSummarySchema>
 
 /**
+ * One ingredient on an import draft. Mirrors the create payload's ingredient
+ * but also carries the normalisation provenance — the original `raw` line and
+ * the `source` layer that produced it — so the review UI can show before/after
+ * (spec §10 Phase 4.5).
+ */
+export const DraftIngredientSchema = z.object({
+  itemName: z.string(),
+  quantity: z.number().positive().nullable(),
+  unit: z.string().nullable(),
+  notes: z.string().nullable(),
+  isStaple: z.boolean(),
+  baseUnit: z.string().nullable(),
+  typicalUnitGrams: z.number().positive().nullable(),
+  /** The original free-text line, for before/after review. */
+  raw: z.string(),
+  /** Which normalisation layer produced this line. */
+  source: z.enum(NORMALISER_STRATEGIES),
+})
+export type DraftIngredient = z.infer<typeof DraftIngredientSchema>
+
+/**
  * Draft a URL import produces. It mirrors the create payload so the frontend can
  * review/edit it in the recipe form before saving — nothing is persisted yet.
+ * `warnings` surfaces any normalisation fallbacks (e.g. LLM unreachable).
  */
 export const ImportedRecipeDraftSchema = z.object({
   title: z.string(),
@@ -124,15 +151,10 @@ export const ImportedRecipeDraftSchema = z.object({
   prepTimeMinutes: z.number().nullable(),
   cookTimeMinutes: z.number().nullable(),
   servings: z.number().int(),
-  ingredients: z.array(
-    z.object({
-      itemName: z.string(),
-      quantity: z.number().positive().nullable(),
-      unit: z.string().nullable(),
-      notes: z.string().nullable(),
-      isStaple: z.boolean(),
-    }),
-  ),
+  ingredients: z.array(DraftIngredientSchema),
   steps: z.array(z.object({ text: z.string() })),
+  /** Normalisation strategy that ran, and any fallback notices. */
+  normaliser: z.enum(NORMALISER_STRATEGIES),
+  warnings: z.array(z.string()),
 })
 export type ImportedRecipeDraft = z.infer<typeof ImportedRecipeDraftSchema>

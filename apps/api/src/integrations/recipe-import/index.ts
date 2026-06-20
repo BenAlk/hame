@@ -9,19 +9,34 @@
  * Kept deliberately dependency-free: native `fetch` plus a small JSON-LD
  * extractor, so {@link parseRecipeJsonLd} is unit-testable without the network.
  */
-import { parseIngredientLine } from '@hame/shared'
-import type { ImportedRecipeDraft } from '@hame/shared'
+import {
+  BasicNormaliser,
+  basicLine,
+  type DraftIngredient,
+  type ImportedRecipeDraft,
+  type IngredientNormaliser,
+  type NormalisedIngredient,
+} from '@hame/shared'
 import { HttpError } from '../../lib/http-error.js'
 
 const FETCH_TIMEOUT_MS = 10_000
 const MAX_HTML_BYTES = 5_000_000 // guard against unbounded pages
 
-/** Fetch a recipe page and extract a draft from its schema.org metadata. */
-export async function importRecipeFromUrl(url: string): Promise<ImportedRecipeDraft> {
+/**
+ * Fetch a recipe page and extract a draft, normalising its ingredient lines
+ * with the household's configured normaliser (spec §10 Phase 4.5). The draft is
+ * returned for the user to review/edit before anything is persisted.
+ */
+export async function importRecipeFromUrl(
+  url: string,
+  normaliser: IngredientNormaliser,
+): Promise<ImportedRecipeDraft> {
   const html = await fetchHtml(url)
-  const draft = parseRecipeJsonLd(html, url)
-  if (!draft) throw HttpError.badRequest('No recipe data found at that URL')
-  return draft
+  const raw = extractRawRecipe(html, url)
+  if (!raw) throw HttpError.badRequest('No recipe data found at that URL')
+
+  const { ingredients, warnings } = await normaliser.normalise(raw.ingredientLines)
+  return buildDraft(raw, ingredients, normaliser.strategy, warnings)
 }
 
 async function fetchHtml(url: string): Promise<string> {
@@ -58,28 +73,27 @@ interface JsonLdRecipe {
   recipeInstructions?: unknown
 }
 
+/** The recipe metadata + raw ingredient lines pulled from a page, pre-normalisation. */
+export interface RawRecipe {
+  title: string
+  description: string | null
+  imageUrl: string | null
+  sourceUrl: string
+  prepTimeMinutes: number | null
+  cookTimeMinutes: number | null
+  servings: number
+  ingredientLines: string[]
+  steps: { text: string }[]
+}
+
 /**
- * Parse the first schema.org Recipe found in a page's JSON-LD into a draft.
- * Returns null when no Recipe node is present. Exported for unit testing.
+ * Pull the first schema.org Recipe out of a page's JSON-LD as raw metadata plus
+ * un-normalised ingredient lines. Returns null when no Recipe node is present.
+ * Pure (no network) — exported for unit testing.
  */
-export function parseRecipeJsonLd(html: string, sourceUrl: string): ImportedRecipeDraft | null {
+export function extractRawRecipe(html: string, sourceUrl: string): RawRecipe | null {
   const recipe = findRecipeNode(html)
   if (!recipe) return null
-
-  const ingredientLines = toStringArray(recipe.recipeIngredient ?? recipe.ingredients)
-  const ingredients = ingredientLines
-    .map((line) => parseIngredientLine(line))
-    .filter((p) => p.itemName)
-    .map((p) => ({
-      itemName: p.itemName,
-      quantity: p.quantity,
-      unit: p.unit,
-      notes: p.notes,
-      // Re-affirm staple if the parsed unit has no base unit to sum against.
-      isStaple: p.isStaple,
-    }))
-
-  const steps = parseInstructions(recipe.recipeInstructions).map((text) => ({ text }))
 
   return {
     title: typeof recipe.name === 'string' ? recipe.name.trim() : 'Imported recipe',
@@ -89,9 +103,58 @@ export function parseRecipeJsonLd(html: string, sourceUrl: string): ImportedReci
     prepTimeMinutes: parseIsoDuration(recipe.prepTime),
     cookTimeMinutes: parseIsoDuration(recipe.cookTime),
     servings: parseYield(recipe.recipeYield),
-    ingredients,
-    steps,
+    ingredientLines: toStringArray(recipe.recipeIngredient ?? recipe.ingredients).filter((l) =>
+      l.trim(),
+    ),
+    steps: parseInstructions(recipe.recipeInstructions).map((text) => ({ text })),
   }
+}
+
+/** Assemble a review draft from raw metadata + normalised ingredients. */
+function buildDraft(
+  raw: RawRecipe,
+  normalised: NormalisedIngredient[],
+  strategy: ImportedRecipeDraft['normaliser'],
+  warnings: string[],
+): ImportedRecipeDraft {
+  const ingredients: DraftIngredient[] = normalised
+    .filter((n) => n.canonicalName)
+    .map((n) => ({
+      itemName: n.canonicalName,
+      quantity: n.quantity,
+      unit: n.unit,
+      notes: n.notes,
+      isStaple: n.isStaple,
+      baseUnit: n.baseUnit,
+      typicalUnitGrams: n.typicalUnitGrams,
+      raw: n.raw,
+      source: n.source,
+    }))
+  return {
+    title: raw.title,
+    description: raw.description,
+    imageUrl: raw.imageUrl,
+    sourceUrl: raw.sourceUrl,
+    prepTimeMinutes: raw.prepTimeMinutes,
+    cookTimeMinutes: raw.cookTimeMinutes,
+    servings: raw.servings,
+    ingredients,
+    steps: raw.steps,
+    normaliser: strategy,
+    warnings,
+  }
+}
+
+/**
+ * Parse a page's JSON-LD into a draft using the always-on Basic normaliser.
+ * Convenience for tests/synchronous callers; the live import path uses the
+ * configured normaliser via {@link importRecipeFromUrl}.
+ */
+export function parseRecipeJsonLd(html: string, sourceUrl: string): ImportedRecipeDraft | null {
+  const raw = extractRawRecipe(html, sourceUrl)
+  if (!raw) return null
+  const ingredients = raw.ingredientLines.map((line) => basicLine(line))
+  return buildDraft(raw, ingredients, new BasicNormaliser().strategy, [])
 }
 
 /** Pull every `<script type="application/ld+json">` block and find a Recipe. */

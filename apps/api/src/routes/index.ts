@@ -14,6 +14,7 @@ import { choreInstancesRouter } from './chore-instances.js'
 import { recipesRouter } from './recipes.js'
 import { mealPlansRouter } from './meal-plans.js'
 import { householdSettingsRouter } from './household-settings.js'
+import { ollamaConfigRouter } from './ollama-config.js'
 
 export const apiRouter = Router()
 
@@ -32,3 +33,4 @@ apiRouter.use('/chore-instances', choreInstancesRouter)
 apiRouter.use('/recipes', recipesRouter)
 apiRouter.use('/meal-plans', mealPlansRouter)
 apiRouter.use('/household-settings', householdSettingsRouter)
+apiRouter.use('/ollama-config', ollamaConfigRouter)

@@ -168,6 +168,14 @@ bg + white text. Bin chips: solid bin colour squares (6px radius).
 monospace caption naming the expected content. This is the standard pattern for any
 user-supplied image (recipe photos, pet photos, Immich slots).
 
+**Modal** — centred `surface` panel (`20px` radius, `1px line` border, single `ambient` shadow) on
+a dimmed backdrop; serif title with a `muted` close affordance, closes on Escape / backdrop / Cancel.
+Used for create/edit forms and the shopping-list archive flow.
+
+**Confirm dialog** — the modal shell with a short prompt, a `ghost` **Cancel** and a `destructive`
+confirm button (e.g. "Delete recipe"). Replaces native browser prompts for every destructive action;
+shows a pending label while in flight and surfaces errors inline above the buttons.
+
 ---
 
 ## 7. Widget Inventory (per `hame-specification.md` §8.12)
