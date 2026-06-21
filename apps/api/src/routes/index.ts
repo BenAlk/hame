@@ -15,6 +15,10 @@ import { recipesRouter } from './recipes.js'
 import { mealPlansRouter } from './meal-plans.js'
 import { householdSettingsRouter } from './household-settings.js'
 import { ollamaConfigRouter } from './ollama-config.js'
+import { binsRouter } from './bins.js'
+import { customEventsRouter } from './custom-events.js'
+import { calendarRouter } from './calendar.js'
+import { calendarSourcesRouter } from './calendar-sources.js'
 
 export const apiRouter = Router()
 
@@ -34,3 +38,7 @@ apiRouter.use('/recipes', recipesRouter)
 apiRouter.use('/meal-plans', mealPlansRouter)
 apiRouter.use('/household-settings', householdSettingsRouter)
 apiRouter.use('/ollama-config', ollamaConfigRouter)
+apiRouter.use('/bins', binsRouter)
+apiRouter.use('/custom-events', customEventsRouter)
+apiRouter.use('/calendar', calendarRouter)
+apiRouter.use('/calendar-sources', calendarSourcesRouter)

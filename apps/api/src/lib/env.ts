@@ -39,6 +39,9 @@ const EnvSchema = z.object({
   ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-f]{64}$/i, 'ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
+  // Cron expression for refreshing external calendar feeds (spec §8.10). The API
+  // must run single-instance or this double-fires (spec §4). Default: every 30 min.
+  CALENDAR_SYNC_CRON: z.string().default('*/30 * * * *'),
 })
 
 const parsed = EnvSchema.safeParse(process.env)

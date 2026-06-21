@@ -45,21 +45,79 @@ async function main() {
   })
 
   // ── Tags ───────────────────────────────────────────────────────────────────
-  const tagNames: { name: string; colour?: string }[] = [
-    { name: 'quick-add', colour: '#6f8169' },
-    { name: 'dairy', colour: '#2f6fb0' },
-    { name: 'frozen', colour: '#2f6fb0' },
-    { name: 'bakery', colour: '#c0492f' },
-    { name: 'produce', colour: '#6f8169' },
+  // A curated starter palette grouped by purpose. Colours follow the Hearth
+  // tokens (design-specification.md §3) and are assigned per *group*, not per
+  // tag, so chips stay calm and scan by category. Recipe tags drive library
+  // browsing; ingredient tags drive shopping-list grouping (§8.3) and the pantry
+  // storage hint. `quick-add` is the one tag that also drives UI behaviour (§8.2).
+  // This is a strong default, not exhaustive — the long tail (more cuisines,
+  // dish types, occasions) is created on the fly when tagging items/recipes.
+  const tagGroups: { colour: string; names: string[] }[] = [
+    // Behavioural (shopping quick-add dropdown)
+    { colour: '#6f8169', names: ['quick-add'] },
+    // Recipe — course & occasion
+    {
+      colour: '#6f8169',
+      names: [
+        'breakfast',
+        'brunch',
+        'lunch',
+        'dinner',
+        'snack',
+        'dessert',
+        'side',
+        'starter',
+        'party-food',
+        'roast-dinner',
+        'bbq',
+      ],
+    },
+    // Recipe — effort & time
+    {
+      colour: '#857a6c',
+      names: ['quick', 'one-pot', 'slow-cooker', 'batch-cook', 'freezer-friendly'],
+    },
+    // Recipe — cuisine
+    {
+      colour: '#7d2b3e',
+      names: ['british', 'italian', 'indian', 'chinese', 'thai', 'mexican'],
+    },
+    // Dietary — shared by recipes & ingredients
+    {
+      colour: '#d16a6a',
+      names: ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'healthy'],
+    },
+    // Ingredient — storage type (drives the pantry default + expiry hint)
+    { colour: '#2f6fb0', names: ['fresh', 'chilled', 'frozen', 'ambient'] },
+    // Ingredient — shop section / aisle (drives shopping-list grouping, §8.3)
+    {
+      colour: '#9aa0a6',
+      names: [
+        'produce',
+        'dairy',
+        'meat',
+        'fish',
+        'bakery',
+        'tinned',
+        'dry-goods',
+        'condiments',
+        'snacks',
+        'drinks',
+        'household',
+        'pet',
+      ],
+    },
   ]
   const tags: Record<string, string> = {}
-  for (const t of tagNames) {
-    const tag = await prisma.tag.upsert({
-      where: { name: t.name },
-      update: {},
-      create: { name: t.name, colour: t.colour ?? null },
-    })
-    tags[t.name] = tag.id
+  for (const group of tagGroups) {
+    for (const name of group.names) {
+      const tag = await prisma.tag.upsert({
+        where: { name },
+        update: { colour: group.colour }, // keep the starter palette authoritative on re-seed
+        create: { name, colour: group.colour },
+      })
+      tags[name] = tag.id
+    }
   }
 
   // ── Items ────────────────────────────────────────────────────────────────—
@@ -76,27 +134,32 @@ async function main() {
       baseUnit: 'ml',
       minimumQuantity: 2000,
       defaultUnit: 'bottle',
-      tags: ['quick-add', 'dairy'],
+      tags: ['quick-add', 'dairy', 'chilled'],
     },
     {
       name: 'Bread',
       baseUnit: 'unit',
       minimumQuantity: 1,
       defaultUnit: 'loaf',
-      tags: ['quick-add', 'bakery'],
+      tags: ['quick-add', 'bakery', 'fresh'],
     },
     {
       name: 'Eggs',
       baseUnit: 'unit',
       minimumQuantity: 6,
       defaultUnit: 'box',
-      tags: ['quick-add', 'dairy'],
+      tags: ['quick-add', 'dairy', 'chilled'],
     },
-    { name: 'Butter', baseUnit: 'g', minimumQuantity: 250, tags: ['dairy'] },
-    { name: 'Bananas', baseUnit: 'unit', defaultUnit: 'bunch', tags: ['quick-add', 'produce'] },
-    { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen'] },
-    { name: 'Pasta', baseUnit: 'g', minimumQuantity: 500 },
-    { name: 'Coffee', baseUnit: 'g', minimumQuantity: 200, tags: ['quick-add'] },
+    { name: 'Butter', baseUnit: 'g', minimumQuantity: 250, tags: ['dairy', 'chilled'] },
+    {
+      name: 'Bananas',
+      baseUnit: 'unit',
+      defaultUnit: 'bunch',
+      tags: ['quick-add', 'produce', 'fresh'],
+    },
+    { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen', 'meat'] },
+    { name: 'Pasta', baseUnit: 'g', minimumQuantity: 500, tags: ['dry-goods', 'ambient'] },
+    { name: 'Coffee', baseUnit: 'g', minimumQuantity: 200, tags: ['quick-add', 'ambient'] },
   ]
 
   const items: Record<string, string> = {}

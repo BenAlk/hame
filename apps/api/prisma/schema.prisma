@@ -6,6 +6,7 @@
 //   Phase 2   — Tags, Items, Shopping lists, Storage locations, Pantry
 //   Phase 3   — Pets, Chores, Chore instances
 //   Phase 4   — Recipes, Meal plan entries, Household settings
+//   Phase 5   — Bin collections, Custom events, Calendar sources + synced events
 
 generator client {
   provider = "prisma-client-js"
@@ -41,6 +42,7 @@ model User {
   instancesCompleted   ChoreInstance[]    @relation("InstanceCompleter")
   recipesCreated       Recipe[]
   mealPlanEntries      MealPlanEntry[]
+  customEventsCreated  CustomEvent[]
 }
 
 enum Role {
@@ -316,4 +318,82 @@ model OllamaConfig {
   isActive        Boolean   @default(false)
   lastConnectedAt DateTime?
   updatedAt       DateTime  @updatedAt
+}
+
+// ── Phase 5: Bins ────────────────────────────────────────────────────────────
+
+/// A kerbside bin collection schedule (spec §8.9). Recurs but is never completed
+/// and never one-off; INTERVAL (fortnightly / 4-weekly) anchors to `startDate`.
+/// Collection dates are computed from the schedule, not stored.
+model BinCollection {
+  id                String         @id @default(uuid())
+  name              String // "Burgundy bin"
+  colour            String // hex for UI
+  icon              String?
+  recurrenceType    RecurrenceType // ONE_OFF unused for bins (enforced in Zod)
+  intervalDays      Int?
+  weekdays          Weekday[]
+  dayOfMonth        Int?
+  startDate         DateTime?      @db.Date // anchor for INTERVAL
+  remindNightBefore Boolean        @default(true)
+  remindMorningOf   Boolean        @default(true)
+  isActive          Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+}
+
+// ── Phase 5: Custom events ───────────────────────────────────────────────────
+
+/// A free-form household calendar entry (spec §8.10) — date night, a visit, etc.
+/// Surfaces in the aggregated calendar feed alongside meals, chores and bins.
+model CustomEvent {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  allDay      Boolean   @default(false)
+  colour      String?
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ── Phase 5: External calendar sync ──────────────────────────────────────────
+
+/// An external calendar feed (spec §8.10). ICAL feeds are fetched + parsed on a
+/// cron schedule into cached `SyncedEvent` rows; HOME_ASSISTANT lands in Phase 6.
+model CalendarSource {
+  id           String             @id @default(uuid())
+  name         String // "Ben's Google"
+  type         CalendarSourceType @default(ICAL)
+  url          String // iCal URL (or HA entity, later)
+  colour       String // hex for UI
+  isActive     Boolean            @default(true)
+  lastSyncedAt DateTime?
+  events       SyncedEvent[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+}
+
+/// A cached event from an external source. The sync replaces a source's rows
+/// wholesale, so these are a derived cache — never edited in Hame.
+model SyncedEvent {
+  id          String         @id @default(uuid())
+  sourceId    String
+  source      CalendarSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  externalId  String // dedupe key within a source (UID, plus occurrence for recurring)
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  allDay      Boolean        @default(false)
+
+  @@unique([sourceId, externalId])
+}
+
+enum CalendarSourceType {
+  ICAL
+  HOME_ASSISTANT
 }

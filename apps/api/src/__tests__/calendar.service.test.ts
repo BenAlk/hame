@@ -1,0 +1,147 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const mealFindMany = vi.fn()
+const instanceFindMany = vi.fn()
+const binFindMany = vi.fn()
+const eventFindMany = vi.fn()
+const syncedFindMany = vi.fn()
+
+vi.mock('../lib/prisma.js', () => ({
+  prisma: {
+    mealPlanEntry: { findMany: mealFindMany },
+    choreInstance: { findMany: instanceFindMany },
+    binCollection: { findMany: binFindMany },
+    customEvent: { findMany: eventFindMany },
+    syncedEvent: { findMany: syncedFindMany },
+  },
+}))
+
+const { getCalendar } = await import('../services/calendar.service.js')
+
+const day = (y: number, m: number, d: number) => new Date(y, m, d)
+
+beforeEach(() => {
+  for (const fn of [mealFindMany, instanceFindMany, binFindMany, eventFindMany, syncedFindMany]) {
+    fn.mockReset()
+    fn.mockResolvedValue([])
+  }
+})
+
+describe('getCalendar', () => {
+  it('merges meals, chores, computed bins and events, sorted by start time', async () => {
+    mealFindMany.mockResolvedValue([
+      {
+        id: 'm1',
+        date: day(2026, 5, 24),
+        mealType: 'DINNER',
+        customLabel: null,
+        recipe: { title: 'Bolognese' },
+      },
+    ])
+    instanceFindMany.mockResolvedValue([
+      {
+        id: 'c1',
+        dueDate: day(2026, 5, 22),
+        chore: { title: 'Hoover' },
+        assignedTo: { colour: '#6f8169' },
+      },
+    ])
+    binFindMany.mockResolvedValue([
+      {
+        id: 'b1',
+        name: 'Burgundy bin',
+        colour: '#7d2b3e',
+        recurrenceType: 'WEEKLY',
+        intervalDays: null,
+        weekdays: ['TUESDAY'],
+        dayOfMonth: null,
+        startDate: null,
+      },
+    ])
+    eventFindMany.mockResolvedValue([
+      {
+        id: 'e1',
+        title: 'Date night',
+        startTime: day(2026, 5, 26),
+        endTime: null,
+        allDay: false,
+        colour: '#d16a6a',
+      },
+    ])
+
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+
+    // Sorted: chore (22), bin Tue (23), meal (24), event (26)
+    expect(events.map((e) => e.type)).toEqual(['CHORE', 'BIN', 'MEAL', 'EVENT'])
+    const bin = events.find((e) => e.type === 'BIN')!
+    expect(bin).toMatchObject({
+      title: 'Burgundy bin',
+      colour: '#7d2b3e',
+      allDay: true,
+      sourceId: 'b1',
+    })
+    expect(bin.id).toBe('BIN:b1:2026-06-23')
+    expect(events.find((e) => e.type === 'CHORE')).toMatchObject({
+      title: 'Hoover',
+      colour: '#6f8169',
+    })
+    expect(events.find((e) => e.type === 'MEAL')).toMatchObject({
+      title: 'Bolognese',
+      colour: null,
+    })
+  })
+
+  it('falls back to custom label then meal type for a recipe-less meal', async () => {
+    mealFindMany.mockResolvedValue([
+      {
+        id: 'm1',
+        date: day(2026, 5, 24),
+        mealType: 'DINNER',
+        customLabel: 'Takeaway',
+        recipe: null,
+      },
+      { id: 'm2', date: day(2026, 5, 25), mealType: 'LUNCH', customLabel: null, recipe: null },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events.map((e) => e.title)).toEqual(['Takeaway', 'LUNCH'])
+  })
+
+  it('includes synced events carrying their source colour', async () => {
+    syncedFindMany.mockResolvedValue([
+      {
+        id: 's1',
+        title: 'Team offsite',
+        startTime: day(2026, 5, 25),
+        endTime: null,
+        allDay: true,
+        source: { colour: '#2f6fb0' },
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({
+      type: 'SYNCED',
+      title: 'Team offsite',
+      colour: '#2f6fb0',
+      sourceId: 's1',
+      id: 'SYNCED:s1',
+    })
+  })
+
+  it('skips a bin with an invalid ONE_OFF recurrence rather than throwing', async () => {
+    binFindMany.mockResolvedValue([
+      {
+        id: 'b1',
+        name: 'Odd bin',
+        colour: '#7d2b3e',
+        recurrenceType: 'ONE_OFF',
+        intervalDays: null,
+        weekdays: [],
+        dayOfMonth: null,
+        startDate: null,
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events).toEqual([])
+  })
+})

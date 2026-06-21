@@ -106,7 +106,7 @@ Rather than wiring together existing self-hosted apps (Grocy, Mealie, Vikunja), 
 | Validation     | Zod                  | TS-first; **shared schemas with backend**            |
 | Dates          | date-fns             | Modular, tree-shakeable                              |
 | Icons          | Lucide React         | Clean, large selection                               |
-| Calendar UI    | FullCalendar         | Polished, multiple views                             |
+| Calendar UI    | Custom grid (date-fns) | Hand-built to the Hearth design; FullCalendar dropped as off-brand — see §10 Phase 5 |
 | Dashboard grid | react-grid-layout    | Drag-and-drop widget layout                          |
 | WebSocket      | Native WebSocket API | Real-time updates from the Hame backend (incl. HA)   |
 | PWA            | Vite PWA Plugin      | Installable on tablet/phone                          |
@@ -1034,7 +1034,7 @@ Recipe CRUD (manual + URL import via schema.org), meal plan calendar (week + mon
 
 **Delivered**: A single Phase 4 migration adding `Recipe`, `RecipeIngredient`, `RecipeStep`, `MealPlanEntry` and the `HouseholdSettings` singleton (with the `MealType` enum, the `User` back-relations, the `Recipe`↔`Tag` link and the `Item.recipeUses` relation; ingredient `quantity` is nullable for unquantified staples like "salt to taste"). Shared `@hame/shared` gains a pure `parseIngredientLine` helper — splitting free-text ingredient strings into quantity (decimals, `1/2`, vulgar fractions, `1 1/2`, ranges), display unit, name and a trailing prep note, with staple detection — plus recipe / meal-plan / household-settings Zod schemas, and the §9.2 unit table extended with the convertible cooking measures `tsp`/`tbsp`/`cup` (→ ml). API vertical slices (thin controllers, thick services) cover recipes (CRUD with ingredients/steps replaced wholesale in a transaction, each ingredient resolved to a linked `Item` via find-or-create that infers `baseUnit` from the display unit, plus a delete guard when a recipe is still on the plan), a dependency-free **URL importer** (`integrations/recipe-import`: native fetch + a JSON-LD extractor that finds a schema.org `Recipe` inside `@graph`/`@type` arrays and returns an editable draft, persisting nothing), meal-plan entries (recipe-or-custom-label, servings override), the household-settings singleton (admin-only writes), and the **killer feature** — `POST /api/meal-plans/generate-shopping-list`, which scales each planned recipe's ingredients by servings, sums per `Item` in base units, subtracts pantry stock, excludes staples, surfaces unconvertible units as warnings rather than mis-summing (spec §9.2), and creates a shopping list for the shortfall. Frontend: TanStack Query hooks for every resource, a Recipes library (search, grid, create/edit form with dynamic ingredient/step rows, paste-a-URL import that seeds the form), a recipe detail page with cook-along step ticking, a weekly meal-plan grid (week navigation, per-cell add/edit, an admin meal-type toggle, and the generate-shopping-list dialog with its pantry-aware result + warnings), a Today's-meals dashboard widget, and nav/route wiring. Verified end-to-end: typecheck / lint / format green, 87 tests pass (incl. the ingredient parser, the JSON-LD importer and the generate-shopping-list scaling / pantry-subtraction / staple-exclusion / unit-warning cases), web build clean, and a live API smoke test of the full import → create-recipe → plan-meal → generate-list-with-pantry-subtraction flow.
 
-> Note: the meal-plan **monthly** calendar view is deferred to Phase 5, where it can ride on the FullCalendar component the aggregated calendar introduces; the weekly grid ships here.
+> Note: the meal-plan **monthly** calendar view is deferred to Phase 5, where it is subsumed by the aggregated calendar (which already surfaces meal entries); the weekly grid ships here.
 
 ### Phase 4.5 — Ingredient Normalisation Strategies ✅ Complete (20-06-2026)
 
@@ -1058,11 +1058,47 @@ Design (still the shape that shipped — see §12 "Ingredient Normalisation"):
 
 **Why split out of Phase 4**: the deterministic engine ships first and works; this layer is the quality pass that tackles the fuzzy long tail without making the shopping-list maths depend on a model being present or reproducible.
 
-### Phase 5 — Bins, Calendar & Events
+### Phase 5 — Bins, Calendar & Events ✅ Complete (21-06-2026)
 
-Bin schedules (manual), custom events, iCal sync, aggregated calendar endpoint, FullCalendar component.
+Bin schedules (manual), custom events, iCal sync, aggregated calendar endpoint, calendar UI.
 
 **Goal**: One place to see everything happening.
+
+**Delivered**: Two Phase 5 migrations — `phase5_bins_events` (`BinCollection`, `CustomEvent`) and `phase5_calendar_sources` (`CalendarSource`, `SyncedEvent`, the `CalendarSourceType` enum) — split so each slice landed cleanly. Shared `@hame/shared` gains bin recurrence helpers extending the Phase 3 engine — `nextBinCollection` and `binOccurrencesInRange`, which (unlike chores) anchor an INTERVAL to a fixed `startDate` so a fortnightly cycle lands on the right weeks, and carry no completion or ONE_OFF — plus Zod schemas for bins (recurrence refinement requiring a `startDate` anchor for INTERVAL), custom events (end-after-start), the unified `CalendarEvent` feed shape and calendar sources, and the `CALENDAR_EVENT_TYPES` / `CALENDAR_SOURCE_TYPES` discriminators.
+
+API vertical slices (thin controllers, thick services) cover bins (CRUD, the public shape computing `nextCollection` from the schedule), custom events, and the **aggregated calendar** (§8.10) — `GET /api/calendar?start&end` merging meal entries, chore instances, computed bin occurrences, custom events and synced external events into one live-queried, sorted feed with no materialised table (§9.5); all-day rows are normalised to UTC-midnight so they land on the right day for any viewer. External sync adds an `integrations/ical` layer (`node-ical`) that expands recurring events (RRULE) across a bounded horizon, honouring EXDATE and per-occurrence overrides, behind a `CalendarSource` service that fetches and **replaces a source's cached `SyncedEvent` rows wholesale** in a transaction, degrading gracefully — a failed fetch reports a warning and leaves the existing cache intact rather than wiping it. A `node-cron` job refreshes every active iCal source on a schedule (`CALENDAR_SYNC_CRON`, default every 30 min; the API must run single-instance or jobs double-fire, §4), with a manual `POST /api/calendar-sources/:id/sync` for on-demand refresh.
+
+Web: TanStack Query hooks for every resource, a **custom Hearth month-grid calendar** (month navigation, a colour-coded legend, per-day event pills, click-a-day to add a custom event, click-to-edit/delete custom events while other event types stay read-only), a Bins page (CRUD with a recurrence-aware form and a plain-English "next collection · in N days" line), a "Next bin day" dashboard widget (serif countdown + colour-coded bin squares), and an external-calendars manager (add iCal URL, per-source sync/remove, event counts) wired into the calendar. Verified end-to-end: typecheck / lint / format green, 128 tests pass (123 API + 5 web; incl. the bin engine's interval-anchoring and Feb-clamping, the calendar aggregation across all sources, and the iCal parser's recurrence expansion / horizon filtering), web build clean, plus live smoke tests of the calendar endpoint, the bin/event CRUD, and a full iCal add → sync → aggregated-feed flow (incl. graceful degrade on an unreachable feed).
+
+> **Calendar UI — deviation from the spec.** §4 and this roadmap originally named **FullCalendar**; the calendar instead ships as a hand-built month grid on the Hearth design tokens (the same primitives as the meal-plan grid). FullCalendar's bundled styling reads as a "SaaS console" against the bespoke "paper" design and would need heavy theming — a custom grid is on-brand, dependency-free and gives full control. The deferred monthly meal-plan view is subsumed by this calendar (which already surfaces meal entries); week / agenda views remain available as later polish.
+
+### Phase 5.5 — CalDAV Server (Two-Way Calendar)
+
+_Status: planned — design below; not yet built._
+
+An **opt-in** CalDAV server so household members can read **and write** Hame's calendar from their phone's native calendar app (via a client such as DAVx5 on Android), with no native Hame app and no third-party cloud. **Off by default**: with it disabled Hame behaves exactly as it does after Phase 5 — an in-app calendar plus read-only external subscriptions — so households that don't want it pay nothing.
+
+**Goal**: Edit the household calendar from your phone, both directions, fully self-hosted.
+
+**Why a server, not a sync.** Hame _becomes_ the calendar rather than mirroring an external one. The phone (DAVx5) is a thin client editing Hame's events directly, so there is a single source of truth and **none of the two-way reconciliation / conflict-resolution** a Hame↔external-server sync would require — write support falls out of the protocol. (A native Android widget was considered and rejected: it would need a native app, violating the PWA-only non-goal in §3, and would put fragile sync logic on the device.)
+
+**Design**
+
+- **One event model, optional server layer — not two modes.** The CalDAV server only ever _exposes_ Hame's own events; it doesn't change how they are stored or created. So "what we have today" is simply the server switched off. A household toggle (admin Settings, default **off**) gates whether Hame answers CalDAV requests and whether the app-password UI appears; the data model and the web event form are identical either way. This mirrors the §10 Phase 4.5 normaliser-strategy pattern — a lightweight default, opt into the richer thing.
+- **Storage: the iCalendar text is canonical; structured fields are a cache.** The Phase 5 `CustomEvent` model is absorbed into a richer `CalendarObject` that stores the **verbatim `.ics` (VCALENDAR) blob** plus extracted `title` / `startTime` / `endTime` / `allDay` for Hame's own grid and the aggregated feed (§8.10). A phone can author a rich event (RRULE recurrence, alarms, attendees, timezones); keeping the raw blob makes the round-trip **lossless** without Hame having to model every iCal feature. Hame's web form writes a _simple_ event and generates a minimal VEVENT from it; a CalDAV `PUT` stores the rich blob and re-extracts the summary fields — either way the raw `.ics` is the source of truth.
+- **Auth: per-user CalDAV app passwords.** DAVx5 uses HTTP Basic auth, not Hame's session cookie, so each user mints a revocable **app password** in Settings (stored argon2-hashed, mirroring the integration-credential pattern). The real account password is never exposed to the device.
+- **Protocol surface (v1) — enough for DAVx5, no more.** `OPTIONS` (advertise `calendar-access`); principal + `calendar-home-set` discovery via `PROPFIND`; `PROPFIND` the collection (resources with `getetag`); `REPORT calendar-query` (time-range) and `calendar-multiget`; `GET` / `PUT` / `DELETE` of individual `.ics` resources with ETag `If-Match` concurrency. **`sync-collection` (RFC 6578) is deliberately deferred** — DAVx5 falls back to PROPFIND + ETag diffing, which is correct, just less efficient — keeping the trickiest plumbing (tombstones, monotonic sync tokens) out of v1.
+- **Scope split.**
+  - **v1 — two-way "Household events."** The one read-write collection (absorbing `CustomEvent`), app passwords, and the protocol surface above. Delivers the actual ask: edit Hame's shared calendar from a phone, both directions.
+  - **v2 — read-only derived calendars.** Expose **Meals**, **Chores** and **Bins** as separate read-only CalDAV collections (synthetic UIDs / ETags computed from the underlying rows) so a phone shows _everything Hame knows_ — bin days, chores and tonight's meal alongside events. Deferred because read-only collections need the ETag/sync bookkeeping v1 skips.
+- **Coexists with read-only subscriptions.** The Phase 5 iCal **subscription** sync (`CalendarSource` / `SyncedEvent`) is unrelated and remains available in both states — that _consumes_ outside calendars (sports fixtures, a published work calendar); CalDAV _serves_ Hame's own. Both can run at once.
+- **Switching is cheap and reversible.** Turning the server **on** back-fills valid `.ics` / UIDs for any events created while off (a one-time, invisible step). Turning it **off** simply stops answering the phone; events remain. No lock-in either way.
+
+**Risks / gotchas**
+
+- **Cloudflare in front.** DAVx5 reaches Hame through the existing proxy using non-GET WebDAV methods (`PROPFIND`, `REPORT`, `PUT`); a WAF rule could block them, so this needs an early end-to-end test over the real proxy, not just localhost.
+- **Recurrence in Hame's _own_ UI.** The round-trip is lossless, but Hame's grid would show the master of a recurring event in v1; fully expanding RRULE inside Hame's own views is a later refinement (the `node-ical` parser from the subscription sync already does the expansion).
+- **A real phase.** This is the largest calendar slice — a bounded but genuine protocol implementation — and is sized accordingly.
 
 ### Phase 6 — Home Assistant Integration
 

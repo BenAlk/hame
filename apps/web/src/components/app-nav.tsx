@@ -10,7 +10,9 @@ const LINKS = [
   { to: '/pantry', label: 'Pantry' },
   { to: '/recipes', label: 'Recipes' },
   { to: '/meal-plan', label: 'Meal plan' },
+  { to: '/calendar', label: 'Calendar' },
   { to: '/chores', label: 'Chores' },
+  { to: '/bins', label: 'Bins' },
   { to: '/pets', label: 'Pets' },
 ] as const
 

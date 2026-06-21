@@ -77,3 +77,28 @@ export type NormaliserStrategy = (typeof NORMALISER_STRATEGIES)[number]
 
 /** Default Ollama model used for ingredient normalisation when none is set. */
 export const DEFAULT_OLLAMA_MODEL = 'llama3.1'
+
+// ── Phase 5: Bins, calendar & events ─────────────────────────────────────────
+
+/**
+ * Bins recur on a fixed schedule but are never "completed" and never one-off,
+ * so they use the recurrence types minus ONE_OFF (spec §8.9). INTERVAL anchors
+ * to a `startDate` for fortnightly / 4-weekly collections.
+ */
+export const BIN_RECURRENCE_TYPES = ['INTERVAL', 'WEEKLY', 'DATE_OF_MONTH'] as const
+export type BinRecurrenceType = (typeof BIN_RECURRENCE_TYPES)[number]
+
+/**
+ * Discriminator for the aggregated calendar feed (spec §8.10). One unified event
+ * shape is returned for rows pulled from several tables; `type` says which.
+ * SYNCED is an event pulled from an external `CalendarSource` (iCal).
+ */
+export const CALENDAR_EVENT_TYPES = ['MEAL', 'CHORE', 'BIN', 'EVENT', 'SYNCED'] as const
+export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number]
+
+/**
+ * External calendar source kinds (spec §8.10). `ICAL` feeds are fetched + parsed
+ * on a schedule; `HOME_ASSISTANT` calendars arrive with the HA integration (Phase 6).
+ */
+export const CALENDAR_SOURCE_TYPES = ['ICAL', 'HOME_ASSISTANT'] as const
+export type CalendarSourceType = (typeof CALENDAR_SOURCE_TYPES)[number]

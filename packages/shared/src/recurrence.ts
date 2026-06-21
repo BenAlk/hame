@@ -1,13 +1,20 @@
 /**
- * Recurrence engine for chores (spec §8.7, §9.4).
+ * Recurrence engine for chores (spec §8.7, §9.4) and bins (spec §8.9).
  *
  * A `Chore` is a template; each occurrence is a `ChoreInstance` with a due date.
  * These pure date helpers compute when the next occurrence falls — no Prisma, so
  * they're unit-testable and the frontend can preview "next due" too.
  *
- * Two entry points:
+ * Chore entry points:
  *   - {@link firstDueDate} — the opening instance when a chore is created.
  *   - {@link nextDueDate}  — the following instance once one is completed.
+ *
+ * Bins differ: they are never "completed", and their INTERVAL schedules anchor
+ * to a fixed `startDate` (a known fortnightly collection date), so they get
+ * their own pair that computes occurrences purely from the schedule:
+ *   - {@link nextBinCollection}    — the next collection on or after a date.
+ *   - {@link binOccurrencesInRange} — every collection within a date window
+ *     (the aggregated calendar materialises bins this way, spec §8.10).
  *
  * All dates are treated as calendar days (time component stripped) to match the
  * `@db.Date` columns the due dates are stored in.
@@ -126,5 +133,98 @@ export function nextDueDate(
       return monthlyOccurrence(prev.dueDate, rule.dayOfMonth, false)
     case 'ONE_OFF':
       return null
+  }
+}
+
+// ── Bins (spec §8.9) ─────────────────────────────────────────────────────────
+
+/**
+ * A bin's collection schedule. Unlike a chore it has no completion and no
+ * ONE_OFF; an INTERVAL (e.g. fortnightly) anchors to `startDate` — a real past
+ * collection date — so the cycle lands on the right weeks.
+ */
+export interface BinScheduleRule {
+  recurrenceType: 'INTERVAL' | 'WEEKLY' | 'DATE_OF_MONTH'
+  intervalDays?: number | null
+  weekdays?: Weekday[] | null
+  dayOfMonth?: number | null
+  startDate?: Date | null // anchor for INTERVAL
+}
+
+/** Whole-day difference between two dates, DST-safe (rounded to the nearest day). */
+function dayDiff(a: Date, b: Date): number {
+  return Math.round((startOfDay(a).getTime() - startOfDay(b).getTime()) / 86_400_000)
+}
+
+/** First INTERVAL occurrence on or after `from`, stepping from the `start` anchor. */
+function nextInterval(start: Date, interval: number, from: Date): Date {
+  const anchor = startOfDay(start)
+  const diff = dayDiff(from, anchor)
+  if (diff <= 0) return anchor
+  const steps = Math.ceil(diff / interval)
+  return addDays(anchor, steps * interval)
+}
+
+/**
+ * The next bin collection on or after `from` (default today), or null when the
+ * schedule is missing the field it needs (e.g. INTERVAL without a startDate).
+ */
+export function nextBinCollection(rule: BinScheduleRule, from: Date = new Date()): Date | null {
+  switch (rule.recurrenceType) {
+    case 'INTERVAL':
+      return rule.intervalDays && rule.startDate
+        ? nextInterval(rule.startDate, rule.intervalDays, from)
+        : null
+    case 'WEEKLY':
+      return weekdayOccurrence(from, rule.weekdays, true)
+    case 'DATE_OF_MONTH':
+      return monthlyOccurrence(from, rule.dayOfMonth, true)
+  }
+}
+
+/**
+ * Every bin collection date within `[rangeStart, rangeEnd]` (inclusive). Used by
+ * the aggregated calendar to materialise bins on the fly (spec §8.10) — no rows
+ * are stored. Returns an empty array when the schedule is incomplete.
+ */
+export function binOccurrencesInRange(
+  rule: BinScheduleRule,
+  rangeStart: Date,
+  rangeEnd: Date,
+): Date[] {
+  const end = startOfDay(rangeEnd)
+  const out: Date[] = []
+
+  switch (rule.recurrenceType) {
+    case 'INTERVAL': {
+      if (!rule.intervalDays || rule.intervalDays <= 0 || !rule.startDate) return out
+      for (
+        let d = nextInterval(rule.startDate, rule.intervalDays, rangeStart);
+        d <= end;
+        d = addDays(d, rule.intervalDays)
+      ) {
+        out.push(d)
+      }
+      return out
+    }
+    case 'WEEKLY': {
+      if (!rule.weekdays || rule.weekdays.length === 0) return out
+      for (let d = startOfDay(rangeStart); d <= end; d = addDays(d, 1)) {
+        const next = weekdayOccurrence(d, rule.weekdays, true)
+        if (next && +next === +d) out.push(d)
+      }
+      return out
+    }
+    case 'DATE_OF_MONTH': {
+      if (!rule.dayOfMonth) return out
+      for (
+        let d = monthlyOccurrence(rangeStart, rule.dayOfMonth, true);
+        d && d <= end;
+        d = monthlyOccurrence(addDays(d, 1), rule.dayOfMonth, true)
+      ) {
+        out.push(d)
+      }
+      return out
+    }
   }
 }

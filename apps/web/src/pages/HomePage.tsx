@@ -6,6 +6,7 @@ import { ExpiringSoonWidget } from '@/components/features/widgets/expiring-soon-
 import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
 import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-widget'
 import { PetRemindersWidget } from '@/components/features/widgets/pet-reminders-widget'
+import { NextBinDayWidget } from '@/components/features/widgets/next-bin-day-widget'
 import { useCurrentUser } from '@/api/auth'
 
 function greeting(date = new Date()): string {
@@ -36,6 +37,7 @@ export function HomePage() {
         <TodaysMealsWidget />
         <ActiveShoppingWidget />
         <TodaysChoresWidget />
+        <NextBinDayWidget />
         <PetRemindersWidget />
         <ExpiringSoonWidget />
         <LowStockWidget />
