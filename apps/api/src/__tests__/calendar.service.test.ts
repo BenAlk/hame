@@ -11,7 +11,7 @@ vi.mock('../lib/prisma.js', () => ({
     mealPlanEntry: { findMany: mealFindMany },
     choreInstance: { findMany: instanceFindMany },
     binCollection: { findMany: binFindMany },
-    customEvent: { findMany: eventFindMany },
+    calendarObject: { findMany: eventFindMany },
     syncedEvent: { findMany: syncedFindMany },
   },
 }))

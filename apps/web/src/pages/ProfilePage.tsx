@@ -7,6 +7,7 @@ import { FormField } from '@/components/form-field'
 import { Input } from '@/components/ui/input'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CalDavCard } from '@/components/features/caldav/caldav-card'
 import { useCurrentUser } from '@/api/auth'
 import { useUpdateProfile } from '@/api/users'
 import { applyApiErrors } from '@/lib/form'
@@ -95,6 +96,8 @@ export function ProfilePage() {
           </form>
         </CardContent>
       </Card>
+
+      <CalDavCard />
     </main>
   )
 }

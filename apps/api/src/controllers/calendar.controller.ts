@@ -9,7 +9,10 @@ export const getCalendarController: RequestHandler = async (req, res, next) => {
     if (!parsed.success) throw HttpError.badRequest('start and end dates are required')
     const { start, end } = parsed.data
     if (end < start) throw HttpError.badRequest('end must be on or after start')
-    res.json(await getCalendar(start, end))
+    // `end` arrives as a date (UTC midnight); widen it to end-of-day so timed
+    // events later on the final day aren't clipped from the window.
+    const endOfDay = new Date(end.getTime() + 86_399_999)
+    res.json(await getCalendar(start, endOfDay))
   } catch (err) {
     next(err)
   }

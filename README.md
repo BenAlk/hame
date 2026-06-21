@@ -86,3 +86,21 @@ variants here: at `temperature: 0` they add latency without improving a constrai
 
 Opening the recipe-import dialog preloads the selected model in the background, so the first import
 of a session isn't slowed by Ollama's cold-start.
+
+## Optional: phone calendar sync (CalDAV)
+
+Hame can serve its calendar over **CalDAV** so household members read **and write** it from their
+phone's native calendar app — two-way, self-hosted, no third-party cloud. It's **off by default**.
+
+1. An admin enables it under **Settings → Phone calendar (CalDAV)**.
+2. Each member opens **Profile → Phone calendar (CalDAV)**, generates an **app password** (shown
+   once), and notes the **Server URL** displayed there.
+3. In a CalDAV client (e.g. [DAVx5](https://www.davx5.com/) on Android) add an account with
+   **"Login with URL and user name"**: the Server URL, your Hame username, and the app password.
+   The **Household** calendar appears — enable it to sync.
+
+The Server URL adapts to how you reach Hame: behind a domain it's that domain; on the LAN it's the
+server's detected IP. To pin a specific public address, set `CALDAV_PUBLIC_URL` (see `.env.example`).
+Your reverse proxy must route `/caldav` and `/.well-known/caldav` to the API — the bundled
+`docker/nginx.conf` already does. App passwords are argon2-hashed; your account password is never
+shared with the device.

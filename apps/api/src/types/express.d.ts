@@ -5,6 +5,8 @@ declare global {
   namespace Express {
     interface Request {
       user?: PublicUser
+      /** Set by the CalDAV Basic-auth middleware (app-password authenticated). */
+      caldavUserId?: string
     }
   }
 }

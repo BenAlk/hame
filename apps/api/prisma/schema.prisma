@@ -42,7 +42,8 @@ model User {
   instancesCompleted   ChoreInstance[]    @relation("InstanceCompleter")
   recipesCreated       Recipe[]
   mealPlanEntries      MealPlanEntry[]
-  customEventsCreated  CustomEvent[]
+  calendarObjects      CalendarObject[]
+  calDavCredentials    CalDavCredential[]
 }
 
 enum Role {
@@ -290,6 +291,7 @@ model HouseholdSettings {
   id                  String             @id @default("singleton") // enforce single row
   enabledMealTypes    MealType[]         @default([DINNER])
   ingredientNormaliser NormaliserStrategy @default(BASIC) // spec §10 Phase 4.5
+  caldavEnabled       Boolean            @default(false) // serve the calendar over CalDAV (spec §10 Phase 5.5)
   updatedAt           DateTime           @updatedAt
 }
 
@@ -344,10 +346,15 @@ model BinCollection {
 
 // ── Phase 5: Custom events ───────────────────────────────────────────────────
 
-/// A free-form household calendar entry (spec §8.10) — date night, a visit, etc.
-/// Surfaces in the aggregated calendar feed alongside meals, chores and bins.
-model CustomEvent {
+/// A calendar event Hame owns (spec §8.10; §10 Phase 5.5) — date night, a visit,
+/// etc. Stores the canonical iCalendar text plus extracted fields for Hame's own
+/// grid and the aggregated feed. Absorbs the former CustomEvent and is served
+/// read-write over CalDAV once the household enables it.
+model CalendarObject {
   id          String    @id @default(uuid())
+  uid         String    @unique // iCalendar UID; also the CalDAV resource name
+  etag        String // opaque change tag for CalDAV concurrency (If-Match)
+  icalRaw     String // canonical VCALENDAR text (kept verbatim on phone writes)
   title       String
   description String?
   startTime   DateTime
@@ -396,4 +403,19 @@ model SyncedEvent {
 enum CalendarSourceType {
   ICAL
   HOME_ASSISTANT
+}
+
+// ── Phase 5.5: CalDAV ────────────────────────────────────────────────────────
+
+/// A CalDAV app password (spec §10 Phase 5.5). A device (e.g. DAVx5) authenticates
+/// with HTTP Basic using the user's username + one of these — never the account
+/// password. Only the argon2 hash is stored; the plaintext is shown once, at mint.
+model CalDavCredential {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String // "Pixel 8", "Robin's phone"
+  passwordHash String
+  lastUsedAt   DateTime?
+  createdAt    DateTime  @default(now())
 }

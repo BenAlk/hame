@@ -7,6 +7,7 @@ import { pinoHttp } from 'pino-http'
 import { env } from './lib/env.js'
 import { logger } from './lib/logger.js'
 import { apiRouter } from './routes/index.js'
+import { caldavRouter } from './routes/caldav.js'
 import { ensureCsrfCookie } from './middleware/csrf.js'
 import { notFoundHandler } from './middleware/not-found.js'
 import { errorHandler } from './middleware/error.js'
@@ -21,7 +22,11 @@ export function createApp() {
   }
 
   app.use(helmet())
+  // CORS only on the browser API. The CalDAV server (/caldav) is reached by
+  // native clients (DAVx5), not browsers, and must handle its own OPTIONS —
+  // a global cors() would swallow those as preflight (spec §10 Phase 5.5).
   app.use(
+    '/api',
     cors({
       origin: env.CORS_ORIGINS,
       credentials: true,
@@ -46,6 +51,12 @@ export function createApp() {
   )
 
   app.use('/api', apiRouter)
+
+  // CalDAV server (spec §10 Phase 5.5) — lives outside /api; clients discover it
+  // via /.well-known/caldav. Self-gates on the household toggle + app-password auth.
+  // Any method (DAVx5 uses PROPFIND here, not GET) → redirect to the CalDAV root.
+  app.all('/.well-known/caldav', (_req, res) => res.redirect(301, '/caldav/'))
+  app.use('/caldav', caldavRouter)
 
   app.use(notFoundHandler)
   app.use(errorHandler)

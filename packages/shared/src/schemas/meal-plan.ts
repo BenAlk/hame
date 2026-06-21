@@ -96,6 +96,8 @@ export const HouseholdSettingsSchema = z.object({
   enabledMealTypes: z.array(MealTypeSchema),
   /** Which ingredient-normalisation layer runs on import (spec §10 Phase 4.5). */
   ingredientNormaliser: NormaliserStrategySchema,
+  /** Whether the calendar is served over CalDAV (spec §10 Phase 5.5). */
+  caldavEnabled: z.boolean(),
   updatedAt: z.coerce.date(),
 })
 export type HouseholdSettings = z.infer<typeof HouseholdSettingsSchema>
@@ -104,6 +106,7 @@ export const UpdateHouseholdSettingsSchema = z
   .object({
     enabledMealTypes: z.array(MealTypeSchema).min(1, 'Enable at least one meal type'),
     ingredientNormaliser: NormaliserStrategySchema,
+    caldavEnabled: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided' })

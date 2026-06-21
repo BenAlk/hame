@@ -38,6 +38,7 @@ export function SettingsPage() {
   const updateSettings = useUpdateHouseholdSettings()
 
   const strategy = settings?.ingredientNormaliser ?? 'BASIC'
+  const caldavEnabled = settings?.caldavEnabled ?? false
 
   function chooseStrategy(value: NormaliserStrategy) {
     if (value !== strategy) updateSettings.mutate({ ingredientNormaliser: value })
@@ -80,6 +81,46 @@ export function SettingsPage() {
       </Card>
 
       <OllamaCard active={strategy === 'LLM'} />
+
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle>Phone calendar (CalDAV)</CardTitle>
+          <CardDescription>
+            Serve the household calendar over CalDAV so members can read and write it from their
+            phone&apos;s calendar app. Each member generates an app password under their profile.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={caldavEnabled}
+            disabled={updateSettings.isPending}
+            onClick={() => updateSettings.mutate({ caldavEnabled: !caldavEnabled })}
+            className={cn(
+              'flex items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors',
+              caldavEnabled ? 'border-accent bg-accent-soft' : 'border-line bg-surface',
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-6 w-11 shrink-0 items-center rounded-pill p-0.5 transition-colors',
+                caldavEnabled ? 'bg-accent' : 'bg-line',
+              )}
+            >
+              <span
+                className={cn(
+                  'size-5 rounded-pill bg-surface transition-transform',
+                  caldavEnabled && 'translate-x-5',
+                )}
+              />
+            </span>
+            <span className="text-sm font-medium text-ink">
+              {caldavEnabled ? 'CalDAV server enabled' : 'CalDAV server off'}
+            </span>
+          </button>
+        </CardContent>
+      </Card>
     </main>
   )
 }

@@ -31,7 +31,7 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
       },
     }),
     prisma.binCollection.findMany({ where: { isActive: true } }),
-    prisma.customEvent.findMany({
+    prisma.calendarObject.findMany({
       where: {
         startTime: { lte: end },
         OR: [{ endTime: { gte: start } }, { endTime: null, startTime: { gte: start } }],

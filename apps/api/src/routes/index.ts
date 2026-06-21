@@ -19,6 +19,7 @@ import { binsRouter } from './bins.js'
 import { customEventsRouter } from './custom-events.js'
 import { calendarRouter } from './calendar.js'
 import { calendarSourcesRouter } from './calendar-sources.js'
+import { caldavCredentialsRouter } from './caldav-credentials.js'
 
 export const apiRouter = Router()
 
@@ -42,3 +43,4 @@ apiRouter.use('/bins', binsRouter)
 apiRouter.use('/custom-events', customEventsRouter)
 apiRouter.use('/calendar', calendarRouter)
 apiRouter.use('/calendar-sources', calendarSourcesRouter)
+apiRouter.use('/caldav-credentials', caldavCredentialsRouter)
