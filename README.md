@@ -68,3 +68,21 @@ at a self-hosted [Ollama](https://ollama.com) server: in the app, go to **Settin
 normalisation**, choose **Language model**, enter the server URL (its installed models load into a
 dropdown), and save. If Ollama is unreachable, imports fall back to the dictionary/parser
 automatically — it's never required.
+
+### Suggested model
+
+Normalisation is structured JSON extraction (messy text → clean fields), so a small
+instruction-tuned model is plenty — raw size matters far less than reliable JSON output. On a
+typical homelab GPU (~8 GB VRAM):
+
+| Model                          | Pull                     | Notes                                                                                                  |
+| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------ |
+| **`qwen2.5:7b`** (recommended) | `ollama pull qwen2.5:7b` | Q4_K_M by default (~4.7 GB); best structured-output quality for its size, comfortable headroom on 8 GB |
+| `qwen2.5:3b`                   | `ollama pull qwen2.5:3b` | Faster, lighter; small quality drop on the long tail                                                   |
+| `llama3.1`                     | `ollama pull llama3.1`   | The built-in default; fine if you already have it                                                      |
+
+Whatever you pull appears in the model dropdown — no config file to edit. Avoid "thinking"/reasoning
+variants here: at `temperature: 0` they add latency without improving a constrained extraction.
+
+Opening the recipe-import dialog preloads the selected model in the background, so the first import
+of a session isn't slowed by Ollama's cold-start.

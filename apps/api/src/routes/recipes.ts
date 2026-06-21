@@ -10,6 +10,7 @@ import {
   importRecipeController,
   listRecipesController,
   updateRecipeController,
+  warmUpImportController,
 } from '../controllers/recipes.controller.js'
 
 export const recipesRouter = Router()
@@ -22,6 +23,8 @@ recipesRouter.post(
   validateBody(ImportRecipeSchema),
   importRecipeController,
 )
+// Preload the LLM normaliser ahead of an import — fired when the modal opens.
+recipesRouter.post('/import/warmup', requireAuth, verifyCsrf, warmUpImportController)
 recipesRouter.get('/:id', requireAuth, getRecipeController)
 recipesRouter.post(
   '/',

@@ -20,6 +20,7 @@ import {
 import { logger } from '../../lib/logger.js'
 
 const OLLAMA_TIMEOUT_MS = 30_000
+const WARMUP_TIMEOUT_MS = 60_000
 
 /** One ingredient as the model is asked to return it. */
 export interface LlmIngredient {
@@ -78,6 +79,35 @@ export class LlmNormaliser implements IngredientNormaliser {
       ),
     )
     return { ingredients, warnings: base.warnings }
+  }
+
+  /**
+   * Preload the model into the server's memory without running any inference,
+   * so a subsequent {@link normalise} call skips the cold model-load (seconds to
+   * tens of seconds for a large model). Fire-and-forget: it swallows every
+   * error — an unreachable or misconfigured Ollama just means the real import
+   * pays the load cost as it would have anyway. Triggered when the user opens
+   * the recipe-import modal, overlapping the load with their think-time.
+   *
+   * Ollama loads a model when sent a `/api/generate` request with no prompt; we
+   * never wait on the response beyond the timeout that bounds the in-flight
+   * fetch.
+   */
+  async warmUp(): Promise<void> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), WARMUP_TIMEOUT_MS)
+    try {
+      await fetch(`${trimSlash(this.settings.url)}/api/generate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({ model: this.settings.model, stream: false }),
+      })
+    } catch (err) {
+      logger.debug({ err }, 'Ollama warm-up failed (ignored)')
+    } finally {
+      clearTimeout(timeout)
+    }
   }
 
   private async callOllama(rawLines: string[]): Promise<LlmIngredient[]> {

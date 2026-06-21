@@ -7,7 +7,7 @@ const getOllamaConfig = vi.fn()
 vi.mock('../services/household-settings.service.js', () => ({ getHouseholdSettings }))
 vi.mock('../services/ollama-config.service.js', () => ({ getOllamaConfig }))
 
-const { getNormaliser } = await import('../services/normaliser.service.js')
+const { getNormaliser, warmUpNormaliser } = await import('../services/normaliser.service.js')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -38,5 +38,35 @@ describe('getNormaliser', () => {
   it('falls back to the dictionary when LLM is chosen but Ollama is not set up', async () => {
     getHouseholdSettings.mockResolvedValue({ ingredientNormaliser: 'LLM' })
     expect((await getNormaliser()).strategy).toBe('DICTIONARY')
+  })
+})
+
+describe('warmUpNormaliser', () => {
+  it('preloads the Ollama model when the LLM strategy is active', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'))
+    getHouseholdSettings.mockResolvedValue({ ingredientNormaliser: 'LLM' })
+    getOllamaConfig.mockResolvedValue({
+      url: 'http://ollama.test',
+      model: 'llama3.1',
+      isActive: true,
+    })
+
+    await warmUpNormaliser()
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0]
+    expect(url).toBe('http://ollama.test/api/generate')
+    expect(JSON.parse((init?.body as string) ?? '{}')).toMatchObject({ model: 'llama3.1' })
+    fetchSpy.mockRestore()
+  })
+
+  it('is a no-op for non-LLM strategies', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'))
+    getHouseholdSettings.mockResolvedValue({ ingredientNormaliser: 'DICTIONARY' })
+
+    await warmUpNormaliser()
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
   })
 })

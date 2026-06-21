@@ -12,7 +12,7 @@ import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useTags } from '@/api/tags'
-import { useCreateRecipe, useRecipes } from '@/api/recipes'
+import { useCreateRecipe, useRecipes, warmUpImport } from '@/api/recipes'
 
 /** Map a URL-import draft into the recipe form's seed shape. */
 function draftToInitial(draft: ImportedRecipeDraft): RecipeFormInitial {
@@ -56,6 +56,9 @@ export function RecipesPage() {
     setReviewDraft(null)
     setError(null)
     setFormOpen(true)
+    // Warm the LLM normaliser now so its cold-load overlaps with the user
+    // pasting a URL (no-op unless the household runs the LLM strategy).
+    warmUpImport()
   }
 
   async function handleSubmit(input: CreateRecipeInput) {

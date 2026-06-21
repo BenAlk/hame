@@ -26,3 +26,15 @@ export async function getNormaliser(): Promise<IngredientNormaliser> {
   }
   return new DictionaryNormaliser()
 }
+
+/**
+ * Preload the configured normaliser's model, if any (spec §10 Phase 4.5). Only
+ * the LLM strategy has anything to warm; every other strategy is a no-op. Used
+ * to overlap Ollama's cold model-load with the user's recipe-import think-time.
+ * Returns once the warm-up has been *kicked off* — the preload itself runs
+ * fire-and-forget and reports nothing back.
+ */
+export async function warmUpNormaliser(): Promise<void> {
+  const normaliser = await getNormaliser()
+  if (normaliser instanceof LlmNormaliser) void normaliser.warmUp()
+}

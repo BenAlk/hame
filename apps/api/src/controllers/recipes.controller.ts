@@ -8,6 +8,7 @@ import {
   listRecipes,
   updateRecipe,
 } from '../services/recipe.service.js'
+import { warmUpNormaliser } from '../services/normaliser.service.js'
 
 export const listRecipesController: RequestHandler = async (req, res, next) => {
   try {
@@ -54,6 +55,21 @@ export const deleteRecipeController: RequestHandler = async (req, res, next) => 
 export const importRecipeController: RequestHandler = async (req, res, next) => {
   try {
     res.json(await importRecipe((req.body as ImportRecipeInput).url))
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * Preload the import normaliser's model (spec §10 Phase 4.5). Fired when the
+ * user opens the import modal so Ollama's cold-load overlaps with their
+ * think-time. Returns 202 once the warm-up is kicked off; a no-op for non-LLM
+ * strategies.
+ */
+export const warmUpImportController: RequestHandler = async (_req, res, next) => {
+  try {
+    await warmUpNormaliser()
+    res.status(202).end()
   } catch (err) {
     next(err)
   }

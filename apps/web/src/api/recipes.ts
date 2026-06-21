@@ -62,6 +62,16 @@ export function useDeleteRecipe() {
   })
 }
 
+/**
+ * Preload the import normaliser's model (a no-op unless the household runs the
+ * LLM strategy). Fire-and-forget — call it when the import modal opens so
+ * Ollama's cold model-load overlaps with the user typing a URL. Failures are
+ * irrelevant; the import itself degrades gracefully either way.
+ */
+export function warmUpImport() {
+  void apiFetch('/api/recipes/import/warmup', { method: 'POST' }).catch(() => {})
+}
+
 /** Import a recipe draft from a URL — returns an editable draft, persists nothing. */
 export function useImportRecipe() {
   return useMutation({
