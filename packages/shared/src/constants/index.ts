@@ -89,6 +89,17 @@ export const BIN_RECURRENCE_TYPES = ['INTERVAL', 'WEEKLY', 'DATE_OF_MONTH'] as c
 export type BinRecurrenceType = (typeof BIN_RECURRENCE_TYPES)[number]
 
 /**
+ * Where a bin's collection dates come from (spec §8.9, §10 Phase 5.6). `MANUAL`
+ * bins compute their dates from the recurrence engine (the default, zero setup);
+ * the external sources have their dates fetched by a sync that caches concrete
+ * occurrences and self-corrects each run (so bank-holiday shifts just appear).
+ * Only `MANUAL` is wired today — `ICAL`, `SCRAPER` and `HOME_ASSISTANT` are the
+ * documented next steps behind the same provider seam.
+ */
+export const BIN_SOURCE_TYPES = ['MANUAL', 'ICAL', 'SCRAPER', 'HOME_ASSISTANT'] as const
+export type BinSourceType = (typeof BIN_SOURCE_TYPES)[number]
+
+/**
  * Discriminator for the aggregated calendar feed (spec §8.10). One unified event
  * shape is returned for rows pulled from several tables; `type` says which.
  * SYNCED is an event pulled from an external `CalendarSource` (iCal).

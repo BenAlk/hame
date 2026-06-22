@@ -30,7 +30,10 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
         assignedTo: { select: { colour: true } },
       },
     }),
-    prisma.binCollection.findMany({ where: { isActive: true } }),
+    prisma.binCollection.findMany({
+      where: { isActive: true },
+      include: { occurrences: { where: { date: { gte: start, lte: end } } } },
+    }),
     prisma.calendarObject.findMany({
       where: {
         startTime: { lte: end },
@@ -84,15 +87,23 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
   }
 
   for (const bin of bins) {
-    if (bin.recurrenceType === 'ONE_OFF') continue // not a valid bin schedule
-    const rule: BinScheduleRule = {
-      recurrenceType: bin.recurrenceType,
-      intervalDays: bin.intervalDays,
-      weekdays: bin.weekdays,
-      dayOfMonth: bin.dayOfMonth,
-      startDate: bin.startDate,
+    // MANUAL bins compute their dates from the schedule; external bins read the
+    // dates cached by their last sync (spec §10 Phase 5.6).
+    let dates: Date[]
+    if (bin.sourceType === 'MANUAL') {
+      if (!bin.recurrenceType || bin.recurrenceType === 'ONE_OFF') continue // not a valid schedule
+      const rule: BinScheduleRule = {
+        recurrenceType: bin.recurrenceType,
+        intervalDays: bin.intervalDays,
+        weekdays: bin.weekdays,
+        dayOfMonth: bin.dayOfMonth,
+        startDate: bin.startDate,
+      }
+      dates = binOccurrencesInRange(rule, start, end)
+    } else {
+      dates = bin.occurrences.map((o) => o.date)
     }
-    for (const date of binOccurrencesInRange(rule, start, end)) {
+    for (const date of dates) {
       const iso = isoDate(date)
       out.push({
         id: `BIN:${bin.id}:${iso}`,

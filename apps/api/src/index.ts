@@ -3,6 +3,7 @@ import { env } from './lib/env.js'
 import { logger } from './lib/logger.js'
 import { prisma } from './lib/prisma.js'
 import { startCalendarSyncJob, stopCalendarSyncJob } from './jobs/calendar-sync.job.js'
+import { startBinSyncJob, stopBinSyncJob } from './jobs/bin-sync.job.js'
 
 const app = createApp()
 
@@ -11,10 +12,12 @@ const server = app.listen(env.API_PORT, () => {
 })
 
 startCalendarSyncJob()
+startBinSyncJob()
 
 async function shutdown(signal: string) {
   logger.info(`${signal} received, shutting down...`)
   stopCalendarSyncJob()
+  stopBinSyncJob()
   server.close()
   await prisma.$disconnect()
   process.exit(0)

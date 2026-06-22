@@ -42,6 +42,10 @@ const EnvSchema = z.object({
   // Cron expression for refreshing external calendar feeds (spec §8.10). The API
   // must run single-instance or this double-fires (spec §4). Default: every 30 min.
   CALENDAR_SYNC_CRON: z.string().default('*/30 * * * *'),
+  // Cron expression for refreshing external bin sources (spec §10 Phase 5.6).
+  // Same single-instance caveat as above. Default: daily at 03:00 (schedules
+  // change at most weekly, so a nightly self-correct is plenty).
+  BIN_SYNC_CRON: z.string().default('0 3 * * *'),
   // Public base URL CalDAV clients should use (spec §10 Phase 5.5), e.g.
   // https://calendar.example.com. Shown in the app's CalDAV setup. Leave unset to
   // fall back to the server's detected LAN address (handy for local testing).

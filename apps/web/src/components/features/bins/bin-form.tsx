@@ -73,6 +73,9 @@ export function BinForm({ bin, onSubmit, onCancel, submitting, error }: BinFormP
     onSubmit({
       name: name.trim(),
       colour,
+      // The form creates MANUAL bins; external sources (iCal / council scraper /
+      // Home Assistant) are wired separately behind the same model (spec §10 Phase 5.6).
+      sourceType: 'MANUAL',
       recurrenceType,
       intervalDays: recurrenceType === 'INTERVAL' ? Number(intervalDays) : null,
       weekdays: recurrenceType === 'WEEKLY' ? [...weekdays] : [],

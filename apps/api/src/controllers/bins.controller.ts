@@ -1,6 +1,13 @@
 import type { RequestHandler } from 'express'
 import type { CreateBinInput, UpdateBinInput } from '@hame/shared'
-import { createBin, deleteBin, getBin, listBins, updateBin } from '../services/bin.service.js'
+import {
+  createBin,
+  deleteBin,
+  getBin,
+  listBins,
+  syncBin,
+  updateBin,
+} from '../services/bin.service.js'
 
 export const listBinsController: RequestHandler = async (req, res, next) => {
   try {
@@ -40,6 +47,15 @@ export const deleteBinController: RequestHandler = async (req, res, next) => {
   try {
     await deleteBin(req.params.id)
     res.status(204).end()
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** Refresh an external bin's cached collection dates on demand (spec §10 Phase 5.6). */
+export const syncBinController: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await syncBin(req.params.id))
   } catch (err) {
     next(err)
   }

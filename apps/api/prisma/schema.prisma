@@ -326,22 +326,51 @@ model OllamaConfig {
 
 /// A kerbside bin collection schedule (spec §8.9). Recurs but is never completed
 /// and never one-off; INTERVAL (fortnightly / 4-weekly) anchors to `startDate`.
-/// Collection dates are computed from the schedule, not stored.
+///
+/// A bin's dates come from its `source` (spec §8.9, §10 Phase 5.6): a MANUAL bin
+/// computes them from the recurrence schedule (not stored); an external source
+/// (iCal / scraper / Home Assistant) has them fetched by a sync that caches
+/// `BinOccurrence` rows and self-corrects each run. Only MANUAL is wired today.
 model BinCollection {
-  id                String         @id @default(uuid())
+  id                String          @id @default(uuid())
   name              String // "Burgundy bin"
   colour            String // hex for UI
   icon              String?
-  recurrenceType    RecurrenceType // ONE_OFF unused for bins (enforced in Zod)
+  sourceType        BinSourceType   @default(MANUAL)
+  sourceConfig      Json? // provider connection details for external sources (null for MANUAL)
+  lastSyncedAt      DateTime? // last successful external sync (null for MANUAL)
+  recurrenceType    RecurrenceType? // MANUAL schedule; ONE_OFF unused for bins (enforced in Zod)
   intervalDays      Int?
   weekdays          Weekday[]
   dayOfMonth        Int?
-  startDate         DateTime?      @db.Date // anchor for INTERVAL
-  remindNightBefore Boolean        @default(true)
-  remindMorningOf   Boolean        @default(true)
-  isActive          Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  startDate         DateTime?       @db.Date // anchor for INTERVAL
+  remindNightBefore Boolean         @default(true)
+  remindMorningOf   Boolean         @default(true)
+  isActive          Boolean         @default(true)
+  occurrences       BinOccurrence[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+/// A concrete collection date cached from an external bin source (spec §10
+/// Phase 5.6). MANUAL bins don't use this — their dates are computed live. Each
+/// sync replaces a bin's rows wholesale, so the cache always reflects the source.
+model BinOccurrence {
+  id        String        @id @default(uuid())
+  binId     String
+  bin       BinCollection @relation(fields: [binId], references: [id], onDelete: Cascade)
+  date      DateTime      @db.Date
+  createdAt DateTime      @default(now())
+
+  @@unique([binId, date])
+}
+
+/// Where a bin's collection dates come from (spec §8.9, §10 Phase 5.6).
+enum BinSourceType {
+  MANUAL
+  ICAL
+  SCRAPER
+  HOME_ASSISTANT
 }
 
 // ── Phase 5: Custom events ───────────────────────────────────────────────────

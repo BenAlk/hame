@@ -27,7 +27,14 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`
 }
 
+const SOURCE_LABEL: Record<Exclude<BinCollection['sourceType'], 'MANUAL'>, string> = {
+  ICAL: 'From an iCal feed',
+  SCRAPER: 'From the council scraper',
+  HOME_ASSISTANT: 'From Home Assistant',
+}
+
 function scheduleSummary(bin: BinCollection): string {
+  if (bin.sourceType !== 'MANUAL') return SOURCE_LABEL[bin.sourceType]
   switch (bin.recurrenceType) {
     case 'WEEKLY':
       return `Weekly on ${bin.weekdays.map((d) => WEEKDAY_SHORT[d]).join(', ')}`
@@ -35,6 +42,8 @@ function scheduleSummary(bin: BinCollection): string {
       return bin.intervalDays === 14 ? 'Fortnightly' : `Every ${bin.intervalDays} days`
     case 'DATE_OF_MONTH':
       return `Monthly on the ${ordinal(bin.dayOfMonth ?? 1)}`
+    default:
+      return 'No schedule set'
   }
 }
 

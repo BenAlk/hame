@@ -534,20 +534,44 @@ enum Weekday        { MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY }
 
 ```prisma
 model BinCollection {
-  id                String         @id @default(uuid())
+  id                String          @id @default(uuid())
   name              String                              // "Burgundy bin"
   colour            String                              // hex for UI
   icon              String?
-  recurrenceType    RecurrenceType
+  sourceType        BinSourceType   @default(MANUAL)    // where dates come from — §8.9, §10 Phase 5.6
+  sourceConfig      Json?                               // provider details for external sources (null for MANUAL)
+  lastSyncedAt      DateTime?                           // last successful external sync (null for MANUAL)
+  recurrenceType    RecurrenceType?                     // MANUAL schedule; null for external sources
   intervalDays      Int?
   weekdays          Weekday[]
   dayOfMonth        Int?
-  startDate         DateTime?      @db.Date              // anchor for biweekly
-  remindNightBefore Boolean        @default(true)
-  remindMorningOf   Boolean        @default(true)
-  isActive          Boolean        @default(true)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  startDate         DateTime?       @db.Date            // anchor for biweekly
+  remindNightBefore Boolean         @default(true)
+  remindMorningOf   Boolean         @default(true)
+  isActive          Boolean         @default(true)
+  occurrences       BinOccurrence[]                     // cached dates for external sources
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model BinOccurrence {
+  // A concrete collection date cached from an external bin source (§10 Phase 5.6).
+  // MANUAL bins don't use this — their dates are computed live. Each sync replaces
+  // a bin's rows wholesale, so the cache always reflects the source.
+  id        String        @id @default(uuid())
+  binId     String
+  bin       BinCollection @relation(fields: [binId], references: [id], onDelete: Cascade)
+  date      DateTime      @db.Date
+  createdAt DateTime      @default(now())
+
+  @@unique([binId, date])
+}
+
+enum BinSourceType {
+  MANUAL                                         // recurrence engine (default, zero setup)
+  ICAL                                           // a council iCal feed
+  SCRAPER                                        // the uk-bin-scraper library (§12)
+  HOME_ASSISTANT                                 // HA bin sensors (Phase 6)
 }
 
 model CustomEvent {
@@ -781,7 +805,12 @@ model IdleModeSettings {
 
 ### 8.9 Bins
 
-- **Manual entry in v1** (auto-scraping is a future enhancement, see §12)
+- **Pluggable sources** (`BinCollection.sourceType`, §10 Phase 5.6) — a bin's collection dates come from one of:
+  - `MANUAL` — typed recurrence schedule, computed by the recurrence engine (the default, zero setup; the v1 behaviour).
+  - `ICAL` — a council iCal feed.
+  - `SCRAPER` — the standalone `uk-bin-scraper` library (§12).
+  - `HOME_ASSISTANT` — HA bin sensors (Phase 6).
+  - The display layer (colour, icon, reminders, the widget) is identical across sources; only where the dates come from changes. External sources cache concrete dates (`BinOccurrence`) and **self-correct** on each sync (§9.6), so a bank-holiday shift just appears. **Only `MANUAL` is wired today**; the external providers sit behind one interface and land one at a time (§10 Phase 5.6).
 - **Schedule example** (illustrative UK council kerbside collection):
   | Bin | Day | Frequency |
   |---|---|---|
@@ -982,9 +1011,11 @@ This unlocks streak tracking, "pulling your weight" stats, and pet treatment his
 
 Single API endpoint pulls from 5+ tables and returns unified events. No `Event` materialised table — querying live keeps data DRY.
 
-### 9.6 Self-Correcting Bin Schedule (Future)
+### 9.6 Pluggable, Self-Correcting Bin Sources
 
-Future scraper anchors `BinCollection.startDate` weekly from council's "this week's collection" data. Handles bank holiday shifts without complex calendar logic — the council page is source of truth.
+A `BinCollection` separates **how it looks** (colour, icon, reminders, the widget) from **where its dates come from** (`sourceType`, §8.9). `MANUAL` bins compute dates from the recurrence engine; external sources (iCal / scraper / Home Assistant) fetch them through one `BinScheduleProvider` interface and cache concrete dates as `BinOccurrence` rows, refreshed on a cron (`BIN_SYNC_CRON`).
+
+Because each sync **replaces** a bin's cached occurrences wholesale, the schedule is **self-correcting** — a bank-holiday shift just appears on the next run, with no calendar maths and the council/feed as the source of truth. A failed fetch leaves the existing cache intact and reports a warning (the same graceful-degrade contract as iCal calendar sync, §8.10). The provider seam ships first (Phase 5.6); the providers behind it land one at a time.
 
 ### 9.7 Type-Safe End-to-End
 
@@ -1094,6 +1125,24 @@ Verified end-to-end against **real DAVx5** over the LAN — discovery → the Ho
 
 **Remaining refinements (not blocking).** Fully expanding RRULE inside Hame's _own_ grid (the round-trip is already lossless; Hame currently shows a recurring event's master), and an early check that **Cloudflare** passes the WebDAV methods (`PROPFIND` / `REPORT` / `PUT`) once deployed behind the real proxy.
 
+### Phase 5.6 — Pluggable Bin Sources ✅ Abstraction complete (22-06-2026)
+
+Generalise a bin's schedule from "typed recurrence only" to a **pluggable source** (§8.9, §9.6), so the same coloured widget can be fed by a typed schedule, a council iCal feed, the `uk-bin-scraper` library, or Home Assistant — picked per bin. The original framing (§9.6, §12): point Hame at the council's "this week's collection" data and have it keep the right bins on the right weeks automatically, including bank-holiday shifts.
+
+**Goal**: A bin's dates can come from the council, not just from what you typed — and stay correct without you touching them.
+
+**Delivered (the abstraction).** A single Phase 5.6 migration adds the `BinSourceType` enum (`MANUAL | ICAL | SCRAPER | HOME_ASSISTANT`, default `MANUAL`), `BinCollection.sourceType` / `sourceConfig` / `lastSyncedAt`, the `BinOccurrence` cache table (unique `[binId, date]`, cascade-deleted), and makes `recurrenceType` nullable (external bins carry no recurrence). Shared `@hame/shared` gains `BIN_SOURCE_TYPES`, the `BinSourceConfig` / `BinSyncResult` schemas, and a source-aware bin Zod refinement — a `MANUAL` bin still needs a recurrence type and that type's field (INTERVAL also a `startDate` anchor); an external bin needs its provider's connection detail instead. The API adds `integrations/bin-sources` — one `BinScheduleProvider` interface (`fetchOccurrences(config, horizon) → dates`) plus a registry the bin service dispatches through; a source-aware `bin.service` whose `nextCollection` is computed from the engine for `MANUAL` and from the soonest cached occurrence for external; a `syncBin` that replaces a bin's cached occurrences wholesale in a transaction and degrades gracefully (unreachable feed → warning, cache kept; unwired provider → clear "not available yet"); a `POST /api/bins/:id/sync` endpoint; and a `BIN_SYNC_CRON` `node-cron` job (default nightly) that self-corrects every active external bin. The aggregated calendar (§8.10) and the CalDAV derived **Bins** calendar (§10 Phase 5.5) both read the engine for `MANUAL` bins and the cache for external ones, so external bins surface everywhere a manual one does.
+
+Crucially, **`MANUAL` is the only live source** — the external providers are stubs behind the registry, and with no provider registered the model behaves exactly as Phase 5 did (the bin form still only creates `MANUAL` bins). The point of this phase is the seam; the providers are the next steps.
+
+**Next steps (each lands behind the existing interface, no further schema change):**
+
+1. **iCal bin source** — the cheapest first provider: reuse the Phase 5 `integrations/ical` fetch/parse, mapping each feed event to a coloured bin via `sourceConfig.matchKey`. Proves the whole sync → cache → self-correct → widget loop end-to-end against a real feed. Add the source-picker + config UI to the bin form (currently `MANUAL`-only) here.
+2. **`uk-bin-scraper`** — the standalone repo and headline portfolio piece (§12): per-council modules behind a common `parseSchedule` interface, with the postcode → address → UPRN lookup that most council sites require. Hame consumes it as a library and registers it as the `SCRAPER` provider; the cron re-anchors weekly.
+3. **Home Assistant** — once the Phase 6 WebSocket client exists, register a `HOME_ASSISTANT` provider that reads the community "UK Bin Collection Data" integration's next-collection sensors, offloading scraper maintenance to an active project.
+
+**Why split out.** The seam is small, low-risk and useful on its own (it makes external bins a config change, not a refactor); the providers each carry real, independent work (a separate repo; an HA dependency) and are best landed and tested one at a time against a live source.
+
 ### Phase 6 — Home Assistant Integration
 
 HA config UI, WebSocket client, entity state reads, device controls, HA calendar source, real-time dashboard updates.
@@ -1171,6 +1220,7 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 
 ### UK Bin Scraper (Separate Repo)
 
+- The `SCRAPER` provider behind the Phase 5.6 bin-source seam (§10) — Hame already has the model, cache, sync and cron; this is the data source that fills it.
 - Standalone repo: `uk-bin-scraper`
 - Modular per-council scraper pattern:
   ```

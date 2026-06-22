@@ -51,11 +51,13 @@ describe('getCalendar', () => {
         id: 'b1',
         name: 'Burgundy bin',
         colour: '#7d2b3e',
+        sourceType: 'MANUAL',
         recurrenceType: 'WEEKLY',
         intervalDays: null,
         weekdays: ['TUESDAY'],
         dayOfMonth: null,
         startDate: null,
+        occurrences: [],
       },
     ])
     eventFindMany.mockResolvedValue([
@@ -134,14 +136,37 @@ describe('getCalendar', () => {
         id: 'b1',
         name: 'Odd bin',
         colour: '#7d2b3e',
+        sourceType: 'MANUAL',
         recurrenceType: 'ONE_OFF',
         intervalDays: null,
         weekdays: [],
         dayOfMonth: null,
         startDate: null,
+        occurrences: [],
       },
     ])
     const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
     expect(events).toEqual([])
+  })
+
+  it('materialises an external bin from its cached occurrences, not the engine', async () => {
+    binFindMany.mockResolvedValue([
+      {
+        id: 'b9',
+        name: 'Council bin',
+        colour: '#2f6fb0',
+        sourceType: 'ICAL',
+        recurrenceType: null,
+        intervalDays: null,
+        weekdays: [],
+        dayOfMonth: null,
+        startDate: null,
+        occurrences: [{ date: day(2026, 5, 25) }],
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'BIN', title: 'Council bin', colour: '#2f6fb0' })
+    expect(events[0].id).toBe('BIN:b9:2026-06-25')
   })
 })

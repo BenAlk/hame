@@ -8,6 +8,7 @@ import {
   deleteBinController,
   getBinController,
   listBinsController,
+  syncBinController,
   updateBinController,
 } from '../controllers/bins.controller.js'
 
@@ -24,3 +25,4 @@ binsRouter.patch(
   updateBinController,
 )
 binsRouter.delete('/:id', requireAuth, verifyCsrf, deleteBinController)
+binsRouter.post('/:id/sync', requireAuth, verifyCsrf, syncBinController)

@@ -153,18 +153,29 @@ async function choreEvents(): Promise<CalDavResource[]> {
 
 async function binEvents(): Promise<CalDavResource[]> {
   const { start, end } = horizon()
-  const bins = await prisma.binCollection.findMany({ where: { isActive: true } })
+  const bins = await prisma.binCollection.findMany({
+    where: { isActive: true },
+    include: { occurrences: { where: { date: { gte: start, lte: end } } } },
+  })
   const out: CalDavResource[] = []
   for (const bin of bins) {
-    if (bin.recurrenceType === 'ONE_OFF') continue // not a valid bin schedule
-    const rule: BinScheduleRule = {
-      recurrenceType: bin.recurrenceType,
-      intervalDays: bin.intervalDays,
-      weekdays: bin.weekdays,
-      dayOfMonth: bin.dayOfMonth,
-      startDate: bin.startDate,
+    // MANUAL bins compute their dates from the schedule; external bins read the
+    // dates cached by their last sync (spec §10 Phase 5.6).
+    let dates: Date[]
+    if (bin.sourceType === 'MANUAL') {
+      if (!bin.recurrenceType || bin.recurrenceType === 'ONE_OFF') continue // not a valid schedule
+      const rule: BinScheduleRule = {
+        recurrenceType: bin.recurrenceType,
+        intervalDays: bin.intervalDays,
+        weekdays: bin.weekdays,
+        dayOfMonth: bin.dayOfMonth,
+        startDate: bin.startDate,
+      }
+      dates = binOccurrencesInRange(rule, start, end)
+    } else {
+      dates = bin.occurrences.map((o) => o.date)
     }
-    for (const occ of binOccurrencesInRange(rule, start, end)) {
+    for (const occ of dates) {
       const date = toUtcMidnight(occ)
       out.push(
         toResource({
