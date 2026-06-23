@@ -5,6 +5,10 @@ coverage
 pnpm-lock.yaml
 apps/api/prisma/migrations
 
+# Raw council HTML captured from live sites — must stay byte-exact so the
+# scraper's fixture tests reflect reality; never reformat.
+**/__fixtures__/**
+
 # Hand-aligned design docs — keep manual table formatting
 hame-specification.md
 hame-specification-public.md

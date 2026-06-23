@@ -147,3 +147,44 @@ export const BinSyncResultSchema = z.object({
   message: z.string(),
 })
 export type BinSyncResult = z.infer<typeof BinSyncResultSchema>
+
+// ── Scraper source setup (read-only discovery for the bin form) ───────────────
+
+/** A council supported by the scraper, for the source picker. */
+export const ScraperCouncilSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** What the address search expects (e.g. "Search by street name"). */
+  searchHint: z.string(),
+})
+export type ScraperCouncil = z.infer<typeof ScraperCouncilSchema>
+
+/** An address candidate from a council's lookup, for the address search. */
+export const ScraperAddressSchema = z.object({ id: z.string(), label: z.string() })
+export type ScraperAddress = z.infer<typeof ScraperAddressSchema>
+
+/** A bin listed for a resolved address, for the "which bin" picker. */
+export const ScraperBinSchema = z.object({
+  /** Match key stored in sourceConfig, e.g. "burgundy". */
+  key: z.string(),
+  /** Human label as the council shows it, e.g. "Burgundy - Food and garden". */
+  name: z.string(),
+})
+export type ScraperBin = z.infer<typeof ScraperBinSchema>
+
+/** One bin chosen in the "add all my council's bins" flow. */
+export const CreateScraperBinSelectionSchema = z.object({
+  key: z.string().min(1),
+  name: z.string().min(1, 'Name is required').max(60, 'Name is too long'),
+  colour: z.string().regex(HEX_COLOUR_REGEX, 'Pick a colour'),
+})
+
+/** Create every chosen bin for one scraped address in a single call (spec §12). */
+export const CreateScraperBinsSchema = z.object({
+  councilId: z.string().min(1),
+  addressId: z.string().min(1),
+  remindNightBefore: z.boolean().optional(),
+  remindMorningOf: z.boolean().optional(),
+  bins: z.array(CreateScraperBinSelectionSchema).min(1, 'Select at least one bin'),
+})
+export type CreateScraperBinsInput = z.infer<typeof CreateScraperBinsSchema>

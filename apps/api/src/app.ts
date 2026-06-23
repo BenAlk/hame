@@ -11,8 +11,13 @@ import { caldavRouter } from './routes/caldav.js'
 import { ensureCsrfCookie } from './middleware/csrf.js'
 import { notFoundHandler } from './middleware/not-found.js'
 import { errorHandler } from './middleware/error.js'
+import { registerBuiltInBinProviders } from './integrations/bin-sources/index.js'
 
 export function createApp() {
+  // Wire the external bin-source providers (iCal today) into their registry so a
+  // sync can dispatch to them (spec §10 Phase 5.6). Idempotent.
+  registerBuiltInBinProviders()
+
   const app = express()
 
   // Behind Cloudflare + reverse proxy in production: trust the first proxy hop

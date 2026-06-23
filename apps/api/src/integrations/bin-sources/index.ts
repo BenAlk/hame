@@ -13,6 +13,8 @@
  * external bin degrades gracefully with a clear message rather than failing.
  */
 import type { BinSourceConfig, BinSourceType } from '@hame/shared'
+import { icalBinProvider } from './ical-bin-source.js'
+import { scraperBinProvider } from './scraper-bin-source.js'
 
 /** A single collection date fetched from an external source, ready to cache. */
 export interface FetchedBinOccurrence {
@@ -26,6 +28,16 @@ export interface BinSyncHorizon {
 }
 
 /**
+ * Extra hints the bin service passes into a sync. `priorAnchor` is the most
+ * recent cached collection date for the bin — a provider that reads only "this
+ * week" (the council scraper) uses it to resolve a cycle phase a single reading
+ * can't. Providers that fetch a full schedule (iCal) ignore it.
+ */
+export interface BinSyncContext {
+  priorAnchor?: Date
+}
+
+/**
  * Turns an external source's config into concrete collection dates. Implementations
  * are pure of persistence — the bin service caches what they return. They should
  * throw on a failed fetch; the service degrades gracefully and keeps the old cache.
@@ -35,15 +47,16 @@ export interface BinScheduleProvider {
   fetchOccurrences(
     config: BinSourceConfig,
     horizon: BinSyncHorizon,
+    context?: BinSyncContext,
   ): Promise<FetchedBinOccurrence[]>
 }
 
 /**
- * Registered external providers, keyed by source type. Empty today — each
- * provider is added here as it ships (spec §10 Phase 5.6 next steps):
- *   ICAL          → integrations/ical (already exists for calendar subscriptions)
- *   SCRAPER       → the standalone uk-bin-scraper library (spec §12)
- *   HOME_ASSISTANT → HA bin sensors via the Phase 6 WebSocket client
+ * Registered external providers, keyed by source type, wired by
+ * {@link registerBuiltInBinProviders} (spec §10 Phase 5.6 next steps):
+ *   ICAL          → integrations/ical (reuses the calendar-subscription fetch) ✓
+ *   SCRAPER       → the uk-bin-scraper library (spec §12) ✓
+ *   HOME_ASSISTANT → HA bin sensors via the Phase 6 WebSocket client (pending)
  */
 const providers = new Map<BinScheduleProvider['type'], BinScheduleProvider>()
 
@@ -55,4 +68,13 @@ export function registerBinProvider(provider: BinScheduleProvider): void {
 export function getBinProvider(type: BinSourceType): BinScheduleProvider | null {
   if (type === 'MANUAL') return null
   return providers.get(type) ?? null
+}
+
+/**
+ * Register the providers that ship with Hame. Called once at app start (and so
+ * also under supertest). Idempotent — registration is a keyed Map write.
+ */
+export function registerBuiltInBinProviders(): void {
+  registerBinProvider(icalBinProvider)
+  registerBinProvider(scraperBinProvider)
 }

@@ -104,3 +104,21 @@ server's detected IP. To pin a specific public address, set `CALDAV_PUBLIC_URL` 
 Your reverse proxy must route `/caldav` and `/.well-known/caldav` to the API — the bundled
 `docker/nginx.conf` already does. App passwords are argon2-hashed; your account password is never
 shared with the device.
+
+## Optional: automatic bin collection schedules
+
+By default you type each bin's schedule in (e.g. "Tuesday, fortnightly"). Hame can also pull the
+dates from your council so they stay correct on their own — bank-holiday shifts included — chosen
+per bin under **Bins → New bin → Collection dates come from**:
+
+- **A council iCal feed** — paste the feed URL; an optional match term picks one bin out of a feed
+  that lists several.
+- **My council's website** — where a scraper module exists for your council, search your address and
+  Hame reads the schedule straight from the council site. Use **"add all my bins"** to create every
+  bin at your address in one go, each auto-coloured from its name. Supported councils (and how to add
+  one) live in [`packages/bin-scraper`](./packages/bin-scraper/README.md).
+
+External bins cache their dates and refresh on a schedule (`BIN_SYNC_CRON`, nightly by default), with
+a **Sync now** button per bin. A failed fetch keeps the last good dates and just logs a warning. Some
+councils only publish "this week" plus a frequency, so a 4-weekly bin can take a sync or two before
+every future date is known — see the package README for why.

@@ -1,15 +1,29 @@
 import { useState } from 'react'
 import { differenceInCalendarDays, format } from 'date-fns'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
-import type { BinCollection, CreateBinInput, PublicUser, Weekday } from '@hame/shared'
+import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import type {
+  BinCollection,
+  CreateBinInput,
+  CreateScraperBinsInput,
+  PublicUser,
+  Weekday,
+} from '@hame/shared'
 import { AppNav } from '@/components/app-nav'
 import { BinForm } from '@/components/features/bins/bin-form'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
+import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/api/auth'
-import { useBins, useCreateBin, useDeleteBin, useUpdateBin } from '@/api/bins'
+import {
+  useBins,
+  useCreateBin,
+  useCreateScraperBins,
+  useDeleteBin,
+  useSyncBin,
+  useUpdateBin,
+} from '@/api/bins'
 
 const WEEKDAY_SHORT: Record<Weekday, string> = {
   MONDAY: 'Mon',
@@ -58,12 +72,31 @@ export function BinsPage() {
   const { data: me } = useCurrentUser()
   const { data: bins, isPending } = useBins()
   const createBin = useCreateBin()
+  const createScraperBins = useCreateScraperBins()
   const updateBin = useUpdateBin()
   const deleteBin = useDeleteBin()
+  const syncBin = useSyncBin()
 
   const [editing, setEditing] = useState<{ bin?: BinCollection } | null>(null)
   const [deleting, setDeleting] = useState<BinCollection | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [syncResult, setSyncResult] = useState<{ id: string; ok: boolean; message: string } | null>(
+    null,
+  )
+
+  async function handleSync(bin: BinCollection) {
+    setSyncResult(null)
+    try {
+      const result = await syncBin.mutateAsync(bin.id)
+      setSyncResult({ id: bin.id, ...result })
+    } catch (err) {
+      setSyncResult({
+        id: bin.id,
+        ok: false,
+        message: err instanceof ApiError ? err.message : 'Could not sync the feed.',
+      })
+    }
+  }
 
   async function handleSubmit(input: CreateBinInput) {
     setError(null)
@@ -73,6 +106,16 @@ export function BinsPage() {
       setEditing(null)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save the bin.')
+    }
+  }
+
+  async function handleSubmitBatch(input: CreateScraperBinsInput) {
+    setError(null)
+    try {
+      await createScraperBins.mutateAsync(input)
+      setEditing(null)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not add the bins.')
     }
   }
 
@@ -159,6 +202,43 @@ export function BinsPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">No upcoming collection</p>
               )}
+
+              {bin.sourceType !== 'MANUAL' && (
+                <div className="flex flex-col gap-1.5 border-t border-line pt-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">
+                      {bin.lastSyncedAt
+                        ? `Synced ${format(new Date(bin.lastSyncedAt), 'd MMM, HH:mm')}`
+                        : 'Not synced yet'}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void handleSync(bin)}
+                      disabled={syncBin.isPending}
+                    >
+                      <RefreshCw
+                        className={cn(
+                          'size-3.5',
+                          syncBin.isPending && syncBin.variables === bin.id && 'animate-spin',
+                        )}
+                      />
+                      Sync now
+                    </Button>
+                  </div>
+                  {syncResult?.id === bin.id && (
+                    <p
+                      className={cn(
+                        'text-xs',
+                        syncResult.ok ? 'text-muted-foreground' : 'text-warning',
+                      )}
+                    >
+                      {syncResult.message}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -173,8 +253,9 @@ export function BinsPage() {
           <BinForm
             bin={editing.bin}
             onSubmit={handleSubmit}
+            onSubmitBatch={handleSubmitBatch}
             onCancel={() => setEditing(null)}
-            submitting={createBin.isPending || updateBin.isPending}
+            submitting={createBin.isPending || updateBin.isPending || createScraperBins.isPending}
             error={error}
           />
         )}

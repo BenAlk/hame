@@ -80,6 +80,9 @@ importers:
       pino-http:
         specifier: ^10.3.0
         version: 10.5.0
+      uk-bin-scraper:
+        specifier: workspace:*
+        version: link:../../packages/bin-scraper
       zod:
         specifier: ^3.24.1
         version: 3.25.76
@@ -208,6 +211,18 @@ importers:
       vite:
         specifier: ^6.0.5
         version: 6.4.3(@types/node@22.19.21)(jiti@1.21.7)(tsx@4.22.4)(yaml@2.9.0)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.21)(jsdom@25.0.1)
+
+  packages/bin-scraper:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.21)(jsdom@25.0.1)

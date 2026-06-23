@@ -810,7 +810,7 @@ model IdleModeSettings {
   - `ICAL` — a council iCal feed.
   - `SCRAPER` — the standalone `uk-bin-scraper` library (§12).
   - `HOME_ASSISTANT` — HA bin sensors (Phase 6).
-  - The display layer (colour, icon, reminders, the widget) is identical across sources; only where the dates come from changes. External sources cache concrete dates (`BinOccurrence`) and **self-correct** on each sync (§9.6), so a bank-holiday shift just appears. **Only `MANUAL` is wired today**; the external providers sit behind one interface and land one at a time (§10 Phase 5.6).
+  - The display layer (colour, icon, reminders, the widget) is identical across sources; only where the dates come from changes. External sources cache concrete dates (`BinOccurrence`) and **self-correct** on each sync (§9.6), so a bank-holiday shift just appears. **`MANUAL`, `ICAL` and `SCRAPER` are wired** (§10 Phase 5.6); `HOME_ASSISTANT` lands with Phase 6. All sit behind one interface.
 - **Schedule example** (illustrative UK council kerbside collection):
   | Bin | Day | Frequency |
   |---|---|---|
@@ -1125,7 +1125,7 @@ Verified end-to-end against **real DAVx5** over the LAN — discovery → the Ho
 
 **Remaining refinements (not blocking).** Fully expanding RRULE inside Hame's _own_ grid (the round-trip is already lossless; Hame currently shows a recurring event's master), and an early check that **Cloudflare** passes the WebDAV methods (`PROPFIND` / `REPORT` / `PUT`) once deployed behind the real proxy.
 
-### Phase 5.6 — Pluggable Bin Sources ✅ Abstraction complete (22-06-2026)
+### Phase 5.6 — Pluggable Bin Sources ✅ Abstraction + iCal & scraper providers (23-06-2026)
 
 Generalise a bin's schedule from "typed recurrence only" to a **pluggable source** (§8.9, §9.6), so the same coloured widget can be fed by a typed schedule, a council iCal feed, the `uk-bin-scraper` library, or Home Assistant — picked per bin. The original framing (§9.6, §12): point Hame at the council's "this week's collection" data and have it keep the right bins on the right weeks automatically, including bank-holiday shifts.
 
@@ -1133,15 +1133,18 @@ Generalise a bin's schedule from "typed recurrence only" to a **pluggable source
 
 **Delivered (the abstraction).** A single Phase 5.6 migration adds the `BinSourceType` enum (`MANUAL | ICAL | SCRAPER | HOME_ASSISTANT`, default `MANUAL`), `BinCollection.sourceType` / `sourceConfig` / `lastSyncedAt`, the `BinOccurrence` cache table (unique `[binId, date]`, cascade-deleted), and makes `recurrenceType` nullable (external bins carry no recurrence). Shared `@hame/shared` gains `BIN_SOURCE_TYPES`, the `BinSourceConfig` / `BinSyncResult` schemas, and a source-aware bin Zod refinement — a `MANUAL` bin still needs a recurrence type and that type's field (INTERVAL also a `startDate` anchor); an external bin needs its provider's connection detail instead. The API adds `integrations/bin-sources` — one `BinScheduleProvider` interface (`fetchOccurrences(config, horizon) → dates`) plus a registry the bin service dispatches through; a source-aware `bin.service` whose `nextCollection` is computed from the engine for `MANUAL` and from the soonest cached occurrence for external; a `syncBin` that replaces a bin's cached occurrences wholesale in a transaction and degrades gracefully (unreachable feed → warning, cache kept; unwired provider → clear "not available yet"); a `POST /api/bins/:id/sync` endpoint; and a `BIN_SYNC_CRON` `node-cron` job (default nightly) that self-corrects every active external bin. The aggregated calendar (§8.10) and the CalDAV derived **Bins** calendar (§10 Phase 5.5) both read the engine for `MANUAL` bins and the cache for external ones, so external bins surface everywhere a manual one does.
 
-Crucially, **`MANUAL` is the only live source** — the external providers are stubs behind the registry, and with no provider registered the model behaves exactly as Phase 5 did (the bin form still only creates `MANUAL` bins). The point of this phase is the seam; the providers are the next steps.
+**Delivered (the providers).** Two of the three external sources now run behind the seam, registered at app start.
 
-**Next steps (each lands behind the existing interface, no further schema change):**
+- **iCal bin source** reuses the Phase 5 `integrations/ical` fetch/parse: it maps a council feed's events to one coloured bin via `sourceConfig.matchKey`, normalises each to a UTC-midnight date and de-dupes — the feed already carries concrete dates, so a sync just caches them and self-corrects.
+- **`uk-bin-scraper`** (a new dependency-free workspace package destined for its own repo — §12) handles councils that publish only "this week's collection" plus each bin's weekday and frequency. Per-council adapters expose `findAddresses` + `fetchObservation` behind one interface; a **pure projector** turns one reading into concrete dates — a bin out this week (and any weekly or fortnightly bin) anchors exactly, while a 4-weekly bin not out this week is placed from the last cached date fed back as a `priorAnchor` (`syncBin` passes it), so it pins within one cycle and then self-corrects. Parsers are **fixture-tested against saved real council HTML**, so a markup change fails a test rather than silently mis-dating a collection. The LLM is deliberately not in this path: bin dates run unattended, so the runtime stays deterministic.
 
-1. **iCal bin source** — the cheapest first provider: reuse the Phase 5 `integrations/ical` fetch/parse, mapping each feed event to a coloured bin via `sourceConfig.matchKey`. Proves the whole sync → cache → self-correct → widget loop end-to-end against a real feed. Add the source-picker + config UI to the bin form (currently `MANUAL`-only) here.
-2. **`uk-bin-scraper`** — the standalone repo and headline portfolio piece (§12): per-council modules behind a common `parseSchedule` interface, with the postcode → address → UPRN lookup that most council sites require. Hame consumes it as a library and registers it as the `SCRAPER` provider; the cron re-anchors weekly.
-3. **Home Assistant** — once the Phase 6 WebSocket client exists, register a `HOME_ASSISTANT` provider that reads the community "UK Bin Collection Data" integration's next-collection sensors, offloading scraper maintenance to an active project.
+The bin form gained a **source picker** (typed schedule / iCal feed / my council's website). The scraper flow adds live lookups (`GET /api/bins/councils`, `/address-search`, `/source-bins`) — council and address pickers plus a bin list read straight from the council page — and a one-click **"add all my bins"** batch (`POST /api/bins/scraper-batch`) that reads the page **once** and creates every chosen bin, **auto-colouring each from its name** (editable, de-selectable). Each external bin's card carries a **Sync now** button and a last-synced line; the nightly `BIN_SYNC_CRON` re-reads every active external bin (which is also what pins a 4-weekly scraped bin over its cycle). Verified end-to-end against a live council site (address search → schedule read → projection → widget/calendar), with 187 tests across the package, API and web.
 
-**Why split out.** The seam is small, low-risk and useful on its own (it makes external bins a config change, not a refactor); the providers each carry real, independent work (a separate repo; an HA dependency) and are best landed and tested one at a time against a live source.
+**Remaining (behind the same interface, no schema change):**
+
+- **Home Assistant** — once the Phase 6 WebSocket client exists, register a `HOME_ASSISTANT` provider that reads the community "UK Bin Collection Data" integration's next-collection sensors, offloading scraper maintenance to an active project.
+
+**Why this shape.** The seam is small and useful on its own (external bins become a config change, not a refactor); the providers carry real, independent work and landed one at a time against live sources. The scraper lives in-monorepo for a tight iteration loop and will be extracted to its standalone repo (§12) once a few councils are proven.
 
 ### Phase 6 — Home Assistant Integration
 
@@ -1218,20 +1221,13 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - Turns free-text recipe ingredients ("large tomato", "pinch of sugar") into clean `Item` data via one of three layered, swappable strategies selected per household: the regex parser (today), a bundled dictionary, or an LLM.
 - Reuses the same self-hosted **Ollama** as auto-tagging. The LLM normalises names/quantities and flags staples; the deterministic generate-shopping-list (§8.6) keeps doing the maths.
 
-### UK Bin Scraper (Separate Repo)
+### UK Bin Scraper (Standalone Package, to be extracted)
 
-- The `SCRAPER` provider behind the Phase 5.6 bin-source seam (§10) — Hame already has the model, cache, sync and cron; this is the data source that fills it.
-- Standalone repo: `uk-bin-scraper`
-- Modular per-council scraper pattern:
-  ```
-  /scrapers
-    /council-a.ts
-    /council-b.ts
-    /council-c.ts
-  ```
-- Common interface (e.g., `parseSchedule(streetUrl: string): Schedule[]`)
-- Hame integrates by calling the scraper as a library
-- Cron job refreshes weekly, anchors `BinCollection.startDate`
+- **Built** as the `SCRAPER` provider behind the Phase 5.6 bin-source seam (§10) — Hame already had the model, cache, sync and cron; this is the data source that fills it.
+- Lives **in-monorepo** as `packages/bin-scraper` (package name `uk-bin-scraper`) for a tight iteration loop, **to be extracted to its own repo** once a few councils are proven. Dependency-free (native `fetch` + targeted regex), so it stays portable.
+- Modular per-council adapters behind one interface — `findAddresses(query)` (setup-time street/postcode lookup) + `fetchObservation(addressId)` — plus a pure `projectBinDates(...)` that turns one reading into concrete dates. Parsers are fixture-tested against saved real council HTML.
+- Key design note: councils rarely publish concrete future dates, only "this week" + weekday/frequency, so the model is **observe-then-project** with a `priorAnchor` carried across syncs to pin 4-weekly cycles (see §10 Phase 5.6).
+- First council adapter shipped; further councils are added one module at a time. An LLM is used only as a dev aid for reverse-engineering a new council's page, never at runtime.
 - Blog post: _"How I Scraped My Council's Website to Automate Bin Reminders"_
 
 ### Other Down-the-Line Features

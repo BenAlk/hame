@@ -9,8 +9,8 @@
   },
   "packageManager": "pnpm@11.7.0",
   "scripts": {
-    "dev": "pnpm --filter @hame/shared build && concurrently -n shared,api,web -c blue,green,magenta \"pnpm --filter @hame/shared dev\" \"pnpm --filter @hame/api dev\" \"pnpm --filter @hame/web dev\"",
-    "build": "pnpm --filter @hame/shared build && pnpm --filter @hame/api build && pnpm --filter @hame/web build",
+    "dev": "pnpm --filter @hame/shared build && pnpm --filter uk-bin-scraper build && concurrently -n shared,api,web -c blue,green,magenta \"pnpm --filter @hame/shared dev\" \"pnpm --filter @hame/api dev\" \"pnpm --filter @hame/web dev\"",
+    "build": "pnpm --filter @hame/shared build && pnpm --filter uk-bin-scraper build && pnpm --filter @hame/api build && pnpm --filter @hame/web build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",

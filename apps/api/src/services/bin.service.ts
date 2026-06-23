@@ -5,9 +5,14 @@ import type {
   BinSourceConfig,
   BinSyncResult,
   CreateBinInput,
+  CreateScraperBinsInput,
+  ScraperAddress,
+  ScraperBin,
+  ScraperCouncil,
   UpdateBinInput,
 } from '@hame/shared'
 import { type BinScheduleRule, nextBinCollection } from '@hame/shared'
+import { getCouncil, listCouncils, projectBinDates } from 'uk-bin-scraper'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { logger } from '../lib/logger.js'
@@ -166,7 +171,10 @@ export async function deleteBin(id: string): Promise<void> {
  * nothing to sync; unwired external providers degrade gracefully.
  */
 export async function syncBin(id: string): Promise<BinSyncResult> {
-  const bin = await prisma.binCollection.findUnique({ where: { id } })
+  const bin = await prisma.binCollection.findUnique({
+    where: { id },
+    include: { occurrences: true },
+  })
   if (!bin) throw HttpError.notFound('Bin not found')
   if (bin.sourceType === 'MANUAL') {
     return { ok: true, count: 0, message: 'Manual bins are computed from their schedule.' }
@@ -183,14 +191,17 @@ export async function syncBin(id: string): Promise<BinSyncResult> {
 
   const start = startOfToday()
   const end = new Date(start.getTime() + SYNC_HORIZON_DAYS * 86_400_000)
+  // The latest cached collection date carries the bin's cycle phase forward, so a
+  // scraped source that only sees "this week" can place a 4-weekly bin (§9.6).
+  const priorAnchor = bin.occurrences
+    .map((o) => o.date)
+    .sort((a, b) => b.getTime() - a.getTime())[0]
   let occurrences
   try {
     occurrences = await provider.fetchOccurrences(
       (bin.sourceConfig as BinSourceConfig | null) ?? {},
-      {
-        start,
-        end,
-      },
+      { start, end },
+      { priorAnchor },
     )
   } catch (err) {
     logger.warn({ err, binId: id }, 'Bin sync fetch failed')
@@ -215,6 +226,92 @@ export async function syncBin(id: string): Promise<BinSyncResult> {
     count: occurrences.length,
     message: `Synced ${occurrences.length} collections.`,
   }
+}
+
+// ── Scraper source setup (drives the bin form's council/address pickers) ──────
+
+/** The councils the scraper supports, for the source picker. */
+export function listScraperCouncils(): ScraperCouncil[] {
+  return listCouncils().map((c) => ({ id: c.id, name: c.name, searchHint: c.searchHint }))
+}
+
+/** Search a council's address lookup for a free-text query (street/postcode). */
+export async function searchScraperAddresses(
+  councilId: string,
+  query: string,
+): Promise<ScraperAddress[]> {
+  const council = getCouncil(councilId)
+  if (!council) throw HttpError.badRequest(`Council "${councilId}" is not supported`)
+  const q = query.trim()
+  if (q.length < 2) return [] // avoid hammering the council site on a stray keystroke
+  const addresses = await council.findAddresses(q)
+  return addresses.map((a) => ({ id: a.id, label: a.label }))
+}
+
+/** The bins listed for a resolved address — populates the "which bin" picker. */
+export async function listScraperAddressBins(
+  councilId: string,
+  addressId: string,
+): Promise<ScraperBin[]> {
+  const council = getCouncil(councilId)
+  if (!council) throw HttpError.badRequest(`Council "${councilId}" is not supported`)
+  if (!addressId.trim()) throw HttpError.badRequest('An address is required')
+  const observation = await council.fetchObservation(addressId.trim())
+  return observation.bins.map((b) => ({ key: b.key, name: b.name }))
+}
+
+/**
+ * Create every chosen bin for one scraped address in a single pass — reading the
+ * council page just once and projecting each bin from that shared observation,
+ * rather than the bin form firing (and re-scraping) one create at a time.
+ */
+export async function createScraperBins(input: CreateScraperBinsInput): Promise<BinCollection[]> {
+  const council = getCouncil(input.councilId)
+  if (!council) throw HttpError.badRequest(`Council "${input.councilId}" is not supported`)
+
+  const observation = await council.fetchObservation(input.addressId.trim())
+  const start = startOfToday()
+  const end = new Date(start.getTime() + SYNC_HORIZON_DAYS * 86_400_000)
+
+  const createdIds: string[] = []
+  for (const choice of input.bins) {
+    const obsBin = observation.bins.find((b) => b.key === choice.key)
+    if (!obsBin) continue // a bin no longer listed for this address — skip it
+    // First sync of a fresh bin has no prior anchor; a 4-weekly bin not out this
+    // week stays empty until the cron observes it (same as a single create).
+    const dates = projectBinDates(obsBin, observation, { from: start, to: end })
+    const bin = await prisma.binCollection.create({
+      data: {
+        name: choice.name,
+        colour: choice.colour,
+        sourceType: 'SCRAPER',
+        sourceConfig: configWrite({
+          councilId: input.councilId,
+          addressId: input.addressId,
+          matchKey: choice.key,
+        }),
+        recurrenceType: null,
+        weekdays: [],
+        ...(input.remindNightBefore !== undefined && {
+          remindNightBefore: input.remindNightBefore,
+        }),
+        ...(input.remindMorningOf !== undefined && { remindMorningOf: input.remindMorningOf }),
+        lastSyncedAt: new Date(),
+        occurrences: { create: dates.map((date) => ({ date })) },
+      },
+    })
+    createdIds.push(bin.id)
+  }
+
+  if (createdIds.length === 0) {
+    throw HttpError.badRequest('None of the selected bins were found for this address')
+  }
+  const bins = await prisma.binCollection.findMany({
+    where: { id: { in: createdIds } },
+    orderBy: { name: 'asc' },
+    include: { occurrences: true },
+  })
+  return bins.map((b) => toBinCollection(b, b.occurrences))
 }
 
 /** Sync every active external bin — the cron entry point. Never throws. */
