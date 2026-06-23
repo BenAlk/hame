@@ -23,8 +23,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared package
-        run: pnpm --filter @hame/shared build
+      - name: Build workspace packages
+        run: pnpm --filter @hame/shared build && pnpm --filter uk-bin-scraper build
 
       - name: Generate Prisma client
         run: pnpm --filter @hame/api db:generate
