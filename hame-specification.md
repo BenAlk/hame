@@ -248,7 +248,7 @@ hame/
 
 ## 7. Data Models
 
-All models defined in `apps/api/prisma/schema.prisma`. 24 models total.
+All models defined in `apps/api/prisma/schema.prisma`. The full design below spans 26 models; those through Phase 5.6 are built, with the §7.8 integration singletons (Home Assistant, Immich, dashboard, notifications, idle mode) landing in Phases 6–8.
 
 ### 7.1 Auth & Users
 
@@ -278,9 +278,10 @@ model User {
   choresRotation         Chore[]     @relation("ChoreRotation")
   instancesAssigned      ChoreInstance[]  @relation("InstanceAssignee")
   instancesCompleted     ChoreInstance[]  @relation("InstanceCompleter")
-  customEventsCreated    CustomEvent[]
-  dashboardLayout        DashboardLayout?
-  notificationPrefs      NotificationPreference?
+  calendarObjects        CalendarObject[]         // was customEventsCreated; CustomEvent absorbed into CalendarObject in Phase 5.5
+  calDavCredentials      CalDavCredential[]       // Phase 5.5
+  dashboardLayout        DashboardLayout?         // Phase 7
+  notificationPrefs      NotificationPreference?  // Phase 8
 }
 
 enum Role {
