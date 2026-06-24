@@ -44,9 +44,12 @@ export function createApp() {
   // Ensure every client has a readable CSRF token to echo back on mutations.
   app.use(ensureCsrfCookie)
 
-  // Brute-force protection on auth endpoints (5 attempts / 15 min per IP).
+  // Brute-force protection on login only (5 attempts / 15 min per IP). Scoped to
+  // the credential-guessing surface — NOT the whole /api/auth tree, since `/me`
+  // is called on every page load and `/logout` is benign; throttling those would
+  // log active users out after a few refreshes.
   app.use(
-    '/api/auth',
+    '/api/auth/login',
     rateLimit({
       windowMs: 15 * 60 * 1000,
       limit: 5,

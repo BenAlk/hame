@@ -7,6 +7,7 @@ import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
 import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-widget'
 import { PetRemindersWidget } from '@/components/features/widgets/pet-reminders-widget'
 import { NextBinDayWidget } from '@/components/features/widgets/next-bin-day-widget'
+import { WeatherWidget } from '@/components/features/widgets/weather-widget'
 import { useCurrentUser } from '@/api/auth'
 
 function greeting(date = new Date()): string {
@@ -34,6 +35,7 @@ export function HomePage() {
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <WeatherWidget />
         <TodaysMealsWidget />
         <ActiveShoppingWidget />
         <TodaysChoresWidget />

@@ -1181,15 +1181,32 @@ connect / Disconnect, and a live status pill. Verified end-to-end: typecheck / l
 against real Home Assistant** — Test returns the version, Save connects, and the stored token is
 ciphertext.
 
-#### Phase 6.2 — Entity reads + live push (pending)
+#### Phase 6.2 — Entity reads + live push ✅ Complete (24-06-2026)
 
-`subscribe_events` (`state_changed`) into an in-memory entity registry (§8.11: no state mirroring —
-query live, don't persist); a whitelisted entities endpoint; and a **Server-Sent Events** stream
-(`GET /api/home-assistant/stream`) pushing state deltas to the browser, with the Weather widget as
-first consumer. SSE is a deliberate choice for the one-directional API→browser hop (commands ride
-REST); the bidirectional-WebSocket talking point (§13) is the API↔HA hop, which is a WebSocket
-regardless. A documented deviation from §4's stack-table wording, like the FullCalendar deviation
-(Phase 5).
+**Delivered**: Once authenticated, the HA client seeds an **in-memory entity registry** via
+`get_states` and keeps it live by subscribing to `state_changed` events, scoped to a dashboard-domain
+whitelist (`HA_DASHBOARD_DOMAINS` — weather, sensors, lights, switches, climate, etc.) — never
+persisted (§8.11: no state mirroring; Hame queries HA live, the registry is a cache cleared on
+disconnect). Pure, unit-tested helpers (`projectHaState` / `parseStateChangedEvent` /
+`isAllowedDomain`) keep the socket out of the parsing, matching the auth-helper split. Shared
+`@hame/shared` gains the `HaEntityState` schema and the domain whitelist. Two member-level endpoints
+(not admin — dashboard data): `GET /api/home-assistant/entities` returns the current registry, and a
+**Server-Sent Events** stream `GET /api/home-assistant/stream` pushes state deltas to the browser
+(heartbeat-kept-alive, `EventSource`-read). Web: `useHaEntities` + a `useHaEntityStream` SSE hook that
+patches the query cache, and a **Weather** dashboard widget (condition icon + temperature + humidity)
+that renders only when HA exposes a `weather.*` entity — so non-HA households never see it or open the
+stream. Verified end-to-end: typecheck / lint / format green, 7 new tests (the entity projection /
+event parsing / domain filtering), plus a **live test against real Home Assistant** — the widget shows
+live weather and updates over SSE without a refresh.
+
+**SSE is a deliberate choice** for the one-directional API→browser hop (commands ride REST); the
+bidirectional-WebSocket talking point (§13) is the API↔HA hop, which is a WebSocket regardless. A
+documented deviation from §4's stack-table wording, like the FullCalendar deviation (Phase 5).
+
+> While here, a latent bug surfaced and was fixed: the `express-rate-limit` brute-force guard was
+> mounted on the whole `/api/auth` tree, so it also throttled the per-page-load `GET /api/auth/me` —
+> after 5 refreshes in 15 min a `429` on `/me` logged the user out. It is now scoped to
+> `/api/auth/login` only (§11).
 
 #### Phase 6.3 — Device controls + HA calendar source (pending)
 
@@ -1227,7 +1244,7 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - **Middleware**:
   - `helmet` for security headers
   - `cors` locked to allowed origins
-  - `express-rate-limit` on `/api/auth/*` endpoints (5 attempts / 15 mins per IP)
+  - `express-rate-limit` on the login endpoint `/api/auth/login` (5 attempts / 15 mins per IP) — scoped to the credential-guessing surface, not the whole `/api/auth` tree, so the per-page-load `/me` check and `/logout` aren't throttled
 - **Trust proxy / real client IP**: the app sits behind Cloudflare + a reverse proxy, so Express must set `trust proxy` correctly and derive the client IP from `CF-Connecting-IP`. Otherwise every request appears to come from a proxy IP and the per-IP rate limit collapses into a single shared bucket. Do **not** blindly trust `X-Forwarded-For` (spoofable) — pin to the known proxy.
 - **CSRF**: because JWT is stored in an httpOnly cookie, cookie-based requests need CSRF protection — set `SameSite=Lax` (or `Strict`) on the auth cookie and add a double-submit CSRF token for state-changing routes. (Bearer-token requests are exempt.)
 - **Env vars** validated at startup with Zod — fail fast if misconfigured

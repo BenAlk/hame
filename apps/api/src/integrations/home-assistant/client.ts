@@ -1,8 +1,18 @@
 import { WebSocket } from 'ws'
-import type { HaConnectionStatus } from '@hame/shared'
+import type { HaEntityState } from '@hame/shared'
+import { HA_DASHBOARD_DOMAINS, type HaConnectionStatus } from '@hame/shared'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { nextAuthStep, parseMessage, toWebSocketUrl } from './protocol.js'
+import {
+  isAllowedDomain,
+  parseStateChangedEvent,
+  projectHaState,
+  type RawHaState,
+} from './entities.js'
+
+/** Notified on every dashboard-relevant entity change (drives the SSE stream). */
+export type EntityListener = (entity: HaEntityState) => void
 
 /**
  * The API's single outbound WebSocket to Home Assistant (spec §8.11, §10 Phase 6).
@@ -11,7 +21,9 @@ import { nextAuthStep, parseMessage, toWebSocketUrl } from './protocol.js'
  * loop — a down HA just leaves the status `error`/`disconnected` and retries,
  * the same graceful-degrade contract as the cron syncs.
  *
- * Phase 6.1 stops at *authenticated + status*; event subscriptions land in 6.2.
+ * Once authenticated it seeds an in-memory registry via `get_states` and keeps
+ * it live by subscribing to `state_changed` (spec §10 Phase 6.2), scoped to the
+ * dashboard domains. The registry is never persisted (§8.11, no state mirroring).
  */
 
 const RECONNECT_BASE_MS = 1_000
@@ -40,8 +52,25 @@ class HomeAssistantClient {
   /** Guards against a scheduled reconnect firing after an intentional stop. */
   private stopped = true
 
+  // ── Entity registry (in-memory only — spec §8.11, no state mirroring) ──
+  private commandId = 0
+  private getStatesId = 0
+  private readonly entities = new Map<string, HaEntityState>()
+  private readonly listeners = new Set<EntityListener>()
+
   getStatus(): HaStatus {
     return { status: this.status, haVersion: this.haVersion, lastError: this.lastError }
+  }
+
+  /** Current dashboard-relevant entity states (empty until connected). */
+  getEntities(): HaEntityState[] {
+    return [...this.entities.values()]
+  }
+
+  /** Subscribe to live entity changes; returns an unsubscribe fn. */
+  onEntityUpdate(listener: EntityListener): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   /** Connect with the given settings, replacing any existing connection. */
@@ -61,6 +90,7 @@ class HomeAssistantClient {
     this.status = 'disconnected'
     this.haVersion = null
     this.lastError = null
+    this.entities.clear()
   }
 
   /** Re-read settings and reconnect — called when the saved config changes. */
@@ -105,7 +135,7 @@ class HomeAssistantClient {
       case 'send-auth':
         this.haVersion = step.haVersion
         this.ws?.send(JSON.stringify(step.payload))
-        break
+        return
       case 'authenticated':
         this.status = 'connected'
         this.lastError = null
@@ -113,7 +143,8 @@ class HomeAssistantClient {
         this.reconnectDelay = RECONNECT_BASE_MS
         logger.info({ haVersion: this.haVersion }, 'Home Assistant connected')
         void this.stampConnected()
-        break
+        this.subscribeToEntities()
+        return
       case 'auth-failed':
         // A bad token won't fix itself by retrying — stop and surface it.
         this.status = 'auth_failed'
@@ -121,14 +152,55 @@ class HomeAssistantClient {
         logger.warn({ message: step.message }, 'Home Assistant auth rejected')
         this.stopped = true
         this.teardownSocket()
-        break
+        return
       case 'ignore':
-        break
+        if (this.status === 'connected') this.onRuntimeMessage(message)
+        return
     }
+  }
+
+  /** Once authenticated: seed the registry with all states, then subscribe. */
+  private subscribeToEntities(): void {
+    this.entities.clear()
+    this.getStatesId = ++this.commandId
+    this.send({ id: this.getStatesId, type: 'get_states' })
+    this.send({ id: ++this.commandId, type: 'subscribe_events', event_type: 'state_changed' })
+  }
+
+  /** Handle post-auth frames: the `get_states` result and `state_changed` events. */
+  private onRuntimeMessage(message: {
+    id?: unknown
+    type?: unknown
+    result?: unknown
+    event?: unknown
+  }): void {
+    if (message.type === 'result' && message.id === this.getStatesId) {
+      if (Array.isArray(message.result)) {
+        for (const raw of message.result as RawHaState[]) this.ingest(raw, false)
+      }
+      return
+    }
+    if (message.type === 'event') {
+      const changed = parseStateChangedEvent(message.event)
+      if (changed?.newState) this.ingest(changed.newState, true)
+    }
+  }
+
+  /** Register one raw state if it's a dashboard domain; emit when `notify`. */
+  private ingest(raw: RawHaState, notify: boolean): void {
+    const entity = projectHaState(raw)
+    if (!entity || !isAllowedDomain(entity.entityId, HA_DASHBOARD_DOMAINS)) return
+    this.entities.set(entity.entityId, entity)
+    if (notify) for (const listener of this.listeners) listener(entity)
+  }
+
+  private send(payload: Record<string, unknown>): void {
+    this.ws?.send(JSON.stringify(payload))
   }
 
   private onClose(): void {
     this.ws = null
+    this.entities.clear() // stale once the link drops; re-seeded on reconnect
     if (this.stopped) return // intentional stop or auth failure
     if (this.status !== 'auth_failed') this.status = 'error'
     this.scheduleReconnect()

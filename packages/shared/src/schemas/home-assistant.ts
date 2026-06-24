@@ -55,3 +55,38 @@ export const HomeAssistantTestResultSchema = z.object({
   version: z.string().optional(),
 })
 export type HomeAssistantTestResult = z.infer<typeof HomeAssistantTestResultSchema>
+
+/**
+ * Entity domains surfaced to the dashboard (spec §8.11, §10 Phase 6.2). HA
+ * exposes hundreds of entities; the registry and the `/entities` feed are scoped
+ * to this dashboard-relevant set so the browser isn't flooded with internals.
+ */
+export const HA_DASHBOARD_DOMAINS = [
+  'weather',
+  'sensor',
+  'binary_sensor',
+  'light',
+  'switch',
+  'climate',
+  'cover',
+  'lock',
+  'fan',
+  'person',
+  'sun',
+] as const
+
+/**
+ * One Home Assistant entity's current state (spec §8.11). A live projection of
+ * HA's own state object — never persisted (no state mirroring; Hame queries HA
+ * live and caches in memory only). `attributes` is an open bag (e.g. a weather
+ * entity's `temperature`); consumers narrow what they need.
+ */
+export const HaEntityStateSchema = z.object({
+  entityId: z.string(),
+  domain: z.string(),
+  state: z.string(),
+  friendlyName: z.string().nullable(),
+  attributes: z.record(z.unknown()),
+  lastChanged: z.coerce.date().nullable(),
+})
+export type HaEntityState = z.infer<typeof HaEntityStateSchema>
