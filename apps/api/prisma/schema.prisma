@@ -322,6 +322,21 @@ model OllamaConfig {
   updatedAt       DateTime  @updatedAt
 }
 
+// ── Phase 6: Home Assistant ──────────────────────────────────────────────────
+
+/// Home Assistant connection (spec §8.11, §10 Phase 6). Singleton mirroring the
+/// Ollama/Immich config pattern. The long-lived access token is AES-256-GCM
+/// encrypted at rest (spec §11) — `accessToken` holds the ciphertext blob, never
+/// plaintext, and is never returned to the client.
+model HomeAssistantConfig {
+  id              String    @id @default("singleton") // enforce single row
+  url             String?
+  accessToken     String? // AES-256-GCM ciphertext (see lib/crypto.ts); never returned
+  isActive        Boolean   @default(false)
+  lastConnectedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
 // ── Phase 5: Bins ────────────────────────────────────────────────────────────
 
 /// A kerbside bin collection schedule (spec §8.9). Recurs but is never completed

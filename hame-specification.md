@@ -1153,6 +1153,50 @@ HA config UI, WebSocket client, entity state reads, device controls, HA calendar
 
 **Goal**: Smart home from Hame, live sensor data on dashboard.
 
+Split into sub-phases (mirroring 4.5 / 5.5 / 5.6), each landing green: **6.1** connection
+foundation, **6.2** entity reads + live push, **6.3** device controls + HA calendar source.
+
+#### Phase 6.1 — Connection foundation ✅ Complete (24-06-2026)
+
+**Delivered**: The first encryption at rest in the codebase — `lib/crypto.ts` (AES-256-GCM, the
+first consumer of the already-wired `ENCRYPTION_KEY`, §11), serialising `iv:authTag:ciphertext` with
+GCM tamper-detection. A Phase 6 migration adds the **`HomeAssistantConfig`** singleton (§7.8) storing
+the long-lived token as ciphertext; the config service encrypts on write, leaves the stored blob
+intact when the token is omitted, and **never returns it** — the read shape carries only `hasToken`.
+Shared `@hame/shared` gains the HA config / update / test Zod schemas. An admin-only
+`/api/home-assistant` slice (`GET` / `PATCH` / `POST /test`) mirrors the Ollama config pattern.
+
+The integration adds the API's single outbound **WebSocket to HA** (`ws`): a module-level singleton
+that runs HA's auth handshake, reconnects with capped backoff, exposes live status, and never throws
+into the event loop (stopping retries on a rejected token rather than looping). Its protocol logic is
+split into **pure, unit-tested helpers** (`nextAuthStep` / `parseMessage` / `toWebSocketUrl`) so the
+auth state machine is tested without a socket — the same split as the Ollama integration. A one-shot
+REST probe (`GET /api/`, version from `/api/config`) backs the Settings "Test connection" button
+without standing up the socket. The connection starts at boot if active and stops on shutdown,
+alongside the existing cron jobs. Web: an admin **Home Assistant** card in Settings — URL, a
+write-only token field ("leave blank to keep"), Test connection (surfacing the HA version), Save &
+connect / Disconnect, and a live status pill. Verified end-to-end: typecheck / lint / format green,
+12 new tests (crypto round-trip + tamper, the config service's encrypt-at-rest / token-never-returned
+/ omit-preserves contract, the pure auth-step handler, and the REST probe), plus a **live smoke test
+against real Home Assistant** — Test returns the version, Save connects, and the stored token is
+ciphertext.
+
+#### Phase 6.2 — Entity reads + live push (pending)
+
+`subscribe_events` (`state_changed`) into an in-memory entity registry (§8.11: no state mirroring —
+query live, don't persist); a whitelisted entities endpoint; and a **Server-Sent Events** stream
+(`GET /api/home-assistant/stream`) pushing state deltas to the browser, with the Weather widget as
+first consumer. SSE is a deliberate choice for the one-directional API→browser hop (commands ride
+REST); the bidirectional-WebSocket talking point (§13) is the API↔HA hop, which is a WebSocket
+regardless. A documented deviation from §4's stack-table wording, like the FullCalendar deviation
+(Phase 5).
+
+#### Phase 6.3 — Device controls + HA calendar source (pending)
+
+`call_service` for light toggles / scenes / automations; the smart-home quick-controls widget; and
+wiring the `HOME_ASSISTANT` `CalendarSource` (§8.10) and (optionally) bin source now that the client
+exists.
+
 ### Phase 7 — Dashboard Polish
 
 All remaining widgets, drag-and-drop customisation, per-user layouts, **idle mode with Immich photo screensaver + clock cycling**, responsive layouts, PWA.

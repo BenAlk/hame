@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, XCircle } from 'lucide-react'
-import type { NormaliserStrategy, OllamaTestResult, PublicUser } from '@hame/shared'
+import type {
+  HaConnectionStatus,
+  HomeAssistantTestResult,
+  NormaliserStrategy,
+  OllamaTestResult,
+  PublicUser,
+} from '@hame/shared'
 import { DEFAULT_OLLAMA_MODEL } from '@hame/shared'
 import { AppNav } from '@/components/app-nav'
 import { Button } from '@/components/ui/button'
@@ -12,6 +18,11 @@ import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useHouseholdSettings, useUpdateHouseholdSettings } from '@/api/household-settings'
 import { useOllamaConfig, useProbeOllamaModels, useUpdateOllamaConfig } from '@/api/ollama-config'
+import {
+  useHomeAssistantConfig,
+  useTestHomeAssistant,
+  useUpdateHomeAssistantConfig,
+} from '@/api/home-assistant'
 
 const STRATEGIES: { value: NormaliserStrategy; label: string; description: string }[] = [
   {
@@ -81,6 +92,8 @@ export function SettingsPage() {
       </Card>
 
       <OllamaCard active={strategy === 'LLM'} />
+
+      <HomeAssistantCard />
 
       <Card className="max-w-2xl">
         <CardHeader>
@@ -274,6 +287,169 @@ function OllamaCard({ active }: { active: boolean }) {
           <Button type="button" onClick={() => void handleSave()} disabled={updateConfig.isPending}>
             {updateConfig.isPending ? 'Saving…' : 'Save'}
           </Button>
+          {config?.lastConnectedAt && (
+            <span className="text-xs text-muted-foreground">
+              Last connected {new Date(config.lastConnectedAt).toLocaleString()}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+const HA_STATUS_LABELS: Record<HaConnectionStatus, string> = {
+  disconnected: 'Disconnected',
+  connecting: 'Connecting…',
+  connected: 'Connected',
+  auth_failed: 'Token rejected',
+  error: 'Connection error',
+}
+
+/** Home Assistant connection form (spec §10 Phase 6). */
+function HomeAssistantCard() {
+  const { data: config } = useHomeAssistantConfig()
+  const updateConfig = useUpdateHomeAssistantConfig()
+  const testConn = useTestHomeAssistant()
+
+  const [url, setUrl] = useState('')
+  const [token, setToken] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [test, setTest] = useState<HomeAssistantTestResult | null>(null)
+
+  // Seed the URL from the saved config once; the token is write-only and never
+  // returned, so its field stays blank ("leave blank to keep the stored one").
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (config && !seeded.current) {
+      seeded.current = true
+      setUrl(config.url ?? '')
+    }
+  }, [config])
+
+  async function handleTest() {
+    setError(null)
+    setTest(null)
+    try {
+      setTest(await testConn.mutateAsync({ url: url.trim(), accessToken: token.trim() }))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Enter a URL and token to test.')
+    }
+  }
+
+  async function handleSave(isActive: boolean) {
+    setError(null)
+    try {
+      await updateConfig.mutateAsync({
+        url: url.trim(),
+        // Omit the token when blank so the stored one is kept.
+        ...(token.trim() && { accessToken: token.trim() }),
+        isActive,
+      })
+      setToken('')
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : 'Could not save the Home Assistant settings.',
+      )
+    }
+  }
+
+  const status = config?.status ?? 'disconnected'
+
+  return (
+    <Card className="max-w-2xl">
+      <CardHeader>
+        <CardTitle>Home Assistant</CardTitle>
+        <CardDescription>
+          Connect a self-hosted Home Assistant for smart-home controls and live sensor data on the
+          dashboard. Paste a long-lived access token (Profile → Security in Home Assistant).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'inline-flex items-center rounded-pill px-2.5 py-0.5 text-xs font-medium',
+              status === 'connected'
+                ? 'bg-accent-soft text-sage'
+                : status === 'auth_failed' || status === 'error'
+                  ? 'bg-accent-soft text-warning'
+                  : 'bg-accent-soft text-muted-foreground',
+            )}
+          >
+            {HA_STATUS_LABELS[status]}
+          </span>
+          {config?.haVersion && (
+            <span className="text-xs text-muted-foreground">Home Assistant {config.haVersion}</span>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ha-url">Server URL</Label>
+          <Input
+            id="ha-url"
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="http://homeassistant.local:8123"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ha-token">Access token</Label>
+          <Input
+            id="ha-token"
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={
+              config?.hasToken ? 'Token set — leave blank to keep' : 'Long-lived access token'
+            }
+            autoComplete="off"
+          />
+        </div>
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+        {test && (
+          <p
+            className={cn('flex items-start gap-2 text-sm', test.ok ? 'text-sage' : 'text-warning')}
+          >
+            {test.ok ? (
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+            ) : (
+              <XCircle className="mt-0.5 size-4 shrink-0" />
+            )}
+            {test.message}
+            {test.version ? ` (v${test.version})` : ''}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => void handleSave(true)}
+            disabled={updateConfig.isPending || !url.trim()}
+          >
+            {updateConfig.isPending ? 'Saving…' : 'Save & connect'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleTest()}
+            disabled={testConn.isPending || !url.trim() || !token.trim()}
+          >
+            {testConn.isPending ? 'Testing…' : 'Test connection'}
+          </Button>
+          {config?.isActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => void handleSave(false)}
+              disabled={updateConfig.isPending}
+            >
+              Disconnect
+            </Button>
+          )}
           {config?.lastConnectedAt && (
             <span className="text-xs text-muted-foreground">
               Last connected {new Date(config.lastConnectedAt).toLocaleString()}
