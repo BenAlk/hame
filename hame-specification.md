@@ -1208,11 +1208,44 @@ documented deviation from §4's stack-table wording, like the FullCalendar devia
 > after 5 refreshes in 15 min a `429` on `/me` logged the user out. It is now scoped to
 > `/api/auth/login` only (§11).
 
-#### Phase 6.3 — Device controls + HA calendar source (pending)
+#### Phase 6.3 — Device controls + HA calendar source ✅ Complete (24-06-2026)
 
-`call_service` for light toggles / scenes / automations; the smart-home quick-controls widget; and
-wiring the `HOME_ASSISTANT` `CalendarSource` (§8.10) and (optionally) bin source now that the client
-exists.
+**Delivered**: Device controls and Home Assistant calendars, both behind the existing Phase 6.1/6.2
+client — **no migration** (the `HOME_ASSISTANT` value already existed in both the `CalendarSourceType`
+and `BinSourceType` enums). Shared `@hame/shared` gains a tight **`call_service` allowlist**
+(`HA_CONTROL_SERVICES` — toggle lights/switches/fans, activate scenes/scripts, trigger automations)
+and an `isHaServiceAllowed` guard the request schema enforces, so a crafted request can't drive
+arbitrary HA services; plus the `HaServiceCall` / `HaCalendar` schemas and the widget's
+toggle/activate domain sets. `scene` / `script` joined the dashboard-domain whitelist so the widget
+can list them; `automation` is deliberately kept out of the registry (triggering one stays an allowed
+API capability, but a household's automations would flood the calm dashboard).
+
+The HA WebSocket client gains `callService` — it relays `call_service` over the live socket and
+resolves on HA's `result` ack, with a **pending-command map** (id-keyed promises, per-command timeout,
+all rejected on disconnect) so a control never hangs. Commands ride REST (the §6.2 SSE note): an
+admin-or-member `POST /api/home-assistant/service` validates against the allowlist and degrades
+gracefully (`{ ok: false }`, never a thrown request) when HA is down. A new `integrations/home-assistant/calendars`
+reads HA's REST calendar surface — `GET /api/calendars` (the source picker) and
+`GET /api/calendars/<entity>?start&end` — with a pure `mapHaCalendarEvents` (timed vs all-day,
+uid+start de-dupe) unit-tested without the network. `syncCalendarSource` now dispatches by type: a
+`HOME_ASSISTANT` source stores its calendar **entity id** in `url` and is fetched over the same
+horizon as iCal, cached as `SyncedEvent` rows, and surfaced everywhere the aggregated calendar reaches
+(§8.10) — the cron now syncs every active source, not just iCal.
+
+Web: a `useHaControl` mutation + `useHaCalendars` query, a **Smart-home quick-controls widget**
+(design §6 pill toggles for lights/switches/fans, "run" buttons for scenes/scripts) that renders only
+when HA exposes something controllable and reflects state over SSE — the dashboard now owns the single
+SSE stream (the weather + smart-home widgets share one connection rather than opening two), and the
+external-calendars manager gains a source-type toggle that swaps the iCal-URL field for a Home
+Assistant calendar dropdown. Verified end-to-end: typecheck / lint / format green, 207 tests (202 API
++ 5 web; incl. the allowlist + schema refusal, the disconnected-rejection, and the HA-calendar
+mapper), all builds clean, plus a **live smoke against real Home Assistant** — the control endpoint's
+auth guard (401) and allowlist refusal (400), a `light.toggle` relayed and acknowledged, the calendars
+list, and a HOME_ASSISTANT calendar source created → synced → surfaced in the aggregated feed → removed.
+
+**Remaining (optional, behind the same seams):** the `HOME_ASSISTANT` **bin** provider — register a
+provider reading the community "UK Bin Collection Data" next-collection sensors (§10 Phase 5.6), now
+that the client exists. The HA calendar source landed; the bin source is the last unwired provider.
 
 ### Phase 7 — Dashboard Polish
 

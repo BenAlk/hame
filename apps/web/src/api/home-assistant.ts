@@ -1,16 +1,25 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  HaCalendar,
   HaEntityState,
+  HaServiceCallInput,
+  HaServiceCallResult,
   HomeAssistantConfig,
   HomeAssistantTestResult,
+  SmartHomeEntityIdsInput,
+  SmartHomeSettings,
   TestHomeAssistantInput,
   UpdateHomeAssistantConfigInput,
+  UpdateSmartHomeSettingsInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
 
 const HA_KEY = ['home-assistant-config'] as const
 const HA_ENTITIES_KEY = ['home-assistant-entities'] as const
+const HA_CALENDARS_KEY = ['home-assistant-calendars'] as const
+const HA_CONTROLS_KEY = ['home-assistant-controls'] as const
+const HA_SUGGESTIONS_KEY = ['home-assistant-suggestions'] as const
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
 /** Admin-only: the Home Assistant connection (spec §10 Phase 6). */
@@ -55,6 +64,92 @@ export function useHaEntities(enabled = true) {
 }
 
 /**
+ * Relay a device control to Home Assistant (spec §10 Phase 6.3). The entity's
+ * state truth comes back over the SSE stream, so there's no optimistic write —
+ * the toggle reflects HA a beat later. Returns the structured `{ ok, message }`.
+ */
+export function useHaControl() {
+  return useMutation<HaServiceCallResult, Error, HaServiceCallInput>({
+    mutationFn: (body) =>
+      apiFetch<HaServiceCallResult>('/api/home-assistant/service', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+/** HA calendar entities for the calendar-source picker (spec §10 Phase 6.3). */
+export function useHaCalendars(enabled = true) {
+  return useQuery<HaCalendar[]>({
+    queryKey: HA_CALENDARS_KEY,
+    queryFn: () => apiFetch<HaCalendar[]>('/api/home-assistant/calendars'),
+    enabled,
+  })
+}
+
+/** The household's curated smart-home control list (spec §10 Phase 6.3). */
+export function useSmartHomeControls() {
+  return useQuery<SmartHomeSettings>({
+    queryKey: HA_CONTROLS_KEY,
+    queryFn: () => apiFetch<SmartHomeSettings>('/api/home-assistant/controls'),
+  })
+}
+
+/** Save the curated control list (the Smart-home page's Save button). */
+export function useUpdateSmartHomeControls() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: UpdateSmartHomeSettingsInput) =>
+      apiFetch<SmartHomeSettings>('/api/home-assistant/controls', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(HA_CONTROLS_KEY, data)
+      void qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY })
+    },
+  })
+}
+
+/** New controllable devices Hame found but the household hasn't decided on yet. */
+export function useSmartHomeSuggestions(enabled = true) {
+  return useQuery<HaEntityState[]>({
+    queryKey: HA_SUGGESTIONS_KEY,
+    queryFn: () => apiFetch<HaEntityState[]>('/api/home-assistant/suggestions'),
+    enabled,
+  })
+}
+
+/** Add suggested devices to the widget (the dashboard prompt's "Add"). */
+export function useAddSmartHomeControls() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: SmartHomeEntityIdsInput) =>
+      apiFetch<SmartHomeSettings>('/api/home-assistant/controls/add', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(HA_CONTROLS_KEY, data)
+      void qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY })
+    },
+  })
+}
+
+/** Dismiss suggested devices without adding them (the prompt's "Dismiss"). */
+export function useDismissSmartHomeSuggestions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: SmartHomeEntityIdsInput) =>
+      apiFetch<void>('/api/home-assistant/controls/dismiss', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY }),
+  })
+}
+
+/**
  * Subscribe to live entity changes over SSE and patch the entities cache.
  * One-way push (EventSource); commands ride normal REST. No-op when disabled,
  * so households without Home Assistant never open the stream.
@@ -71,7 +166,12 @@ export function useHaEntityStream(enabled = true) {
       qc.setQueryData<HaEntityState[]>(HA_ENTITIES_KEY, (prev) => {
         const list = prev ?? []
         const idx = list.findIndex((e) => e.entityId === entity.entityId)
-        if (idx === -1) return [...list, entity]
+        if (idx === -1) {
+          // A brand-new entity just appeared in HA — re-check for a suggestion to
+          // prompt (spec §10 Phase 6.3), so a freshly-added bulb surfaces at once.
+          void qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY })
+          return [...list, entity]
+        }
         const next = list.slice()
         next[idx] = entity
         return next

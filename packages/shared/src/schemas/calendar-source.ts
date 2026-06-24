@@ -1,5 +1,9 @@
 import { z } from 'zod'
-import { CALENDAR_SOURCE_TYPES, HEX_COLOUR_REGEX } from '../constants/index.js'
+import {
+  CALENDAR_SOURCE_TYPES,
+  HEX_COLOUR_REGEX,
+  type CalendarSourceType,
+} from '../constants/index.js'
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
 const atLeastOneFieldMessage = { message: 'At least one field must be provided' }
@@ -10,17 +14,33 @@ export const CalendarSourceTypeSchema = z.enum(CALENDAR_SOURCE_TYPES)
 
 const CalendarSourceFields = z.object({
   name: z.string().min(1, 'Name is required').max(80, 'Name is too long'),
-  url: z.string().url('Enter a valid iCal URL').max(2000),
+  // For ICAL this is a feed URL; for HOME_ASSISTANT it is a calendar entity id
+  // (e.g. "calendar.personal"), so the URL shape is enforced per-type below.
+  url: z.string().min(1, 'Required').max(2000),
   colour: z.string().regex(HEX_COLOUR_REGEX, 'Pick a colour'),
-  // Only ICAL is wired today; HOME_ASSISTANT arrives with Phase 6.
   type: CalendarSourceTypeSchema.default('ICAL'),
 })
 
-export const CreateCalendarSourceSchema = CalendarSourceFields
+/** ICAL sources need a real URL; HA sources carry an entity id, not a URL. */
+const requireUrlForICal = (
+  data: { type?: CalendarSourceType; url?: string },
+  ctx: z.RefinementCtx,
+) => {
+  if (
+    data.type === 'ICAL' &&
+    data.url !== undefined &&
+    !z.string().url().safeParse(data.url).success
+  ) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid iCal URL', path: ['url'] })
+  }
+}
+
+export const CreateCalendarSourceSchema = CalendarSourceFields.superRefine(requireUrlForICal)
 export type CreateCalendarSourceInput = z.infer<typeof CreateCalendarSourceSchema>
 
 export const UpdateCalendarSourceSchema = CalendarSourceFields.partial()
   .extend({ isActive: z.boolean().optional() })
+  .superRefine(requireUrlForICal)
   .refine(atLeastOneField, atLeastOneFieldMessage)
 export type UpdateCalendarSourceInput = z.infer<typeof UpdateCalendarSourceSchema>
 

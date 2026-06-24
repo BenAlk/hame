@@ -337,6 +337,25 @@ model HomeAssistantConfig {
   updatedAt       DateTime  @updatedAt
 }
 
+/// Which Home Assistant entities the household has curated onto the smart-home
+/// dashboard widget (spec §8.12, §10 Phase 6.3). Household-wide (the wall tablet
+/// is shared, like IdleModeSettings), so the widget shows a chosen few rather
+/// than every controllable entity. `entityIds` is ordered — the widget renders
+/// them in this order. Selection only; the live state is never persisted (§8.11).
+///
+/// `knownEntityIds` is the "already offered" set behind the new-device prompt:
+/// every controllable entity Hame has shown the household (added, dismissed, or
+/// present at first setup). It's seeded once to whatever exists when HA is first
+/// connected (`knownInitialised`), so existing/deliberately-skipped devices never
+/// nag — only entities added later surface as suggestions.
+model SmartHomeSettings {
+  id               String   @id @default("singleton") // enforce single row
+  entityIds        String[] @default([])
+  knownEntityIds   String[] @default([])
+  knownInitialised Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
+}
+
 // ── Phase 5: Bins ────────────────────────────────────────────────────────────
 
 /// A kerbside bin collection schedule (spec §8.9). Recurs but is never completed

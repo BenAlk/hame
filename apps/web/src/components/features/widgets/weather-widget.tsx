@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import type { HaEntityState } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
-import { useHaEntities, useHaEntityStream } from '@/api/home-assistant'
+import { useHaEntities } from '@/api/home-assistant'
 
 /** Friendly label + line icon for each HA weather condition (raw state otherwise). */
 const CONDITIONS: Record<string, { label: string; Icon: LucideIcon }> = {
@@ -54,10 +54,8 @@ export function WeatherWidget() {
     () => entities?.find((e) => e.domain === 'weather'),
     [entities],
   )
-  // Only open the live stream once we know HA actually has a weather entity.
-  useHaEntityStream(Boolean(weather))
 
-  if (!weather) return null
+  if (!weather) return null // the page owns the SSE stream (HomePage); this just reads it
 
   const temperature = num(weather.attributes.temperature)
   const unit = str(weather.attributes.temperature_unit) ?? '°'

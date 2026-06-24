@@ -8,7 +8,18 @@ import type {
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { logger } from '../lib/logger.js'
-import { fetchICalEvents } from '../integrations/ical/index.js'
+import { fetchICalEvents, type ParsedSyncedEvent } from '../integrations/ical/index.js'
+import { fetchHaCalendarEvents } from '../integrations/home-assistant/calendars.js'
+import { getConnectionSettings } from './home-assistant-config.service.js'
+
+// HA calendars are queried over an explicit window (iCal feeds carry their own
+// horizon); match the iCal expansion range — a month back, ~a year ahead.
+const HA_HORIZON_PAST_DAYS = 31
+const HA_HORIZON_FUTURE_DAYS = 366
+
+function addDays(d: Date, n: number): Date {
+  return new Date(d.getTime() + n * 86_400_000)
+}
 
 const sourceInclude = {
   _count: { select: { events: true } },
@@ -84,20 +95,21 @@ export async function deleteCalendarSource(id: string): Promise<void> {
 }
 
 /**
- * Fetch an iCal source and replace its cached events wholesale (a derived cache,
- * so delete-then-insert is the simplest correct strategy). Stamps `lastSyncedAt`.
- * HOME_ASSISTANT sources are skipped until Phase 6.
+ * Fetch an external source and replace its cached events wholesale (a derived
+ * cache, so delete-then-insert is the simplest correct strategy). Stamps
+ * `lastSyncedAt`. Dispatches by type — an iCal feed URL or, since Phase 6.3, a
+ * Home Assistant `calendar.*` entity (the entity id is held in `source.url`).
  */
 export async function syncCalendarSource(id: string): Promise<CalendarSyncResult> {
   const source = await prisma.calendarSource.findUnique({ where: { id } })
   if (!source) throw HttpError.notFound('Calendar source not found')
-  if (source.type !== 'ICAL') {
-    return { ok: false, count: 0, message: 'Only iCal sources sync today.' }
-  }
 
-  let events
+  let events: ParsedSyncedEvent[]
   try {
-    events = await fetchICalEvents(source.url)
+    events =
+      source.type === 'HOME_ASSISTANT'
+        ? await fetchHaCalendarSourceEvents(source.url)
+        : await fetchICalEvents(source.url)
   } catch (err) {
     logger.warn({ err, sourceId: id }, 'Calendar sync fetch failed')
     return {
@@ -127,10 +139,24 @@ export async function syncCalendarSource(id: string): Promise<CalendarSyncResult
   return { ok: true, count: events.length, message: `Synced ${events.length} events.` }
 }
 
-/** Sync every active iCal source — the cron entry point. Never throws. */
+/** Read a HOME_ASSISTANT source's events: its `url` holds the calendar entity id. */
+async function fetchHaCalendarSourceEvents(entityId: string): Promise<ParsedSyncedEvent[]> {
+  const settings = await getConnectionSettings()
+  if (!settings) throw new Error('Home Assistant is not connected')
+  const now = new Date()
+  return fetchHaCalendarEvents(
+    settings.url,
+    settings.token,
+    entityId,
+    addDays(now, -HA_HORIZON_PAST_DAYS),
+    addDays(now, HA_HORIZON_FUTURE_DAYS),
+  )
+}
+
+/** Sync every active external source — the cron entry point. Never throws. */
 export async function syncAllActiveSources(): Promise<void> {
   const sources = await prisma.calendarSource.findMany({
-    where: { isActive: true, type: 'ICAL' },
+    where: { isActive: true },
     select: { id: true, name: true },
   })
   for (const source of sources) {

@@ -1,23 +1,77 @@
 import { Router } from 'express'
-import { TestHomeAssistantSchema, UpdateHomeAssistantConfigSchema } from '@hame/shared'
+import {
+  HaServiceCallSchema,
+  SmartHomeEntityIdsSchema,
+  TestHomeAssistantSchema,
+  UpdateHomeAssistantConfigSchema,
+  UpdateSmartHomeSettingsSchema,
+} from '@hame/shared'
 import { validateBody } from '../middleware/validate.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
 import {
+  addSmartHomeControlsController,
+  controlHomeAssistantController,
+  dismissSmartHomeSuggestionsController,
+  getHomeAssistantCalendarsController,
   getHomeAssistantConfigController,
   getHomeAssistantEntitiesController,
+  getSmartHomeSettingsController,
+  getSmartHomeSuggestionsController,
   homeAssistantStreamController,
   testHomeAssistantController,
   updateHomeAssistantConfigController,
+  updateSmartHomeSettingsController,
 } from '../controllers/home-assistant-config.controller.js'
 
 export const homeAssistantConfigRouter = Router()
 
-// Entity reads are available to any signed-in member (dashboard data), unlike the
-// admin-only config below. Declared first so '/entities' and '/stream' aren't
-// shadowed by the bare '/' config routes.
+// Entity reads + device controls are available to any signed-in member (dashboard
+// surface), unlike the admin-only config below. Declared first so these named
+// paths aren't shadowed by the bare '/' config routes.
 homeAssistantConfigRouter.get('/entities', requireAuth, getHomeAssistantEntitiesController)
 homeAssistantConfigRouter.get('/stream', requireAuth, homeAssistantStreamController)
+// Commands ride REST (the §10 Phase 6.2 SSE note); the API relays them on the socket.
+homeAssistantConfigRouter.post(
+  '/service',
+  requireAuth,
+  verifyCsrf,
+  validateBody(HaServiceCallSchema),
+  controlHomeAssistantController,
+)
+// Calendar names are benign household data (like /entities) and feed the
+// member-accessible calendar-source picker, so this is member-level, not admin.
+homeAssistantConfigRouter.get('/calendars', requireAuth, getHomeAssistantCalendarsController)
+
+// The curated smart-home control list — member-level, since the wall tablet is
+// shared (no token involved; just which entities appear on the dashboard widget).
+homeAssistantConfigRouter.get('/controls', requireAuth, getSmartHomeSettingsController)
+homeAssistantConfigRouter.put(
+  '/controls',
+  requireAuth,
+  verifyCsrf,
+  validateBody(UpdateSmartHomeSettingsSchema),
+  updateSmartHomeSettingsController,
+)
+
+// New-device prompt (spec §10 Phase 6.3): list new controllable devices, then
+// add them to the widget or dismiss them — both mark them "offered" so the
+// dashboard stops asking. Member-level, like the rest of the control surface.
+homeAssistantConfigRouter.get('/suggestions', requireAuth, getSmartHomeSuggestionsController)
+homeAssistantConfigRouter.post(
+  '/controls/add',
+  requireAuth,
+  verifyCsrf,
+  validateBody(SmartHomeEntityIdsSchema),
+  addSmartHomeControlsController,
+)
+homeAssistantConfigRouter.post(
+  '/controls/dismiss',
+  requireAuth,
+  verifyCsrf,
+  validateBody(SmartHomeEntityIdsSchema),
+  dismissSmartHomeSuggestionsController,
+)
 
 // Admin-only — an integration/settings surface holding a secret token (spec §10 Phase 6).
 homeAssistantConfigRouter.get('/', requireAuth, requireAdmin, getHomeAssistantConfigController)

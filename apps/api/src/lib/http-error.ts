@@ -29,4 +29,9 @@ export class HttpError extends Error {
   static conflict(message: string) {
     return new HttpError(409, message, 'CONFLICT')
   }
+
+  /** An upstream dependency (e.g. Home Assistant) was unreachable or errored. */
+  static badGateway(message = 'Upstream service error') {
+    return new HttpError(502, message, 'BAD_GATEWAY')
+  }
 }

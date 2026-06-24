@@ -14,6 +14,7 @@ const LINKS = [
   { to: '/chores', label: 'Chores' },
   { to: '/bins', label: 'Bins' },
   { to: '/pets', label: 'Pets' },
+  { to: '/smart-home', label: 'Smart home' },
 ] as const
 
 /** Primary in-app navigation, shared across pages. */

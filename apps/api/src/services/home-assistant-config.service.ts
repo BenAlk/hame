@@ -1,13 +1,20 @@
 import type {
+  HaCalendar,
+  HaServiceCallInput,
+  HaServiceCallResult,
   HomeAssistantConfig,
   HomeAssistantTestResult,
   TestHomeAssistantInput,
   UpdateHomeAssistantConfigInput,
 } from '@hame/shared'
+import { isHaServiceAllowed } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
+import { HttpError } from '../lib/http-error.js'
+import { logger } from '../lib/logger.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { haClient } from '../integrations/home-assistant/client.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
+import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
 
 /** The HA config row is a singleton (spec §10 Phase 6), keyed by this id. */
 const SINGLETON_ID = 'singleton'
@@ -95,8 +102,47 @@ export async function testHomeAssistant(
 }
 
 /**
+ * Relay a device control to Home Assistant (spec §8.11, §10 Phase 6.3). The
+ * (domain, service) pair is allowlisted by the request schema; we re-check it
+ * here as defence in depth, then run it over the live socket. Never throws — a
+ * down link or an HA-side failure comes back as a structured `{ ok: false }`,
+ * the same graceful-degrade contract as the other integrations.
+ */
+export async function callHomeAssistantService(
+  input: HaServiceCallInput,
+): Promise<HaServiceCallResult> {
+  if (!isHaServiceAllowed(input.domain, input.service)) {
+    throw HttpError.badRequest('That Home Assistant service is not permitted.')
+  }
+  try {
+    await haClient.callService(input.domain, input.service, input.entityId)
+    return { ok: true, message: 'Done.' }
+  } catch (err) {
+    logger.warn({ err, ...input }, 'Home Assistant service call failed')
+    return { ok: false, message: err instanceof Error ? err.message : 'Command failed.' }
+  }
+}
+
+/**
+ * List Home Assistant's calendar entities (spec §8.10, §10 Phase 6.3) so an admin
+ * can add one as a `CalendarSource`. Returns an empty list when HA isn't
+ * configured, and surfaces a 502 when it's configured but unreachable.
+ */
+export async function listHomeAssistantCalendars(): Promise<HaCalendar[]> {
+  const settings = await getConnectionSettings()
+  if (!settings) return []
+  try {
+    return await fetchHaCalendars(settings.url, settings.token)
+  } catch (err) {
+    logger.warn({ err }, 'Could not list Home Assistant calendars')
+    throw HttpError.badGateway('Could not reach Home Assistant to list calendars.')
+  }
+}
+
+/**
  * The decrypted connection settings for the WebSocket client, or null when the
- * config is incomplete or disabled. Used by the boot lifecycle (index.ts).
+ * config is incomplete or disabled. Used by the boot lifecycle (index.ts) and
+ * the HA calendar/REST reads.
  */
 export async function getConnectionSettings(): Promise<{ url: string; token: string } | null> {
   const row = await prisma.homeAssistantConfig.findUnique({ where: { id: SINGLETON_ID } })

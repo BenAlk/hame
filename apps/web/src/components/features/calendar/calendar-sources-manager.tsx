@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
+import type { CalendarSourceType } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +12,8 @@ import {
   useDeleteCalendarSource,
   useSyncCalendarSource,
 } from '@/api/calendar-sources'
+import { useHaCalendars } from '@/api/home-assistant'
+import { cn } from '@/lib/utils'
 
 /**
  * Manage external iCal calendar feeds (spec §8.10): list, add, sync and remove.
@@ -22,29 +25,42 @@ export function CalendarSourcesManager() {
   const deleteSource = useDeleteCalendarSource()
   const syncSource = useSyncCalendarSource()
 
+  const [type, setType] = useState<CalendarSourceType>('ICAL')
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [colour, setColour] = useState('#2f6fb0')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  const isHa = type === 'HOME_ASSISTANT'
+  // Only fetch HA's calendars once that source type is chosen (no-op otherwise).
+  const haCalendars = useHaCalendars(isHa)
+
+  function chooseType(next: CalendarSourceType) {
+    setType(next)
+    setUrl('') // the field means different things per type (feed URL vs entity id)
+    setError(null)
+  }
+
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
     setNotice(null)
     if (!name.trim()) return setError('Give the calendar a name.')
-    if (!url.trim()) return setError('Paste the iCal URL.')
+    if (!url.trim()) {
+      return setError(isHa ? 'Choose a Home Assistant calendar.' : 'Paste the iCal URL.')
+    }
     try {
       const created = await createSource.mutateAsync({
         name: name.trim(),
         url: url.trim(),
         colour,
-        type: 'ICAL',
+        type,
       })
       setNotice(
         created.eventCount > 0
           ? `Added — synced ${created.eventCount} events.`
-          : 'Added, but no events synced yet. Check the URL or try Sync.',
+          : 'Added, but no events synced yet. Try Sync, or check the source.',
       )
       setName('')
       setUrl('')
@@ -120,6 +136,28 @@ export function CalendarSourcesManager() {
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
           Add a calendar
         </p>
+        <div className="flex gap-2">
+          {(
+            [
+              ['ICAL', 'iCal feed'],
+              ['HOME_ASSISTANT', 'Home Assistant'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => chooseType(value)}
+              className={cn(
+                'rounded-pill border px-3 py-1.5 text-xs font-medium transition-colors',
+                type === value
+                  ? 'border-accent bg-accent-soft text-accent'
+                  : 'border-line bg-surface text-muted-foreground hover:border-accent',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex items-end gap-3">
           <div className="flex flex-1 flex-col gap-1.5">
             <Label htmlFor="src-name">Name</Label>
@@ -141,15 +179,45 @@ export function CalendarSourcesManager() {
             />
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="src-url">iCal URL</Label>
-          <Input
-            id="src-url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://calendar.google.com/…/basic.ics"
-          />
-        </div>
+        {isHa ? (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="src-ha">Home Assistant calendar</Label>
+            <select
+              id="src-ha"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="h-10 rounded-control border border-line bg-surface px-3 text-sm text-ink"
+            >
+              <option value="">
+                {haCalendars.isPending
+                  ? 'Loading calendars…'
+                  : haCalendars.data && haCalendars.data.length > 0
+                    ? 'Choose a calendar…'
+                    : 'No Home Assistant calendars found'}
+              </option>
+              {haCalendars.data?.map((cal) => (
+                <option key={cal.entityId} value={cal.entityId}>
+                  {cal.name}
+                </option>
+              ))}
+            </select>
+            {haCalendars.isError && (
+              <p className="text-xs text-warning">
+                Couldn’t reach Home Assistant. Check its connection in Settings.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="src-url">iCal URL</Label>
+            <Input
+              id="src-url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://calendar.google.com/…/basic.ics"
+            />
+          </div>
+        )}
 
         {error && <p className="text-sm text-warning">{error}</p>}
         {notice && <p className="text-sm text-sage">{notice}</p>}

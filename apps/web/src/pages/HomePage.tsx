@@ -8,7 +8,10 @@ import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-
 import { PetRemindersWidget } from '@/components/features/widgets/pet-reminders-widget'
 import { NextBinDayWidget } from '@/components/features/widgets/next-bin-day-widget'
 import { WeatherWidget } from '@/components/features/widgets/weather-widget'
+import { SmartHomeWidget } from '@/components/features/widgets/smart-home-widget'
+import { SmartHomeSuggestions } from '@/components/features/widgets/smart-home-suggestions'
 import { useCurrentUser } from '@/api/auth'
+import { useHaEntities, useHaEntityStream } from '@/api/home-assistant'
 
 function greeting(date = new Date()): string {
   const h = date.getHours()
@@ -20,6 +23,13 @@ function greeting(date = new Date()): string {
 export function HomePage() {
   const { data: user } = useCurrentUser()
   const current = user as PublicUser | null
+
+  // The dashboard owns the single Home Assistant SSE stream (spec §10 Phase 6.2/6.3),
+  // so the weather + smart-home widgets share one connection. Only opens once HA
+  // actually exposes entities, so non-HA households never connect.
+  const { data: haEntities } = useHaEntities()
+  const haActive = Boolean(haEntities && haEntities.length > 0)
+  useHaEntityStream(haActive)
 
   return (
     <main className="container flex min-h-screen flex-col gap-8 py-10">
@@ -34,6 +44,8 @@ export function HomePage() {
         <AppNav user={current} />
       </header>
 
+      {haActive && <SmartHomeSuggestions enabled={haActive} />}
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <WeatherWidget />
         <TodaysMealsWidget />
@@ -43,6 +55,7 @@ export function HomePage() {
         <PetRemindersWidget />
         <ExpiringSoonWidget />
         <LowStockWidget />
+        <SmartHomeWidget />
       </div>
     </main>
   )

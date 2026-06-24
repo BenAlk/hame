@@ -57,9 +57,14 @@ export const HomeAssistantTestResultSchema = z.object({
 export type HomeAssistantTestResult = z.infer<typeof HomeAssistantTestResultSchema>
 
 /**
- * Entity domains surfaced to the dashboard (spec §8.11, §10 Phase 6.2). HA
+ * Entity domains surfaced to the dashboard (spec §8.11, §10 Phase 6.2/6.3). HA
  * exposes hundreds of entities; the registry and the `/entities` feed are scoped
  * to this dashboard-relevant set so the browser isn't flooded with internals.
+ * `scene` / `script` joined in Phase 6.3 so the smart-home quick-controls widget
+ * can list them — they carry no meaningful state, just a name and an action.
+ * (`automation` is deliberately *not* here: triggering one is an allowed API
+ * capability — see `HA_CONTROL_SERVICES` — but a household's automations would
+ * flood the calm dashboard, so they aren't surfaced as default widget tiles.)
  */
 export const HA_DASHBOARD_DOMAINS = [
   'weather',
@@ -73,6 +78,8 @@ export const HA_DASHBOARD_DOMAINS = [
   'fan',
   'person',
   'sun',
+  'scene',
+  'script',
 ] as const
 
 /**
@@ -90,3 +97,104 @@ export const HaEntityStateSchema = z.object({
   lastChanged: z.coerce.date().nullable(),
 })
 export type HaEntityState = z.infer<typeof HaEntityStateSchema>
+
+/**
+ * Device controls (spec §8.11, §10 Phase 6.3). The browser asks the API to run a
+ * Home Assistant service via `call_service` over the existing WebSocket (commands
+ * ride REST → the API relays them on the socket). This allowlist is the *only*
+ * surface Hame will relay: a fixed set of (domain → services) covering the
+ * smart-home widget's needs — toggle lights/switches/fans, activate scenes/scripts,
+ * trigger automations. The API re-checks it server-side (defence in depth), so a
+ * crafted request can't drive arbitrary HA services.
+ */
+export const HA_CONTROL_SERVICES: Record<string, readonly string[]> = {
+  light: ['turn_on', 'turn_off', 'toggle'],
+  switch: ['turn_on', 'turn_off', 'toggle'],
+  fan: ['turn_on', 'turn_off', 'toggle'],
+  scene: ['turn_on'],
+  script: ['turn_on'],
+  automation: ['trigger', 'turn_on', 'turn_off'],
+}
+
+/** Domains the widget renders as on/off toggles (they carry an on/off state). */
+export const HA_TOGGLE_DOMAINS = ['light', 'switch', 'fan'] as const
+
+/** Domains the widget renders as a momentary "run" button (no on/off state). */
+export const HA_ACTIVATE_DOMAINS = ['scene', 'script'] as const
+
+/** Every domain the smart-home widget can surface (toggles + run buttons). */
+export const HA_CONTROLLABLE_DOMAINS = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as const
+
+/** Whether an entity domain is one the smart-home widget can control. */
+export function isControllableDomain(domain: string): boolean {
+  return (HA_CONTROLLABLE_DOMAINS as readonly string[]).includes(domain)
+}
+
+/** The service the widget calls to "run" an activate-domain entity. */
+export const HA_ACTIVATE_SERVICE: Record<string, string> = {
+  scene: 'turn_on',
+  script: 'turn_on',
+  automation: 'trigger',
+}
+
+/** Whether Hame will relay this (domain, service) pair as a device control. */
+export function isHaServiceAllowed(domain: string, service: string): boolean {
+  return HA_CONTROL_SERVICES[domain]?.includes(service) ?? false
+}
+
+/** A request to run one HA service against one entity (spec §10 Phase 6.3). */
+export const HaServiceCallSchema = z
+  .object({
+    domain: z.string().min(1).max(50),
+    service: z.string().min(1).max(50),
+    entityId: z.string().min(1).max(200),
+  })
+  .refine((c) => isHaServiceAllowed(c.domain, c.service), {
+    message: 'That Home Assistant service is not permitted.',
+  })
+export type HaServiceCallInput = z.infer<typeof HaServiceCallSchema>
+
+/** Outcome of relaying a service call to Home Assistant. */
+export const HaServiceCallResultSchema = z.object({
+  ok: z.boolean(),
+  message: z.string(),
+})
+export type HaServiceCallResult = z.infer<typeof HaServiceCallResultSchema>
+
+/**
+ * A Home Assistant calendar entity (spec §8.10, §10 Phase 6.3). Listed so an
+ * admin can add one as a `CalendarSource` (its `entityId` is stored in the
+ * source's `url` field, which for HA holds an entity id rather than a feed URL).
+ */
+export const HaCalendarSchema = z.object({
+  entityId: z.string(),
+  name: z.string(),
+})
+export type HaCalendar = z.infer<typeof HaCalendarSchema>
+
+/**
+ * The household's curated smart-home controls (spec §8.12, §10 Phase 6.3). Rather
+ * than flood the dashboard with every controllable HA entity, the household picks
+ * a few on the Smart-home page; the widget renders just these, in this order.
+ * Household-wide (the wall tablet is shared), selection only — never the state.
+ */
+export const SmartHomeSettingsSchema = z.object({
+  entityIds: z.array(z.string()),
+})
+export type SmartHomeSettings = z.infer<typeof SmartHomeSettingsSchema>
+
+/** Replace the curated control list (the Smart-home page's Save). */
+export const UpdateSmartHomeSettingsSchema = z.object({
+  entityIds: z.array(z.string().min(1).max(200)).max(100),
+})
+export type UpdateSmartHomeSettingsInput = z.infer<typeof UpdateSmartHomeSettingsSchema>
+
+/**
+ * Resolve one or more new-device suggestions (spec §10 Phase 6.3): add them to
+ * the widget, or dismiss them. Either way they join the "already offered" set so
+ * the dashboard prompt stops asking about them.
+ */
+export const SmartHomeEntityIdsSchema = z.object({
+  entityIds: z.array(z.string().min(1).max(200)).min(1).max(100),
+})
+export type SmartHomeEntityIdsInput = z.infer<typeof SmartHomeEntityIdsSchema>
