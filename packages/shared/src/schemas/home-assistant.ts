@@ -173,6 +173,23 @@ export const HaCalendarSchema = z.object({
 export type HaCalendar = z.infer<typeof HaCalendarSchema>
 
 /**
+ * A Home Assistant bin-collection sensor (spec §8.9, §10 Phase 6 — the last
+ * unwired bin source). The community "UK Bin Collection Data" integration exposes
+ * each bin as a `sensor.*` whose next-collection date Hame reads. Listed so a
+ * household can pick one for a `HOME_ASSISTANT` bin (its `entityId` is stored in
+ * the source config); `nextCollection` lets the picker preview the date it found.
+ */
+export const HaBinSensorSchema = z.object({
+  entityId: z.string(),
+  name: z.string(),
+  /** Null when HA currently has no date for the bin (e.g. the sensor is
+   * `unavailable`); the bin is still listed so it can be picked, and fills in
+   * once HA resolves it. */
+  nextCollection: z.coerce.date().nullable(),
+})
+export type HaBinSensor = z.infer<typeof HaBinSensorSchema>
+
+/**
  * The household's curated smart-home controls (spec §8.12, §10 Phase 6.3). Rather
  * than flood the dashboard with every controllable HA entity, the household picks
  * a few on the Smart-home page; the widget renders just these, in this order.

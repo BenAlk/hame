@@ -9,6 +9,7 @@ import type {
 import {
   callHomeAssistantService,
   getHomeAssistantConfig,
+  listHomeAssistantBinSensors,
   listHomeAssistantCalendars,
   testHomeAssistant,
   updateHomeAssistantConfig,
@@ -67,6 +68,11 @@ export const getHomeAssistantCalendarsController: RequestHandler = async (_req, 
   } catch (err) {
     next(err)
   }
+}
+
+/** List HA bin-collection sensors for the bin-source picker (spec §10 Phase 6). */
+export const getHomeAssistantBinSensorsController: RequestHandler = (_req, res) => {
+  res.json(listHomeAssistantBinSensors())
 }
 
 /** The household's curated smart-home control list (spec §10 Phase 6.3). */

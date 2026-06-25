@@ -811,7 +811,7 @@ model IdleModeSettings {
   - `ICAL` — a council iCal feed.
   - `SCRAPER` — the standalone `uk-bin-scraper` library (§12).
   - `HOME_ASSISTANT` — HA bin sensors (Phase 6).
-  - The display layer (colour, icon, reminders, the widget) is identical across sources; only where the dates come from changes. External sources cache concrete dates (`BinOccurrence`) and **self-correct** on each sync (§9.6), so a bank-holiday shift just appears. **`MANUAL`, `ICAL` and `SCRAPER` are wired** (§10 Phase 5.6); `HOME_ASSISTANT` lands with Phase 6. All sit behind one interface.
+  - The display layer (colour, icon, reminders, the widget) is identical across sources; only where the dates come from changes. External sources cache concrete dates (`BinOccurrence`) and **self-correct** on each sync (§9.6), so a bank-holiday shift just appears. **All four sources are wired** — `MANUAL`, `ICAL` and `SCRAPER` (§10 Phase 5.6) and `HOME_ASSISTANT` (§10 Phase 6.4) — all behind one interface.
 - **Schedule example** (illustrative UK council kerbside collection):
   | Bin | Day | Frequency |
   |---|---|---|
@@ -1141,9 +1141,7 @@ Generalise a bin's schedule from "typed recurrence only" to a **pluggable source
 
 The bin form gained a **source picker** (typed schedule / iCal feed / my council's website). The scraper flow adds live lookups (`GET /api/bins/councils`, `/address-search`, `/source-bins`) — council and address pickers plus a bin list read straight from the council page — and a one-click **"add all my bins"** batch (`POST /api/bins/scraper-batch`) that reads the page **once** and creates every chosen bin, **auto-colouring each from its name** (editable, de-selectable). Each external bin's card carries a **Sync now** button and a last-synced line; the nightly `BIN_SYNC_CRON` re-reads every active external bin (which is also what pins a 4-weekly scraped bin over its cycle). Verified end-to-end against a live council site (address search → schedule read → projection → widget/calendar), with 187 tests across the package, API and web.
 
-**Remaining (behind the same interface, no schema change):**
-
-- **Home Assistant** — once the Phase 6 WebSocket client exists, register a `HOME_ASSISTANT` provider that reads the community "UK Bin Collection Data" integration's next-collection sensors, offloading scraper maintenance to an active project.
+**Home Assistant** (the fourth source) landed once the Phase 6 WebSocket client existed: a `HOME_ASSISTANT` provider reads the community "UK Bin Collection Data" integration's next-collection sensors (§10 Phase 6.4), offloading scraper maintenance to an active project. All four sources now sit behind the one interface.
 
 **Why this shape.** The seam is small and useful on its own (external bins become a config change, not a refactor); the providers carry real, independent work and landed one at a time against live sources. The scraper lives in-monorepo for a tight iteration loop and will be extracted to its standalone repo (§12) once a few councils are proven.
 
@@ -1154,7 +1152,8 @@ HA config UI, WebSocket client, entity state reads, device controls, HA calendar
 **Goal**: Smart home from Hame, live sensor data on dashboard.
 
 Split into sub-phases (mirroring 4.5 / 5.5 / 5.6), each landing green: **6.1** connection
-foundation, **6.2** entity reads + live push, **6.3** device controls + HA calendar source.
+foundation, **6.2** entity reads + live push, **6.3** device controls + HA calendar source, **6.4**
+the Home Assistant bin source (the last unwired bin provider, §10 Phase 5.6).
 
 #### Phase 6.1 — Connection foundation ✅ Complete (24-06-2026)
 
@@ -1243,9 +1242,33 @@ mapper), all builds clean, plus a **live smoke against real Home Assistant** —
 auth guard (401) and allowlist refusal (400), a `light.toggle` relayed and acknowledged, the calendars
 list, and a HOME_ASSISTANT calendar source created → synced → surfaced in the aggregated feed → removed.
 
-**Remaining (optional, behind the same seams):** the `HOME_ASSISTANT` **bin** provider — register a
-provider reading the community "UK Bin Collection Data" next-collection sensors (§10 Phase 5.6), now
-that the client exists. The HA calendar source landed; the bin source is the last unwired provider.
+#### Phase 6.4 — Home Assistant bin source ✅ Complete (25-06-2026)
+
+**Delivered**: The last unwired bin-source provider (§10 Phase 5.6, §9.6), closing Phase 6 — **no
+migration** (`HOME_ASSISTANT` already existed in the `BinSourceType` enum and `BinSourceConfig.entityId`
+was already reserved for it). A `HOME_ASSISTANT` provider registered behind the existing
+`BinScheduleProvider` seam reads the community "UK Bin Collection Data" integration's bin sensors
+straight from the Phase 6.2 in-memory entity registry (no extra HTTP — `sensor` is already a
+dashboard domain), mapping a sensor's next-collection date to a cached `BinOccurrence`. Pure,
+socket-free helpers — `parseBinSensorDate` (ISO and UK day-first formats; rejects fuzzy labels and
+bare day-counts so a non-date never mis-dates a collection), `readBinSensorDate` (the next-collection
+attributes, matched case/spacing-insensitively, then the state) and `haEntityToBinOccurrences` — are
+unit-tested without a connection, the same split as the auth/entity helpers. Like HA itself the sensor
+knows only the _next_ date, so a sync caches that one occurrence and the nightly `BIN_SYNC_CRON` rolls
+it forward — the scraper's observe-then-cache shape, minus the projection (HA has done it). The
+provider throws (rather than wiping) when HA is disconnected, the entity is missing, or no date is
+readable, so the bin service degrades gracefully and keeps the existing cache (§9.6).
+
+Shared `@hame/shared` gains the `HaBinSensor` schema; a member-level `GET /api/home-assistant/bin-sensors`
+lists the household's bin sensors — grouped so the integration's several entities per bin (date,
+days-until, label, type) collapse to one entry per bin (the canonical next-collection-date sensor's id),
+with the next date shown when HA has one and a bin HA hasn't resolved yet (`unavailable`) still listed
+with the date pending rather than silently dropped. It feeds a new **Home Assistant sensor** option in
+the bin form's source picker that surfaces only when HA exposes such sensors, so a non-HA household
+never sees a dead end. Verified: typecheck / lint /
+format green, 226 API + 5 web tests (incl. the date-format parsing, attribute-priority, horizon-guard
+and disconnected-rejection cases), all builds clean. A live smoke against real Home Assistant (with
+the UK Bin Collection Data integration installed) is the one remaining check before it's battle-tested.
 
 ### Phase 7 — Dashboard Polish
 

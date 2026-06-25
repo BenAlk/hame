@@ -1,4 +1,5 @@
 import type {
+  HaBinSensor,
   HaCalendar,
   HaServiceCallInput,
   HaServiceCallResult,
@@ -15,6 +16,12 @@ import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { haClient } from '../integrations/home-assistant/client.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
 import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
+import {
+  binGroupKey,
+  binSensorScore,
+  isBinSensor,
+  readBinSensorDate,
+} from '../integrations/bin-sources/ha-bin-source.js'
 
 /** The HA config row is a singleton (spec §10 Phase 6), keyed by this id. */
 const SINGLETON_ID = 'singleton'
@@ -137,6 +144,46 @@ export async function listHomeAssistantCalendars(): Promise<HaCalendar[]> {
     logger.warn({ err }, 'Could not list Home Assistant calendars')
     throw HttpError.badGateway('Could not reach Home Assistant to list calendars.')
   }
+}
+
+/**
+ * List the Home Assistant bin-collection sensors for the bin-source picker (spec
+ * §8.9, §10 Phase 6). Reads the live entity registry (no HTTP). The "UK Bin
+ * Collection Data" integration exposes several entities per bin (the date,
+ * days-until, a label, the bin type), so bin-shaped sensors are grouped by bin
+ * and one entry is offered per bin: the `entityId` of the canonical
+ * next-collection-date sensor, plus the next date if HA currently has one.
+ *
+ * A bin whose sensors are all `unavailable` (HA hasn't resolved it yet) is still
+ * listed with a null date — so the picker mirrors what HA shows, rather than
+ * silently dropping a bin, and the date fills in once HA catches up. Empty when
+ * HA isn't connected (the registry is then empty).
+ */
+export function listHomeAssistantBinSensors(): HaBinSensor[] {
+  const byBin = new Map<string, { entityId: string; score: number; nextCollection: Date | null }>()
+  for (const entity of haClient.getEntities()) {
+    if (!isBinSensor(entity)) continue
+    const key = binGroupKey(entity)
+    const score = binSensorScore(entity)
+    const date = readBinSensorDate(entity)
+    const group = byBin.get(key)
+    if (!group) {
+      byBin.set(key, { entityId: entity.entityId, score, nextCollection: date })
+      continue
+    }
+    // Keep the highest-scoring sensor's id (the dedicated date sensor)…
+    if (score > group.score) {
+      group.entityId = entity.entityId
+      group.score = score
+    }
+    // …and the first readable date anywhere in the group, for the preview.
+    if (!group.nextCollection && date) group.nextCollection = date
+  }
+  return [...byBin.entries()]
+    .map(
+      ([name, { entityId, nextCollection }]): HaBinSensor => ({ entityId, name, nextCollection }),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /**

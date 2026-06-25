@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  HaBinSensor,
   HaCalendar,
   HaEntityState,
   HaServiceCallInput,
@@ -18,6 +19,7 @@ import { apiFetch } from './client'
 const HA_KEY = ['home-assistant-config'] as const
 const HA_ENTITIES_KEY = ['home-assistant-entities'] as const
 const HA_CALENDARS_KEY = ['home-assistant-calendars'] as const
+const HA_BIN_SENSORS_KEY = ['home-assistant-bin-sensors'] as const
 const HA_CONTROLS_KEY = ['home-assistant-controls'] as const
 const HA_SUGGESTIONS_KEY = ['home-assistant-suggestions'] as const
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
@@ -83,6 +85,15 @@ export function useHaCalendars(enabled = true) {
   return useQuery<HaCalendar[]>({
     queryKey: HA_CALENDARS_KEY,
     queryFn: () => apiFetch<HaCalendar[]>('/api/home-assistant/calendars'),
+    enabled,
+  })
+}
+
+/** HA bin-collection sensors for the bin-source picker (spec §10 Phase 6). */
+export function useHaBinSensors(enabled = true) {
+  return useQuery<HaBinSensor[]>({
+    queryKey: HA_BIN_SENSORS_KEY,
+    queryFn: () => apiFetch<HaBinSensor[]>('/api/home-assistant/bin-sensors'),
     enabled,
   })
 }

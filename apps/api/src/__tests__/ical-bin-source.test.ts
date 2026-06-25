@@ -73,11 +73,11 @@ describe('mapICalToBinOccurrences', () => {
 })
 
 describe('registerBuiltInBinProviders', () => {
-  it('wires the iCal and scraper providers into the registry', () => {
+  it('wires the iCal, scraper and Home Assistant providers into the registry', () => {
     registerBuiltInBinProviders()
     expect(getBinProvider('ICAL')?.type).toBe('ICAL')
     expect(getBinProvider('SCRAPER')?.type).toBe('SCRAPER')
-    // Home Assistant lands with the Phase 6 WebSocket client.
-    expect(getBinProvider('HOME_ASSISTANT')).toBeNull()
+    expect(getBinProvider('HOME_ASSISTANT')?.type).toBe('HOME_ASSISTANT')
+    expect(getBinProvider('MANUAL')).toBeNull()
   })
 })

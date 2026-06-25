@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/api/client'
 import { useAddressBins, useScraperCouncils, useSearchAddresses } from '@/api/bins'
+import { useHaBinSensors } from '@/api/home-assistant'
 
 /** A UK-postcode-shaped string, used only to nudge when a council is street-only. */
 const POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i
@@ -48,19 +49,23 @@ interface BinChoice {
   colour: string
 }
 
-/** Source types this form can author. Home Assistant lands with Phase 6; the
- * other three (typed schedule, iCal feed, council scraper) ship now (spec §10
- * Phase 5.6). */
-type FormSource = 'MANUAL' | 'ICAL' | 'SCRAPER'
+/** Source types this form can author (spec §10 Phase 5.6 / Phase 6). The Home
+ * Assistant option only appears when HA exposes bin sensors (handled below). */
+type FormSource = 'MANUAL' | 'ICAL' | 'SCRAPER' | 'HOME_ASSISTANT'
 
 const SOURCE_LABEL: Record<FormSource, string> = {
   MANUAL: 'A schedule I type in',
   ICAL: 'A council iCal feed',
   SCRAPER: "My council's website",
+  HOME_ASSISTANT: 'A Home Assistant sensor',
 }
 
 function initialSource(bin?: BinCollection): FormSource {
-  return bin?.sourceType === 'ICAL' || bin?.sourceType === 'SCRAPER' ? bin.sourceType : 'MANUAL'
+  return bin?.sourceType === 'ICAL' ||
+    bin?.sourceType === 'SCRAPER' ||
+    bin?.sourceType === 'HOME_ASSISTANT'
+    ? bin.sourceType
+    : 'MANUAL'
 }
 
 const RECURRENCE_LABEL: Record<BinRecurrenceType, string> = {
@@ -108,6 +113,14 @@ export function BinForm({
   const [source, setSource] = useState<FormSource>(initialSource(bin))
   const [feedUrl, setFeedUrl] = useState(bin?.sourceConfig?.url ?? '')
   const [matchKey, setMatchKey] = useState(bin?.sourceConfig?.matchKey ?? '')
+  // Home Assistant source: the chosen bin sensor's entity id.
+  const [entityId, setEntityId] = useState(bin?.sourceConfig?.entityId ?? '')
+  const binSensors = useHaBinSensors()
+  // Offer the HA option only when HA exposes bin sensors (or this bin already uses
+  // one), so non-HA households don't see a dead end.
+  const sources: FormSource[] = ['MANUAL', 'ICAL', 'SCRAPER']
+  if (binSensors.data?.length || bin?.sourceType === 'HOME_ASSISTANT')
+    sources.push('HOME_ASSISTANT')
   // Scraper source: council + a resolved address from the council's lookup.
   const [councilId, setCouncilId] = useState(bin?.sourceConfig?.councilId ?? '')
   const [addressId, setAddressId] = useState(bin?.sourceConfig?.addressId ?? '')
@@ -190,8 +203,6 @@ export function BinForm({
     const common = { name: name.trim(), colour, remindNightBefore, remindMorningOf }
 
     // An iCal bin gets its dates from the feed, not a typed schedule (spec §8.9).
-    // The council/scraper and Home Assistant sources land later behind the same
-    // model (spec §10 Phase 5.6).
     if (source === 'ICAL') {
       if (!feedUrl.trim()) return setLocalError('Paste the council iCal feed URL.')
       onSubmit({
@@ -221,6 +232,20 @@ export function BinForm({
           addressId,
           matchKey: matchKey.trim(),
         },
+        recurrenceType: null,
+        weekdays: [],
+      })
+      return
+    }
+
+    // A Home Assistant bin reads its next-collection date from a HA bin sensor
+    // and self-corrects on the nightly sync (spec §8.9, §10 Phase 6).
+    if (source === 'HOME_ASSISTANT') {
+      if (!entityId) return setLocalError('Pick a Home Assistant bin sensor.')
+      onSubmit({
+        ...common,
+        sourceType: 'HOME_ASSISTANT',
+        sourceConfig: { entityId },
         recurrenceType: null,
         weekdays: [],
       })
@@ -282,7 +307,7 @@ export function BinForm({
           onChange={(e) => setSource(e.target.value as FormSource)}
           className={selectClass}
         >
-          {(Object.keys(SOURCE_LABEL) as FormSource[]).map((s) => (
+          {sources.map((s) => (
             <option key={s} value={s}>
               {SOURCE_LABEL[s]}
             </option>
@@ -505,6 +530,47 @@ export function BinForm({
               ) : null}
             </div>
           )}
+        </div>
+      )}
+
+      {source === 'HOME_ASSISTANT' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="bin-ha-sensor">Bin sensor</Label>
+          <select
+            id="bin-ha-sensor"
+            value={entityId}
+            onChange={(e) => setEntityId(e.target.value)}
+            className={selectClass}
+            disabled={binSensors.isPending || !binSensors.data?.length}
+          >
+            <option value="" disabled>
+              {binSensors.isPending ? 'Loading sensors…' : 'Select a sensor…'}
+            </option>
+            {/* An edited bin's sensor may be offline/unlisted — keep it selectable. */}
+            {entityId && !binSensors.data?.some((s) => s.entityId === entityId) && (
+              <option value={entityId}>{entityId}</option>
+            )}
+            {binSensors.data?.map((s) => (
+              <option key={s.entityId} value={s.entityId}>
+                {s.name}
+                {s.nextCollection
+                  ? ` — next ${new Date(s.nextCollection).toLocaleDateString()}`
+                  : ' — no date yet (unavailable in HA)'}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Reads the next collection from a Home Assistant bin sensor (e.g. the “UK Bin Collection
+            Data” integration) and keeps it correct on its own — giving this bin the full treatment:
+            colour, the “next bin day” widget and night-before / morning-of reminders. Add one bin
+            per sensor.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Already have it set up in Home Assistant and just want it on the calendar? The quick
+            alternative is to skip this and add the bin’s Home Assistant <em>calendar</em> from the
+            Calendar page (Calendars → External calendars) — fewer steps, but it shows as a plain
+            calendar entry without the bin colour, widget or reminders.
+          </p>
         </div>
       )}
 

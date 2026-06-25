@@ -13,6 +13,7 @@ import {
   addSmartHomeControlsController,
   controlHomeAssistantController,
   dismissSmartHomeSuggestionsController,
+  getHomeAssistantBinSensorsController,
   getHomeAssistantCalendarsController,
   getHomeAssistantConfigController,
   getHomeAssistantEntitiesController,
@@ -42,6 +43,9 @@ homeAssistantConfigRouter.post(
 // Calendar names are benign household data (like /entities) and feed the
 // member-accessible calendar-source picker, so this is member-level, not admin.
 homeAssistantConfigRouter.get('/calendars', requireAuth, getHomeAssistantCalendarsController)
+// Bin sensors feed the member-accessible bin-source picker (spec §10 Phase 6),
+// like /calendars — household data, no token, so member-level not admin.
+homeAssistantConfigRouter.get('/bin-sensors', requireAuth, getHomeAssistantBinSensorsController)
 
 // The curated smart-home control list — member-level, since the wall tablet is
 // shared (no token involved; just which entities appear on the dashboard widget).

@@ -15,6 +15,7 @@
 import type { BinSourceConfig, BinSourceType } from '@hame/shared'
 import { icalBinProvider } from './ical-bin-source.js'
 import { scraperBinProvider } from './scraper-bin-source.js'
+import { haBinProvider } from './ha-bin-source.js'
 
 /** A single collection date fetched from an external source, ready to cache. */
 export interface FetchedBinOccurrence {
@@ -53,10 +54,10 @@ export interface BinScheduleProvider {
 
 /**
  * Registered external providers, keyed by source type, wired by
- * {@link registerBuiltInBinProviders} (spec §10 Phase 5.6 next steps):
+ * {@link registerBuiltInBinProviders} (spec §10 Phase 5.6 / Phase 6):
  *   ICAL          → integrations/ical (reuses the calendar-subscription fetch) ✓
  *   SCRAPER       → the uk-bin-scraper library (spec §12) ✓
- *   HOME_ASSISTANT → HA bin sensors via the Phase 6 WebSocket client (pending)
+ *   HOME_ASSISTANT → HA bin sensors via the Phase 6 WebSocket client registry ✓
  */
 const providers = new Map<BinScheduleProvider['type'], BinScheduleProvider>()
 
@@ -77,4 +78,5 @@ export function getBinProvider(type: BinSourceType): BinScheduleProvider | null 
 export function registerBuiltInBinProviders(): void {
   registerBinProvider(icalBinProvider)
   registerBinProvider(scraperBinProvider)
+  registerBinProvider(haBinProvider)
 }
