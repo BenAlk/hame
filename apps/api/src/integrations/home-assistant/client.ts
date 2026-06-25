@@ -14,6 +14,9 @@ import {
 /** Notified on every dashboard-relevant entity change (drives the SSE stream). */
 export type EntityListener = (entity: HaEntityState) => void
 
+/** Notified when a tracked entity is removed from Home Assistant. */
+export type EntityRemovalListener = (entityId: string) => void
+
 /**
  * The API's single outbound WebSocket to Home Assistant (spec §8.11, §10 Phase 6).
  * A module-level singleton owning one connection: it authenticates, tracks
@@ -65,6 +68,7 @@ class HomeAssistantClient {
   private getStatesId = 0
   private readonly entities = new Map<string, HaEntityState>()
   private readonly listeners = new Set<EntityListener>()
+  private readonly removalListeners = new Set<EntityRemovalListener>()
   /** In-flight `call_service` commands, keyed by their command id. */
   private readonly pending = new Map<number, PendingCommand>()
 
@@ -116,6 +120,12 @@ class HomeAssistantClient {
   onEntityUpdate(listener: EntityListener): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  /** Subscribe to entity removals (a device deleted in HA); returns unsubscribe. */
+  onEntityRemove(listener: EntityRemovalListener): () => void {
+    this.removalListeners.add(listener)
+    return () => this.removalListeners.delete(listener)
   }
 
   /** Connect with the given settings, replacing any existing connection. */
@@ -247,7 +257,12 @@ class HomeAssistantClient {
     }
     if (message.type === 'event') {
       const changed = parseStateChangedEvent(message.event)
-      if (changed?.newState) this.ingest(changed.newState, true)
+      if (!changed) return
+      // A `new_state` of null means the entity was deleted in HA (not merely
+      // offline — that arrives as a state of `unavailable`). Drop it so the
+      // dashboard and curated lists stop showing a device that no longer exists.
+      if (changed.newState) this.ingest(changed.newState, true)
+      else this.remove(changed.entityId)
     }
   }
 
@@ -257,6 +272,12 @@ class HomeAssistantClient {
     if (!entity || !isAllowedDomain(entity.entityId, HA_DASHBOARD_DOMAINS)) return
     this.entities.set(entity.entityId, entity)
     if (notify) for (const listener of this.listeners) listener(entity)
+  }
+
+  /** Drop a deleted entity from the registry and notify removal listeners. */
+  private remove(entityId: string): void {
+    if (!this.entities.delete(entityId)) return // wasn't a tracked entity
+    for (const listener of this.removalListeners) listener(entityId)
   }
 
   private send(payload: Record<string, unknown>): void {

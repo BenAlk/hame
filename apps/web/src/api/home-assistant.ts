@@ -177,6 +177,16 @@ export function useHaEntityStream(enabled = true) {
         return next
       })
     }
+    // A device was deleted in HA — drop it from the cache so the widget and
+    // picker stop showing it, and refresh the curated list (the server prunes
+    // the deleted id from it). See spec §10 Phase 6.3.
+    source.addEventListener('remove', (event) => {
+      const entityId = JSON.parse((event as MessageEvent<string>).data) as string
+      qc.setQueryData<HaEntityState[]>(HA_ENTITIES_KEY, (prev) =>
+        (prev ?? []).filter((e) => e.entityId !== entityId),
+      )
+      void qc.invalidateQueries({ queryKey: HA_CONTROLS_KEY })
+    })
     // EventSource reconnects on its own; nothing to do on error.
     return () => source.close()
   }, [enabled, qc])

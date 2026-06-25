@@ -94,6 +94,24 @@ export async function addSmartHomeControls(entityIds: string[]): Promise<SmartHo
   return toSettings(row)
 }
 
+/**
+ * Forget an entity deleted from Home Assistant: drop it from both the curated
+ * widget list and the "known" set, so it leaves the widget and — should a device
+ * with the same id ever return — is offered again as a new device. A no-op when
+ * the id isn't tracked, so a deletion that never concerned us costs no write.
+ */
+export async function forgetSmartHomeEntity(entityId: string): Promise<void> {
+  const current = await getRow()
+  if (!current.entityIds.includes(entityId) && !current.knownEntityIds.includes(entityId)) return
+  await prisma.smartHomeSettings.update({
+    where: { id: SINGLETON_ID },
+    data: {
+      entityIds: current.entityIds.filter((id) => id !== entityId),
+      knownEntityIds: current.knownEntityIds.filter((id) => id !== entityId),
+    },
+  })
+}
+
 /** Dismiss suggested devices — mark known without adding them to the widget. */
 export async function dismissSmartHomeSuggestions(entityIds: string[]): Promise<void> {
   const current = await getRow()

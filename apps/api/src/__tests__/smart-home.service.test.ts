@@ -18,6 +18,7 @@ const {
   getSmartHomeSuggestions,
   addSmartHomeControls,
   dismissSmartHomeSuggestions,
+  forgetSmartHomeEntity,
 } = await import('../services/smart-home.service.js')
 
 function entity(entityId: string, domain: string): HaEntityState {
@@ -111,5 +112,24 @@ describe('addSmartHomeControls / dismissSmartHomeSuggestions', () => {
     const data = update.mock.calls[0][0].data
     expect(data.knownEntityIds).toEqual(['light.a', 'light.c'])
     expect(data).not.toHaveProperty('entityIds')
+  })
+})
+
+describe('forgetSmartHomeEntity', () => {
+  it('prunes a deleted entity from both the curated and known lists', async () => {
+    upsert.mockResolvedValue(
+      row({ entityIds: ['light.a', 'light.gone'], knownEntityIds: ['light.a', 'light.gone'] }),
+    )
+    update.mockResolvedValue(row())
+    await forgetSmartHomeEntity('light.gone')
+    const data = update.mock.calls[0][0].data
+    expect(data.entityIds).toEqual(['light.a'])
+    expect(data.knownEntityIds).toEqual(['light.a'])
+  })
+
+  it('does not write when the entity is not tracked', async () => {
+    upsert.mockResolvedValue(row({ entityIds: ['light.a'], knownEntityIds: ['light.a'] }))
+    await forgetSmartHomeEntity('light.never')
+    expect(update).not.toHaveBeenCalled()
   })
 })

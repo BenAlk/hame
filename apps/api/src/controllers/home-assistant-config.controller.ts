@@ -132,12 +132,18 @@ export const homeAssistantStreamController: RequestHandler = (req, res) => {
   const unsubscribe = haClient.onEntityUpdate((entity) => {
     res.write(`data: ${JSON.stringify(entity)}\n\n`)
   })
+  // A named `remove` event so the browser drops a deleted entity live, rather
+  // than waiting for a reconnect to re-seed (spec §10 Phase 6.3).
+  const unsubscribeRemove = haClient.onEntityRemove((entityId) => {
+    res.write(`event: remove\ndata: ${JSON.stringify(entityId)}\n\n`)
+  })
   // Heartbeat comment keeps the connection alive through idle-timeout proxies.
   const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000)
 
   req.on('close', () => {
     clearInterval(heartbeat)
     unsubscribe()
+    unsubscribeRemove()
     res.end()
   })
 }
