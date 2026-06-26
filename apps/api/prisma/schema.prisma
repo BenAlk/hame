@@ -44,6 +44,7 @@ model User {
   mealPlanEntries      MealPlanEntry[]
   calendarObjects      CalendarObject[]
   calDavCredentials    CalDavCredential[]
+  dashboardLayout      DashboardLayout?
 }
 
 enum Role {
@@ -481,4 +482,25 @@ model CalDavCredential {
   passwordHash String
   lastUsedAt   DateTime?
   createdAt    DateTime  @default(now())
+}
+
+// ── Phase 7: Dashboard ───────────────────────────────────────────────────────
+
+/// A dashboard's saved widget layout (spec §8.12, §10 Phase 7.1). One row per
+/// "dashboard owner": each User has their own, plus a single shared
+/// household/tablet row (the wall tablet, spec §8.14) keyed by the fixed id
+/// "household" with `userId` null and `isHousehold` true.
+///
+/// `layout` and `widgets` are free-form JSON validated by Zod in `@hame/shared`
+/// (DashboardLayoutSchema): `layout` is the react-grid-layout positions per
+/// breakpoint; `widgets` the ordered enabled widgets. Owners with no saved row
+/// fall back to the shared default template, so a fresh clone needs no setup.
+model DashboardLayout {
+  id          String   @id @default(uuid())
+  userId      String?  @unique // null only for the single household/tablet row
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isHousehold Boolean  @default(false)
+  layout      Json
+  widgets     Json
+  updatedAt   DateTime @updatedAt
 }

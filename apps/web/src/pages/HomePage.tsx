@@ -1,14 +1,6 @@
 import type { PublicUser } from '@hame/shared'
 import { AppNav } from '@/components/app-nav'
-import { ActiveShoppingWidget } from '@/components/features/widgets/active-shopping-widget'
-import { TodaysMealsWidget } from '@/components/features/widgets/todays-meals-widget'
-import { ExpiringSoonWidget } from '@/components/features/widgets/expiring-soon-widget'
-import { LowStockWidget } from '@/components/features/widgets/low-stock-widget'
-import { TodaysChoresWidget } from '@/components/features/widgets/todays-chores-widget'
-import { PetRemindersWidget } from '@/components/features/widgets/pet-reminders-widget'
-import { NextBinDayWidget } from '@/components/features/widgets/next-bin-day-widget'
-import { WeatherWidget } from '@/components/features/widgets/weather-widget'
-import { SmartHomeWidget } from '@/components/features/widgets/smart-home-widget'
+import { DashboardGrid } from '@/components/features/dashboard/dashboard-grid'
 import { SmartHomeSuggestions } from '@/components/features/widgets/smart-home-suggestions'
 import { useCurrentUser } from '@/api/auth'
 import { useHaEntities, useHaEntityStream } from '@/api/home-assistant'
@@ -46,17 +38,7 @@ export function HomePage() {
 
       {haActive && <SmartHomeSuggestions enabled={haActive} />}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <WeatherWidget />
-        <TodaysMealsWidget />
-        <ActiveShoppingWidget />
-        <TodaysChoresWidget />
-        <NextBinDayWidget />
-        <PetRemindersWidget />
-        <ExpiringSoonWidget />
-        <LowStockWidget />
-        <SmartHomeWidget />
-      </div>
+      <DashboardGrid />
     </main>
   )
 }

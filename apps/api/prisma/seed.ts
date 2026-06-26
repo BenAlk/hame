@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import argon2 from 'argon2'
 import { PrismaClient } from '@prisma/client'
-import { firstDueDate } from '@hame/shared'
+import { firstDueDate, DEFAULT_DASHBOARD } from '@hame/shared'
 
 // Load the repo-root .env so DATABASE_URL is available when run via tsx.
 const here = dirname(fileURLToPath(import.meta.url))
@@ -321,6 +321,20 @@ async function main() {
     where: { id: 'singleton' },
     update: {},
     create: { id: 'singleton', enabledMealTypes: ['DINNER'] },
+  })
+
+  // ── Household dashboard (Phase 7.1) ──────────────────────────────────────—
+  // The shared wall-tablet layout. Personal layouts are created on first save;
+  // un-customised owners fall back to the default, so this just primes the tablet.
+  await prisma.dashboardLayout.upsert({
+    where: { id: 'household' },
+    update: {},
+    create: {
+      id: 'household',
+      isHousehold: true,
+      layout: DEFAULT_DASHBOARD.layout as object,
+      widgets: DEFAULT_DASHBOARD.widgets as object,
+    },
   })
 
   // ── Recipes & meal plan (Phase 4) ────────────────────────────────────────—

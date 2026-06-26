@@ -645,12 +645,13 @@ model OllamaConfig {
 }
 
 model DashboardLayout {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id])
-  layout    Json                                      // react-grid-layout config
-  widgets   Json                                      // enabled widgets + config
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  userId      String?  @unique                        // null only for the shared household/tablet row
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isHousehold Boolean  @default(false)                // one fixed-id "household" row (the wall tablet, §8.14)
+  layout      Json                                    // react-grid-layout config (per breakpoint)
+  widgets     Json                                    // enabled widgets + config
+  updatedAt   DateTime @updatedAt
 }
 
 model NotificationPreference {
@@ -1275,6 +1276,50 @@ the UK Bin Collection Data integration installed) is the one remaining check bef
 All remaining widgets, drag-and-drop customisation, per-user layouts, **idle mode with Immich photo screensaver + clock cycling**, responsive layouts, PWA.
 
 **Goal**: Hame on the wall tablet looks beautiful, and turns into a digital photo frame when idle.
+
+Split into sub-phases (mirroring 4.5 / 5.5 / 5.6 / 6.x), each landing green: **7.1** the
+per-user + household dashboard layout foundation (drag-and-drop, edit mode), **7.1b**
+per-owner smart-home selection (reusing 7.1's owner model), **7.2** the remaining widgets
+(clock & greeting, upcoming events, WiFi QR), **7.3** idle mode with the Immich screensaver
++ clock cycling (§8.14), **7.4** responsive polish + PWA.
+
+#### Phase 7.1 — Dashboard layout foundation ✅ Complete (26-06-2026)
+
+**Delivered**: The dashboard moves from a static, identical-for-everyone grid to **per-owner,
+drag-and-drop layouts** (§8.12). A "dashboard owner" is either a **User** (their personal
+dashboard) or the shared **household/tablet** (the wall tablet, §8.14) — the keystone concept this
+phase introduces and that 7.1b reuses for smart-home selection. A Phase 7.1 migration adds the
+`DashboardLayout` model (one row per user via a unique `userId`, plus a single fixed-id `"household"`
+row with `isHousehold` true / `userId` null) and the `User.dashboardLayout` back-relation; `layout`
+(react-grid-layout positions per breakpoint) and `widgets` (the ordered enabled set) are JSON,
+validated by Zod rather than modelled in Prisma.
+
+Shared `@hame/shared` gains the dashboard contract: a `WIDGET_TYPES` catalogue with per-widget
+metadata (`DASHBOARD_WIDGETS` — label, default/min grid size, an HA-gated flag), the responsive
+breakpoints/columns (`GRID_BREAKPOINTS` / `GRID_COLS` — a 3-column tablet/desktop grid reflowing to
+one column on the phone, design §9), the `DashboardLayoutSchema` (refined so every widget id is
+unique and every layout tile maps to a widget) and a pure `buildDefaultDashboard` skyline-packer
+yielding `DEFAULT_DASHBOARD` — the zero-setup template an un-customised user or a fresh clone falls
+back to. The API adds a thin-controller/thick-service `dashboard` slice — member-level
+`GET`/`PUT /api/dashboard?owner=me|household`, owner-validated, re-parsing stored rows so a
+hand-edited row can't break the grid — and seeds the household layout.
+
+Web: `react-grid-layout` (pinned to **v1**, the stable `WidthProvider`/`isDraggable` API — its v2
+rewrite swaps to config objects and was avoided), a **widget registry** wrapping the existing widgets
+unchanged, and a reworked dashboard. An **Edit layout** toggle turns on drag/resize, an add-widget
+tray (only **available** widgets — the two HA-gated ones appear only when HA exposes the right
+entities) and per-tile remove, with Save/Cancel; a placed-but-unavailable widget shows a quiet
+placeholder rather than a hole. A **My dashboard ⇄ Household** toggle (persisted in `localStorage`, so
+the wall tablet stays on Household across reloads — no auth changes) selects which owner's layout is
+shown and edited. Verified: typecheck / lint / format green, 243 API + 5 web tests (incl. the
+default-template integrity, the schema's uniqueness/orphan-tile refinements, and the service's
+default-fallback / household-vs-user isolation / owner guard), all builds clean, plus a live API smoke
+— login → GET both owners → PUT persists and is isolated from household → owner/body validation (400)
+→ CSRF (403) → unauth (401).
+
+> **Deferred to 7.1b**: per-user/household smart-home device selection (today still a household
+> singleton — §10 Phase 6.3); the smart-home **widget** is already placeable per-owner here. The three
+> remaining §8.12 widgets (clock & greeting, upcoming events, WiFi QR) land in 7.2.
 
 ### Phase 8 — Notifications
 

@@ -21,6 +21,7 @@ import { customEventsRouter } from './custom-events.js'
 import { calendarRouter } from './calendar.js'
 import { calendarSourcesRouter } from './calendar-sources.js'
 import { caldavCredentialsRouter } from './caldav-credentials.js'
+import { dashboardRouter } from './dashboard.js'
 
 export const apiRouter = Router()
 
@@ -46,3 +47,4 @@ apiRouter.use('/custom-events', customEventsRouter)
 apiRouter.use('/calendar', calendarRouter)
 apiRouter.use('/calendar-sources', calendarSourcesRouter)
 apiRouter.use('/caldav-credentials', caldavCredentialsRouter)
+apiRouter.use('/dashboard', dashboardRouter)
