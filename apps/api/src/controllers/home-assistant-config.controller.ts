@@ -21,6 +21,7 @@ import {
   getSmartHomeSuggestions,
   updateSmartHomeSettings,
 } from '../services/smart-home.service.js'
+import { resolveOwner } from '../lib/dashboard-owner.js'
 import { haClient } from '../integrations/home-assistant/index.js'
 
 export const getHomeAssistantConfigController: RequestHandler = async (_req, res, next) => {
@@ -75,37 +76,44 @@ export const getHomeAssistantBinSensorsController: RequestHandler = (_req, res) 
   res.json(listHomeAssistantBinSensors())
 }
 
-/** The household's curated smart-home control list (spec §10 Phase 6.3). */
-export const getSmartHomeSettingsController: RequestHandler = async (_req, res, next) => {
+/** The owner's curated smart-home control list (spec §10 Phase 6.3, 7.1b). */
+export const getSmartHomeSettingsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await getSmartHomeSettings())
+    res.json(await getSmartHomeSettings(resolveOwner(req)))
   } catch (err) {
     next(err)
   }
 }
 
-/** Replace the curated smart-home control list (the Smart-home page's Save). */
+/** Replace the owner's curated smart-home control list (the Smart-home page's Save). */
 export const updateSmartHomeSettingsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await updateSmartHomeSettings(req.body as UpdateSmartHomeSettingsInput))
+    res.json(
+      await updateSmartHomeSettings(resolveOwner(req), req.body as UpdateSmartHomeSettingsInput),
+    )
   } catch (err) {
     next(err)
   }
 }
 
-/** New controllable devices to offer on the dashboard prompt (spec §10 Phase 6.3). */
-export const getSmartHomeSuggestionsController: RequestHandler = async (_req, res, next) => {
+/** New controllable devices to offer the owner on the dashboard prompt (spec §10 Phase 6.3). */
+export const getSmartHomeSuggestionsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await getSmartHomeSuggestions())
+    res.json(await getSmartHomeSuggestions(resolveOwner(req)))
   } catch (err) {
     next(err)
   }
 }
 
-/** Add suggested devices to the widget (the prompt's "Add"). */
+/** Add suggested devices to the owner's widget (the prompt's "Add"). */
 export const addSmartHomeControlsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await addSmartHomeControls((req.body as SmartHomeEntityIdsInput).entityIds))
+    res.json(
+      await addSmartHomeControls(
+        resolveOwner(req),
+        (req.body as SmartHomeEntityIdsInput).entityIds,
+      ),
+    )
   } catch (err) {
     next(err)
   }
@@ -114,7 +122,10 @@ export const addSmartHomeControlsController: RequestHandler = async (req, res, n
 /** Dismiss suggested devices without adding them (the prompt's "Dismiss"). */
 export const dismissSmartHomeSuggestionsController: RequestHandler = async (req, res, next) => {
   try {
-    await dismissSmartHomeSuggestions((req.body as SmartHomeEntityIdsInput).entityIds)
+    await dismissSmartHomeSuggestions(
+      resolveOwner(req),
+      (req.body as SmartHomeEntityIdsInput).entityIds,
+    )
     res.status(204).end()
   } catch (err) {
     next(err)

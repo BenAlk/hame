@@ -190,10 +190,10 @@ export const HaBinSensorSchema = z.object({
 export type HaBinSensor = z.infer<typeof HaBinSensorSchema>
 
 /**
- * The household's curated smart-home controls (spec §8.12, §10 Phase 6.3). Rather
- * than flood the dashboard with every controllable HA entity, the household picks
- * a few on the Smart-home page; the widget renders just these, in this order.
- * Household-wide (the wall tablet is shared), selection only — never the state.
+ * An owner's curated smart-home controls (spec §8.12, §10 Phase 6.3, 7.1b).
+ * Rather than flood the dashboard with every controllable HA entity, each owner
+ * (a user, or the shared household/tablet) picks a few on the Smart-home page;
+ * the widget renders just these, in this order. Selection only — never the state.
  */
 export const SmartHomeSettingsSchema = z.object({
   entityIds: z.array(z.string()),

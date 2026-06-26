@@ -4,6 +4,7 @@ import { Lightbulb, Play, Power, SlidersHorizontal, ToyBrick } from 'lucide-reac
 import type { HaEntityState } from '@hame/shared'
 import { HA_ACTIVATE_DOMAINS, HA_ACTIVATE_SERVICE, HA_TOGGLE_DOMAINS } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
+import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { useHaControl, useHaEntities, useSmartHomeControls } from '@/api/home-assistant'
 import { cn } from '@/lib/utils'
 
@@ -47,8 +48,9 @@ function ManageLink() {
  * non-HA households never see it.
  */
 export function SmartHomeWidget() {
+  const { owner } = useDashboardOwner()
   const { data: entities } = useHaEntities()
-  const { data: settings } = useSmartHomeControls()
+  const { data: settings } = useSmartHomeControls(owner)
   const control = useHaControl()
 
   // Everything HA can control (to decide whether to show the widget at all)…

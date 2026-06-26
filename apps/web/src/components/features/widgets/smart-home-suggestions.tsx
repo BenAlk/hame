@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Lightbulb, Play, Power, Sparkles, ToyBrick, type LucideIcon } from 'lucide-react'
 import type { HaEntityState } from '@hame/shared'
+import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import {
   useAddSmartHomeControls,
   useDismissSmartHomeSuggestions,
@@ -20,16 +21,18 @@ function label(entity: HaEntityState): string {
 }
 
 /**
- * New-device prompt (spec §10 Phase 6.3). When Home Assistant gains a
- * controllable entity the household hasn't decided on, this dismissible card
- * offers to add it to the smart-home widget. It's seeded against a baseline at
- * setup, so only devices added *later* appear here — and Add/Dismiss both stop it
- * asking again. Renders nothing when there's nothing new.
+ * New-device prompt (spec §10 Phase 6.3, 7.1b). When Home Assistant gains a
+ * controllable entity the current dashboard owner hasn't decided on, this
+ * dismissible card offers to add it to that owner's smart-home widget. It's
+ * seeded against a baseline at setup, so only devices added *later* appear here —
+ * and Add/Dismiss both stop it asking again. Renders nothing when there's nothing
+ * new.
  */
 export function SmartHomeSuggestions({ enabled = true }: { enabled?: boolean }) {
-  const { data: suggestions } = useSmartHomeSuggestions(enabled)
-  const add = useAddSmartHomeControls()
-  const dismiss = useDismissSmartHomeSuggestions()
+  const { owner } = useDashboardOwner()
+  const { data: suggestions } = useSmartHomeSuggestions(owner, enabled)
+  const add = useAddSmartHomeControls(owner)
+  const dismiss = useDismissSmartHomeSuggestions(owner)
 
   if (!suggestions || suggestions.length === 0) return null
 

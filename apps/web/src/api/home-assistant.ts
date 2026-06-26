@@ -15,6 +15,7 @@ import type {
   UpdateSmartHomeSettingsInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import type { DashboardOwner } from './dashboard'
 
 const HA_KEY = ['home-assistant-config'] as const
 const HA_ENTITIES_KEY = ['home-assistant-entities'] as const
@@ -98,65 +99,65 @@ export function useHaBinSensors(enabled = true) {
   })
 }
 
-/** The household's curated smart-home control list (spec §10 Phase 6.3). */
-export function useSmartHomeControls() {
+/** The owner's curated smart-home control list (spec §10 Phase 6.3, 7.1b). */
+export function useSmartHomeControls(owner: DashboardOwner) {
   return useQuery<SmartHomeSettings>({
-    queryKey: HA_CONTROLS_KEY,
-    queryFn: () => apiFetch<SmartHomeSettings>('/api/home-assistant/controls'),
+    queryKey: [...HA_CONTROLS_KEY, owner],
+    queryFn: () => apiFetch<SmartHomeSettings>(`/api/home-assistant/controls?owner=${owner}`),
   })
 }
 
-/** Save the curated control list (the Smart-home page's Save button). */
-export function useUpdateSmartHomeControls() {
+/** Save the owner's curated control list (the Smart-home page's Save button). */
+export function useUpdateSmartHomeControls(owner: DashboardOwner) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: UpdateSmartHomeSettingsInput) =>
-      apiFetch<SmartHomeSettings>('/api/home-assistant/controls', {
+      apiFetch<SmartHomeSettings>(`/api/home-assistant/controls?owner=${owner}`, {
         method: 'PUT',
         body: JSON.stringify(body),
       }),
     onSuccess: (data) => {
-      qc.setQueryData(HA_CONTROLS_KEY, data)
-      void qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY })
+      qc.setQueryData([...HA_CONTROLS_KEY, owner], data)
+      void qc.invalidateQueries({ queryKey: [...HA_SUGGESTIONS_KEY, owner] })
     },
   })
 }
 
-/** New controllable devices Hame found but the household hasn't decided on yet. */
-export function useSmartHomeSuggestions(enabled = true) {
+/** New controllable devices Hame found but this owner hasn't decided on yet. */
+export function useSmartHomeSuggestions(owner: DashboardOwner, enabled = true) {
   return useQuery<HaEntityState[]>({
-    queryKey: HA_SUGGESTIONS_KEY,
-    queryFn: () => apiFetch<HaEntityState[]>('/api/home-assistant/suggestions'),
+    queryKey: [...HA_SUGGESTIONS_KEY, owner],
+    queryFn: () => apiFetch<HaEntityState[]>(`/api/home-assistant/suggestions?owner=${owner}`),
     enabled,
   })
 }
 
-/** Add suggested devices to the widget (the dashboard prompt's "Add"). */
-export function useAddSmartHomeControls() {
+/** Add suggested devices to the owner's widget (the dashboard prompt's "Add"). */
+export function useAddSmartHomeControls(owner: DashboardOwner) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: SmartHomeEntityIdsInput) =>
-      apiFetch<SmartHomeSettings>('/api/home-assistant/controls/add', {
+      apiFetch<SmartHomeSettings>(`/api/home-assistant/controls/add?owner=${owner}`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
     onSuccess: (data) => {
-      qc.setQueryData(HA_CONTROLS_KEY, data)
-      void qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY })
+      qc.setQueryData([...HA_CONTROLS_KEY, owner], data)
+      void qc.invalidateQueries({ queryKey: [...HA_SUGGESTIONS_KEY, owner] })
     },
   })
 }
 
 /** Dismiss suggested devices without adding them (the prompt's "Dismiss"). */
-export function useDismissSmartHomeSuggestions() {
+export function useDismissSmartHomeSuggestions(owner: DashboardOwner) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: SmartHomeEntityIdsInput) =>
-      apiFetch<void>('/api/home-assistant/controls/dismiss', {
+      apiFetch<void>(`/api/home-assistant/controls/dismiss?owner=${owner}`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: HA_SUGGESTIONS_KEY }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...HA_SUGGESTIONS_KEY, owner] }),
   })
 }
 

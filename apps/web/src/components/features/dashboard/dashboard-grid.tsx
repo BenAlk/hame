@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Responsive, WidthProvider, type Layouts } from 'react-grid-layout'
 import { Pencil, Plus, X } from 'lucide-react'
 import type { DashboardLayout, GridItem, WidgetType } from '@hame/shared'
 import { DASHBOARD_WIDGETS, GRID_BREAKPOINTS, GRID_COLS, WIDGET_TYPES } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { WIDGET_COMPONENTS, useWidgetAvailability } from '@/components/features/widgets/registry'
+import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { useDashboardLayout, useSaveDashboardLayout, type DashboardOwner } from '@/api/dashboard'
 import { cn } from '@/lib/utils'
 // react-grid-layout's stylesheet bundles the react-resizable handle styles too,
@@ -14,23 +15,6 @@ import 'react-grid-layout/css/styles.css'
 const ResponsiveGridLayout = WidthProvider(Responsive)
 const ROW_HEIGHT = 88
 const MARGIN: [number, number] = [16, 16]
-const OWNER_STORAGE_KEY = 'hame.dashboard.owner'
-
-/** Read/write the owner toggle, tolerating environments without localStorage. */
-function readStoredOwner(): DashboardOwner {
-  try {
-    return (localStorage.getItem(OWNER_STORAGE_KEY) as DashboardOwner | null) ?? 'me'
-  } catch {
-    return 'me'
-  }
-}
-function storeOwner(owner: DashboardOwner): void {
-  try {
-    localStorage.setItem(OWNER_STORAGE_KEY, owner)
-  } catch {
-    /* no-op when storage is unavailable */
-  }
-}
 
 /** Append a widget's tile to the bottom of every breakpoint's column. */
 function addTiles(layout: DashboardLayout['layout'], type: WidgetType): DashboardLayout['layout'] {
@@ -69,8 +53,7 @@ function removeTiles(layout: DashboardLayout['layout'], id: string): DashboardLa
  * live, and a placed-but-unavailable one shows a quiet placeholder, never a hole.
  */
 export function DashboardGrid() {
-  const [owner, setOwner] = useState<DashboardOwner>(readStoredOwner)
-  useEffect(() => storeOwner(owner), [owner])
+  const { owner, setOwner } = useDashboardOwner()
 
   const { data, isPending } = useDashboardLayout(owner)
   const save = useSaveDashboardLayout(owner)

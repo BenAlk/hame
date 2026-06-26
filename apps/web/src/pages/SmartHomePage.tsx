@@ -5,6 +5,10 @@ import type { HaEntityState, PublicUser } from '@hame/shared'
 import { HA_ACTIVATE_DOMAINS, HA_TOGGLE_DOMAINS } from '@hame/shared'
 import { AppNav } from '@/components/app-nav'
 import { Button } from '@/components/ui/button'
+import {
+  DashboardOwnerProvider,
+  useDashboardOwner,
+} from '@/components/features/dashboard/dashboard-owner'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import {
@@ -30,25 +34,42 @@ function label(entity: HaEntityState): string {
 }
 
 /**
- * Smart-home control selection (spec §8.12, §10 Phase 6.3). Browse every
+ * Smart-home control selection (spec §8.12, §10 Phase 6.3, 7.1b). Browse every
  * controllable Home Assistant entity, grouped by type, and pick which appear on
- * the dashboard's smart-home widget — so the widget shows a chosen few, not the
- * whole house. The selection is household-wide (the wall tablet is shared).
+ * a dashboard's smart-home widget — so the widget shows a chosen few, not the
+ * whole house. Per-owner: a My⇄Household toggle picks whose dashboard you're
+ * curating, sharing the owner selection with the dashboard view (same key).
  */
 export function SmartHomePage() {
+  return (
+    <DashboardOwnerProvider>
+      <SmartHomePageInner />
+    </DashboardOwnerProvider>
+  )
+}
+
+function SmartHomePageInner() {
+  const { owner, setOwner } = useDashboardOwner()
   const { data: me } = useCurrentUser()
   const { data: entities, isPending: entitiesPending } = useHaEntities()
-  const { data: settings, isPending: settingsPending } = useSmartHomeControls()
-  const save = useUpdateSmartHomeControls()
+  const { data: settings, isPending: settingsPending } = useSmartHomeControls(owner)
+  const save = useUpdateSmartHomeControls(owner)
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  // Seed local selection from the saved list once it loads.
+  // Seed local selection from the saved list once it loads (and after an owner
+  // switch, when the query returns the other owner's list).
   useEffect(() => {
     if (settings) setSelected(new Set(settings.entityIds))
   }, [settings])
+
+  // Switching owner is a fresh slate — clear any prior save/error notice.
+  useEffect(() => {
+    setSaved(false)
+    setError(null)
+  }, [owner])
 
   // Controllable entities, grouped by domain and sorted by name within a group.
   const grouped = useMemo(() => {
@@ -100,10 +121,28 @@ export function SmartHomePage() {
         <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
-      <p className="max-w-2xl text-sm text-muted-foreground">
-        Choose which Home Assistant devices appear on your dashboard’s smart-home widget. Pick a
-        handful you actually use — lights, switches, scenes — rather than the whole house.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Choose which Home Assistant devices appear on the smart-home widget for the dashboard
+          below. Pick a handful you actually use — lights, switches, scenes — rather than the whole
+          house.
+        </p>
+        <div className="inline-flex shrink-0 rounded-pill border border-line p-0.5 text-sm">
+          {(['me', 'household'] as const).map((o) => (
+            <button
+              key={o}
+              type="button"
+              onClick={() => setOwner(o)}
+              className={cn(
+                'rounded-pill px-3 py-1 transition-colors',
+                owner === o ? 'bg-accent text-white' : 'text-muted-foreground hover:text-ink',
+              )}
+            >
+              {o === 'me' ? 'My dashboard' : 'Household'}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading devices…</p>

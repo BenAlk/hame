@@ -1317,9 +1317,31 @@ default-fallback / household-vs-user isolation / owner guard), all builds clean,
 — login → GET both owners → PUT persists and is isolated from household → owner/body validation (400)
 → CSRF (403) → unauth (401).
 
-> **Deferred to 7.1b**: per-user/household smart-home device selection (today still a household
-> singleton — §10 Phase 6.3); the smart-home **widget** is already placeable per-owner here. The three
-> remaining §8.12 widgets (clock & greeting, upcoming events, WiFi QR) land in 7.2.
+#### Phase 7.1b — Per-owner smart-home selection ✅ Complete (26-06-2026)
+
+**Delivered**: The smart-home control list (which Home Assistant devices the widget shows) moves
+from a household **singleton** to **per-owner**, completing the carryover from 7.1 and resolving the
+Phase 6.3 curation follow-up. A 7.1b migration converts `SmartHomeSettings` to mirror
+`DashboardLayout` — one row per user (unique `userId`) plus the single fixed-id `"household"` row
+(`isHousehold` true / `userId` null), with a `User.smartHomeSettings` back-relation — carrying the
+existing household-wide selection forward as the household row's. The owner model 7.1 introduced is
+now **shared**: a small `lib/dashboard-owner.ts` (`DashboardOwner`, `HOUSEHOLD_ID`, `whereForOwner`,
+and the `?owner=me|household` `resolveOwner`) backs both the dashboard and smart-home slices, so they
+resolve and key the owner identically. The smart-home service, controllers and the five web hooks all
+gain the owner; each owner seeds its own new-device "known" baseline independently. A device deleted
+in HA is pruned from **every** owner's lists in one cross-owner `array_remove` statement.
+
+Web: a `DashboardOwnerProvider` context lifts the My⇄Household toggle out of the grid so the grid, the
+smart-home widget, and the new-device prompt share one owner selection on the dashboard; the
+`/smart-home` page gets its own toggle backed by the **same** localStorage key, so "which dashboard am
+I configuring" stays one concept across the app. Verified: typecheck / lint / format green, 250 API
+(incl. the shared owner resolver's 400/401 paths, the service's per-owner keying and cross-owner
+forget) + 5 web + 15 bin-scraper tests, all builds clean, plus a live API smoke against the migrated
+DB — login → household selection carried over → a fresh user's `me` list is empty → PUT `me` persists
+and stays isolated from household → bad owner (400) → CSRF (403) → unauth (401).
+
+> **Remaining in Phase 7**: the three §8.12 widgets (clock & greeting, upcoming events, WiFi QR) land
+> in 7.2; idle mode in 7.3; responsive polish + PWA in 7.4.
 
 ### Phase 8 — Notifications
 
