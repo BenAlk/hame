@@ -1,13 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import type { PantryEntry, PublicUser } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { PantryEntry } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useItems } from '@/api/items'
 import { useCreatePantryEntry, useDeletePantryEntry, usePantry } from '@/api/pantry'
 import {
@@ -19,7 +17,6 @@ import { cn } from '@/lib/utils'
 import { isOverdueOrToday, quantityLabel, relativeDay } from '@/lib/format'
 
 export function PantryPage() {
-  const { data: me } = useCurrentUser()
   const { data: locations } = useStorageLocations()
   const { data: entries, isPending } = usePantry()
 
@@ -35,7 +32,6 @@ export function PantryPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Pantry</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">

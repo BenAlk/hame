@@ -1,12 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { PublicUser, ShoppingList, ShoppingListItem } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { ShoppingList, ShoppingListItem } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CheckRow } from '@/components/features/shopping/check-row'
 import { ArchiveDialog } from '@/components/features/shopping/archive-dialog'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useItems } from '@/api/items'
 import {
   useAddShoppingItem,
@@ -35,7 +33,6 @@ function groupByTag(items: ShoppingListItem[]): [string, ShoppingListItem[]][] {
 }
 
 export function ShoppingPage() {
-  const { data: me } = useCurrentUser()
   const { data: lists, isPending } = useShoppingLists()
   const createList = useCreateShoppingList()
   const deleteList = useDeleteShoppingList()
@@ -61,7 +58,6 @@ export function ShoppingPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Shopping</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[260px_1fr]">

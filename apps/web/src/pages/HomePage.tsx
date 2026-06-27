@@ -1,5 +1,4 @@
 import type { PublicUser } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
 import { DashboardGrid } from '@/components/features/dashboard/dashboard-grid'
 import { DashboardOwnerProvider } from '@/components/features/dashboard/dashboard-owner'
 import { SmartHomeSuggestions } from '@/components/features/widgets/smart-home-suggestions'
@@ -34,7 +33,6 @@ export function HomePage() {
           </p>
           <p className="mt-1 text-muted-foreground">Here&apos;s what&apos;s happening at home.</p>
         </div>
-        <AppNav user={current} />
       </header>
 
       <DashboardOwnerProvider>

@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Lightbulb, Play, Power, ToyBrick, type LucideIcon } from 'lucide-react'
-import type { HaEntityState, PublicUser } from '@hame/shared'
+import type { HaEntityState } from '@hame/shared'
 import { HA_ACTIVATE_DOMAINS, HA_TOGGLE_DOMAINS } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
 import { Button } from '@/components/ui/button'
 import {
   DashboardOwnerProvider,
   useDashboardOwner,
 } from '@/components/features/dashboard/dashboard-owner'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import {
   useHaEntities,
   useSmartHomeControls,
@@ -50,7 +48,6 @@ export function SmartHomePage() {
 
 function SmartHomePageInner() {
   const { owner, setOwner } = useDashboardOwner()
-  const { data: me } = useCurrentUser()
   const { data: entities, isPending: entitiesPending } = useHaEntities()
   const { data: settings, isPending: settingsPending } = useSmartHomeControls(owner)
   const save = useUpdateSmartHomeControls(owner)
@@ -118,7 +115,6 @@ function SmartHomePageInner() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Smart home</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-4">

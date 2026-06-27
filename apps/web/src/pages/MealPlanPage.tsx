@@ -3,7 +3,6 @@ import { addDays, addWeeks, format, isToday, startOfWeek } from 'date-fns'
 import { ChevronLeft, ChevronRight, Plus, Settings2, ShoppingCart } from 'lucide-react'
 import type { CreateMealPlanEntryInput, MealPlanEntry, MealType, PublicUser } from '@hame/shared'
 import { MEAL_TYPES } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
 import { MealEntryForm } from '@/components/features/meal-plan/meal-entry-form'
 import { GenerateListDialog } from '@/components/features/meal-plan/generate-list-dialog'
 import { Button } from '@/components/ui/button'
@@ -112,7 +111,6 @@ export function MealPlanPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Meal plan</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

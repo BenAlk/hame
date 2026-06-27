@@ -5,17 +5,14 @@ import type {
   HomeAssistantTestResult,
   NormaliserStrategy,
   OllamaTestResult,
-  PublicUser,
 } from '@hame/shared'
 import { DEFAULT_OLLAMA_MODEL } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useHouseholdSettings, useUpdateHouseholdSettings } from '@/api/household-settings'
 import { useOllamaConfig, useProbeOllamaModels, useUpdateOllamaConfig } from '@/api/ollama-config'
 import {
@@ -44,7 +41,6 @@ const STRATEGIES: { value: NormaliserStrategy; label: string; description: strin
 
 /** Admin-only household settings: ingredient normalisation + Ollama (spec §10 Phase 4.5). */
 export function SettingsPage() {
-  const { data: me } = useCurrentUser()
   const { data: settings } = useHouseholdSettings()
   const updateSettings = useUpdateHouseholdSettings()
 
@@ -57,83 +53,82 @@ export function SettingsPage() {
 
   return (
     <main className="container flex min-h-screen flex-col gap-6 py-10">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="font-serif text-3xl font-medium text-ink">Settings</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
-      </header>
+      <h1 className="font-serif text-3xl font-medium text-ink">Settings</h1>
 
-      <Card className="max-w-2xl">
-        <CardHeader>
-          <CardTitle>Ingredient normalisation</CardTitle>
-          <CardDescription>
-            How recipe ingredients are cleaned into shopping-list items on import.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {STRATEGIES.map((s) => (
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Ingredient normalisation</CardTitle>
+            <CardDescription>
+              How recipe ingredients are cleaned into shopping-list items on import.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {STRATEGIES.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => chooseStrategy(s.value)}
+                aria-pressed={strategy === s.value}
+                disabled={updateSettings.isPending}
+                className={cn(
+                  'flex flex-col gap-0.5 rounded-card border px-4 py-3 text-left transition-colors',
+                  strategy === s.value
+                    ? 'border-accent bg-accent-soft'
+                    : 'border-line bg-surface hover:border-accent',
+                )}
+              >
+                <span className="text-sm font-medium text-ink">{s.label}</span>
+                <span className="text-sm text-muted-foreground">{s.description}</span>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <OllamaCard active={strategy === 'LLM'} />
+
+        <HomeAssistantCard />
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Phone calendar (CalDAV)</CardTitle>
+            <CardDescription>
+              Serve the household calendar over CalDAV so members can read and write it from their
+              phone&apos;s calendar app. Each member generates an app password under their profile.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <button
-              key={s.value}
               type="button"
-              onClick={() => chooseStrategy(s.value)}
-              aria-pressed={strategy === s.value}
+              role="switch"
+              aria-checked={caldavEnabled}
               disabled={updateSettings.isPending}
+              onClick={() => updateSettings.mutate({ caldavEnabled: !caldavEnabled })}
               className={cn(
-                'flex flex-col gap-0.5 rounded-card border px-4 py-3 text-left transition-colors',
-                strategy === s.value
-                  ? 'border-accent bg-accent-soft'
-                  : 'border-line bg-surface hover:border-accent',
-              )}
-            >
-              <span className="text-sm font-medium text-ink">{s.label}</span>
-              <span className="text-sm text-muted-foreground">{s.description}</span>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
-
-      <OllamaCard active={strategy === 'LLM'} />
-
-      <HomeAssistantCard />
-
-      <Card className="max-w-2xl">
-        <CardHeader>
-          <CardTitle>Phone calendar (CalDAV)</CardTitle>
-          <CardDescription>
-            Serve the household calendar over CalDAV so members can read and write it from their
-            phone&apos;s calendar app. Each member generates an app password under their profile.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={caldavEnabled}
-            disabled={updateSettings.isPending}
-            onClick={() => updateSettings.mutate({ caldavEnabled: !caldavEnabled })}
-            className={cn(
-              'flex items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors',
-              caldavEnabled ? 'border-accent bg-accent-soft' : 'border-line bg-surface',
-            )}
-          >
-            <span
-              className={cn(
-                'flex h-6 w-11 shrink-0 items-center rounded-pill p-0.5 transition-colors',
-                caldavEnabled ? 'bg-accent' : 'bg-line',
+                'flex items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors',
+                caldavEnabled ? 'border-accent bg-accent-soft' : 'border-line bg-surface',
               )}
             >
               <span
                 className={cn(
-                  'size-5 rounded-pill bg-surface transition-transform',
-                  caldavEnabled && 'translate-x-5',
+                  'flex h-6 w-11 shrink-0 items-center rounded-pill p-0.5 transition-colors',
+                  caldavEnabled ? 'bg-accent' : 'bg-line',
                 )}
-              />
-            </span>
-            <span className="text-sm font-medium text-ink">
-              {caldavEnabled ? 'CalDAV server enabled' : 'CalDAV server off'}
-            </span>
-          </button>
-        </CardContent>
-      </Card>
+              >
+                <span
+                  className={cn(
+                    'size-5 rounded-pill bg-surface transition-transform',
+                    caldavEnabled && 'translate-x-5',
+                  )}
+                />
+              </span>
+              <span className="text-sm font-medium text-ink">
+                {caldavEnabled ? 'CalDAV server enabled' : 'CalDAV server off'}
+              </span>
+            </button>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   )
 }
@@ -205,7 +200,7 @@ function OllamaCard({ active }: { active: boolean }) {
   const models = probe?.models ?? []
 
   return (
-    <Card className={cn('max-w-2xl', !active && 'opacity-70')}>
+    <Card className={cn(!active && 'opacity-70')}>
       <CardHeader>
         <CardTitle>Ollama (language model)</CardTitle>
         <CardDescription>
@@ -357,7 +352,7 @@ function HomeAssistantCard() {
   const status = config?.status ?? 'disconnected'
 
   return (
-    <Card className="max-w-2xl">
+    <Card>
       <CardHeader>
         <CardTitle>Home Assistant</CardTitle>
         <CardDescription>

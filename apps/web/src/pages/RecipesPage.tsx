@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
-import type { CreateRecipeInput, ImportedRecipeDraft, PublicUser } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { CreateRecipeInput, ImportedRecipeDraft } from '@hame/shared'
 import { RecipeCard } from '@/components/features/recipes/recipe-card'
 import { RecipeForm, type RecipeFormInitial } from '@/components/features/recipes/recipe-form'
 import { UrlImport } from '@/components/features/recipes/url-import'
@@ -10,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useTags } from '@/api/tags'
 import { useCreateRecipe, useRecipes, warmUpImport } from '@/api/recipes'
 
@@ -39,7 +37,6 @@ function draftToInitial(draft: ImportedRecipeDraft): RecipeFormInitial {
 }
 
 export function RecipesPage() {
-  const { data: me } = useCurrentUser()
   const [search, setSearch] = useState('')
   const { data: recipes, isPending } = useRecipes(search.trim() || undefined)
   const { data: tags } = useTags()
@@ -76,7 +73,6 @@ export function RecipesPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Recipes</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="flex flex-wrap items-center gap-3">

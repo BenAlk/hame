@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import type { PublicUser } from '@hame/shared'
+import { AppShell } from '@/components/app-shell'
 import { SetupPage } from '@/pages/SetupPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { HomePage } from '@/pages/HomePage'
@@ -49,27 +50,29 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
 
   return (
     <Routes>
-      <Route path="/" element={<HomePage />} />
-      <Route path="/shopping" element={<ShoppingPage />} />
-      <Route path="/pantry" element={<PantryPage />} />
-      <Route path="/chores" element={<ChoresPage />} />
-      <Route path="/recipes" element={<RecipesPage />} />
-      <Route path="/recipes/:id" element={<RecipeDetailPage />} />
-      <Route path="/meal-plan" element={<MealPlanPage />} />
-      <Route path="/calendar" element={<CalendarPage />} />
-      <Route path="/bins" element={<BinsPage />} />
-      <Route path="/smart-home" element={<SmartHomePage />} />
-      <Route path="/pets" element={<PetsPage />} />
-      <Route path="/pets/:id" element={<PetProfilePage />} />
-      <Route path="/profile" element={<ProfilePage />} />
-      <Route
-        path="/admin/users"
-        element={user.role === 'ADMIN' ? <UsersPage /> : <Navigate to="/" replace />}
-      />
-      <Route
-        path="/settings"
-        element={user.role === 'ADMIN' ? <SettingsPage /> : <Navigate to="/" replace />}
-      />
+      <Route element={<AppShell />}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/shopping" element={<ShoppingPage />} />
+        <Route path="/pantry" element={<PantryPage />} />
+        <Route path="/chores" element={<ChoresPage />} />
+        <Route path="/recipes" element={<RecipesPage />} />
+        <Route path="/recipes/:id" element={<RecipeDetailPage />} />
+        <Route path="/meal-plan" element={<MealPlanPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/bins" element={<BinsPage />} />
+        <Route path="/smart-home" element={<SmartHomePage />} />
+        <Route path="/pets" element={<PetsPage />} />
+        <Route path="/pets/:id" element={<PetProfilePage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route
+          path="/admin/users"
+          element={user.role === 'ADMIN' ? <UsersPage /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/settings"
+          element={user.role === 'ADMIN' ? <SettingsPage /> : <Navigate to="/" replace />}
+        />
+      </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

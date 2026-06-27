@@ -1,21 +1,13 @@
 import { useState } from 'react'
 import { differenceInCalendarDays, format } from 'date-fns'
 import { Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import type {
-  BinCollection,
-  CreateBinInput,
-  CreateScraperBinsInput,
-  PublicUser,
-  Weekday,
-} from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { BinCollection, CreateBinInput, CreateScraperBinsInput, Weekday } from '@hame/shared'
 import { BinForm } from '@/components/features/bins/bin-form'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { cn } from '@/lib/utils'
-import { useCurrentUser } from '@/api/auth'
 import {
   useBins,
   useCreateBin,
@@ -69,7 +61,6 @@ function relativeDay(date: Date | string): string {
 }
 
 export function BinsPage() {
-  const { data: me } = useCurrentUser()
   const { data: bins, isPending } = useBins()
   const createBin = useCreateBin()
   const createScraperBins = useCreateScraperBins()
@@ -134,7 +125,6 @@ export function BinsPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Bins</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div>

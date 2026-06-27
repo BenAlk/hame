@@ -1,9 +1,7 @@
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import type { PublicUser, Species } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { Species } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
-import { useCurrentUser } from '@/api/auth'
 import { usePet } from '@/api/pets'
 import { formatDate } from '@/lib/format'
 
@@ -17,7 +15,6 @@ const SPECIES_LABEL: Record<Species, string> = {
 
 export function PetProfilePage() {
   const { id } = useParams<{ id: string }>()
-  const { data: me } = useCurrentUser()
   const { data: pet, isPending, isError } = usePet(id)
 
   return (
@@ -30,7 +27,6 @@ export function PetProfilePage() {
           <ArrowLeft className="size-4" />
           All pets
         </Link>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       {isPending ? (

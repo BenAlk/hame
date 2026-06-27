@@ -1,15 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Check, Clock, ExternalLink, Pencil, Trash2, Users } from 'lucide-react'
-import type { PublicUser, UpdateRecipeInput } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { UpdateRecipeInput } from '@hame/shared'
 import { RecipeForm } from '@/components/features/recipes/recipe-form'
 import { TagChip } from '@/components/features/tag-chip'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useTags } from '@/api/tags'
 import { useDeleteRecipe, useRecipe, useUpdateRecipe } from '@/api/recipes'
 import { quantityLabel } from '@/lib/format'
@@ -18,7 +16,6 @@ import { cn } from '@/lib/utils'
 export function RecipeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { data: me } = useCurrentUser()
   const { data: recipe, isPending } = useRecipe(id)
   const { data: tags } = useTags()
   const updateRecipe = useUpdateRecipe()
@@ -82,7 +79,6 @@ export function RecipeDetailPage() {
           <ArrowLeft className="size-4" />
           Recipes
         </Link>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="flex flex-wrap items-start justify-between gap-4">

@@ -11,19 +11,12 @@ import {
   startOfWeek,
 } from 'date-fns'
 import { CalendarCog, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import type {
-  CalendarEvent,
-  CalendarEventType,
-  CreateCustomEventInput,
-  PublicUser,
-} from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { CalendarEvent, CalendarEventType, CreateCustomEventInput } from '@hame/shared'
 import { EventForm, type EventFormInitial } from '@/components/features/calendar/event-form'
 import { CalendarSourcesManager } from '@/components/features/calendar/calendar-sources-manager'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useCalendar } from '@/api/calendar'
 import {
   useCreateCustomEvent,
@@ -57,8 +50,6 @@ type Editing =
   | { mode: 'edit'; sourceId: string; initial: EventFormInitial }
 
 export function CalendarPage() {
-  const { data: me } = useCurrentUser()
-
   const [monthOffset, setMonthOffset] = useState(0)
   const monthAnchor = useMemo(() => addMonths(new Date(), monthOffset), [monthOffset])
   const gridStart = useMemo(
@@ -136,7 +127,6 @@ export function CalendarPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Calendar</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

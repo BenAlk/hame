@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
-import type { CreatePetInput, Pet, PublicUser, Species } from '@hame/shared'
+import type { CreatePetInput, Pet, Species } from '@hame/shared'
 import { SPECIES } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
 import { WidgetCard } from '@/components/features/widget-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useCreatePet, useDeletePet, usePets } from '@/api/pets'
 
 const SPECIES_LABEL: Record<Species, string> = {
@@ -24,7 +22,6 @@ const SPECIES_LABEL: Record<Species, string> = {
 const selectClass = 'h-10 rounded-control border border-input bg-surface px-2 text-sm text-ink'
 
 export function PetsPage() {
-  const { data: me } = useCurrentUser()
   const { data: pets, isPending } = usePets()
   const deletePet = useDeletePet()
   const [formOpen, setFormOpen] = useState(false)
@@ -46,7 +43,6 @@ export function PetsPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Pets</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div>

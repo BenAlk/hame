@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
-import type { Chore, CreateChoreInput, PublicUser } from '@hame/shared'
-import { AppNav } from '@/components/app-nav'
+import type { Chore, CreateChoreInput } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { ChoreCheckRow } from '@/components/features/chores/chore-check-row'
 import { ChoreForm } from '@/components/features/chores/chore-form'
@@ -9,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
-import { useCurrentUser } from '@/api/auth'
 import { useMembers } from '@/api/users'
 import { usePets } from '@/api/pets'
 import {
@@ -28,7 +26,6 @@ function dueRank(chore: Chore): number {
 }
 
 export function ChoresPage() {
-  const { data: me } = useCurrentUser()
   const { data: chores, isPending } = useChores(true)
   const { data: members } = useMembers()
   const { data: pets } = usePets()
@@ -116,7 +113,6 @@ export function ChoresPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Chores</h1>
-        <AppNav user={(me as PublicUser | null) ?? null} />
       </header>
 
       <div>
