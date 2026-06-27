@@ -201,9 +201,14 @@ export function DashboardGrid() {
   )
 }
 
+/** Widgets that disappear entirely when unavailable rather than showing a
+ *  placeholder — the WiFi QR must give nothing away off-network or unconfigured. */
+const HIDE_WHEN_UNAVAILABLE: ReadonlySet<WidgetType> = new Set<WidgetType>(['wifiQr'])
+
 /** Render the widget, or a quiet placeholder when it can't show anything now. */
 function WidgetTile({ type, available }: { type: WidgetType; available: boolean }) {
   if (!available) {
+    if (HIDE_WHEN_UNAVAILABLE.has(type)) return null
     return (
       <WidgetCard title={DASHBOARD_WIDGETS[type].label}>
         <p className="text-sm text-muted-foreground">

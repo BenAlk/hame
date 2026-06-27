@@ -1340,8 +1340,45 @@ forget) + 5 web + 15 bin-scraper tests, all builds clean, plus a live API smoke 
 DB — login → household selection carried over → a fresh user's `me` list is empty → PUT `me` persists
 and stays isolated from household → bad owner (400) → CSRF (403) → unauth (401).
 
-> **Remaining in Phase 7**: the three §8.12 widgets (clock & greeting, upcoming events, WiFi QR) land
-> in 7.2; idle mode in 7.3; responsive polish + PWA in 7.4.
+#### Phase 7.2 — Remaining widgets ✅ Complete (27-06-2026)
+
+**Delivered**: The three remaining §8.12 dashboard widgets, slotting into the Phase 7.1 widget
+framework (a catalogue entry in `@hame/shared`, a registry component, default-order placement) —
+**clock & greeting**, **upcoming events** and the **WiFi QR code**. The first two are pure frontend:
+clock & greeting is a self-contained live clock (minute-aligned tick) with a time-of-day greeting and
+the signed-in user's first name; upcoming events reads the existing aggregated calendar endpoint
+(§8.10) over a 14-day horizon and lists the next few, colour-dotted, with a relative-day/time label.
+
+The WiFi QR widget carries the phase's only new backend: a `WifiConfig` singleton (Phase 7.2
+migration) mirroring the Home Assistant / Immich config pattern, with the password **AES-256-GCM
+encrypted at rest** (`lib/crypto`, §11); admin-only `PATCH`, validated by a Zod refinement (a secured
+network needs a password; an open `NONE` network clears it). Shared `@hame/shared` gains the WiFi
+config schemas, the security-type enum and a pure `buildWifiQrPayload` that emits the de-facto
+`WIFI:T:…;S:…;P:…;;` join string (reserved-char escaping, `nopass` / hidden handling). The widget is
+**local-network-only** (reusing the Phase 1 `isLocalRequest`, §11): the decrypted password is returned
+by `GET /api/wifi` *only* to an on-LAN client and the widget renders only then, so the code is shown
+openly on the wall tablet but the credentials never travel to a remote (e.g. Cloudflare) client.
+Encryption protects the database and backups; the network gate keeps the code off remote screens.
+
+Rather than add a dependency, the QR itself is produced by a small **in-tree, dependency-free encoder**
+(`lib/qr`, ISO/IEC 18004 byte mode, error-correction level M, versions 1–10 — far more than any WiFi
+payload needs), rendered as crisp SVG (pure black on white for reliable scanning), in keeping with the
+project's dependency-light leaning (the bin scraper, the custom calendar grid). It was verified the
+hard way: its data / error-correction codewords checked against the standard's Reed–Solomon
+arithmetic, then **every output round-tripped through a real QR decoder** across versions 1–10 and
+UTF-8 payloads — which surfaced and fixed a transposed format-information placement (the data was
+correct, but the 15 format bits were written on the wrong axis, so nothing decoded until corrected).
+The widget is offered, placed and shown only when an admin has configured and enabled a network *and*
+the viewer is on the local network — and unlike the HA-gated widgets (which show a "needs Home
+Assistant" placeholder) it vanishes entirely, giving nothing away off-network. Verified: typecheck /
+lint / format green, 263 tests
+(250 API + 13 web, incl. the QR encoder's field arithmetic and structural checks), all builds clean,
+plus a live API smoke — unauth 401, member read 200, member write 403 (admin-only), CSRF 403, the
+secured-without-password 400 refinement, the open-network path, and the stored password confirmed as
+ciphertext.
+
+> **Remaining in Phase 7**: idle mode with the Immich screensaver + clock cycling (§8.14) in 7.3;
+> responsive polish + PWA in 7.4.
 
 ### Phase 8 — Notifications
 

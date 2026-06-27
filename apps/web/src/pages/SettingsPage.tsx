@@ -5,6 +5,7 @@ import type {
   HomeAssistantTestResult,
   NormaliserStrategy,
   OllamaTestResult,
+  WifiSecurity,
 } from '@hame/shared'
 import { DEFAULT_OLLAMA_MODEL } from '@hame/shared'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,7 @@ import {
   useTestHomeAssistant,
   useUpdateHomeAssistantConfig,
 } from '@/api/home-assistant'
+import { useUpdateWifiConfig, useWifiConfig } from '@/api/wifi'
 
 const STRATEGIES: { value: NormaliserStrategy; label: string; description: string }[] = [
   {
@@ -88,6 +90,8 @@ export function SettingsPage() {
         <OllamaCard active={strategy === 'LLM'} />
 
         <HomeAssistantCard />
+
+        <WifiCard />
 
         <Card>
           <CardHeader>
@@ -450,6 +454,144 @@ function HomeAssistantCard() {
               Last connected {new Date(config.lastConnectedAt).toLocaleString()}
             </span>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+const WIFI_SECURITY_OPTIONS: { value: WifiSecurity; label: string }[] = [
+  { value: 'WPA', label: 'WPA / WPA2' },
+  { value: 'WEP', label: 'WEP' },
+  { value: 'NONE', label: 'Open (no password)' },
+]
+
+/** WiFi network details for the dashboard's scan-to-join QR widget (spec §10 Phase 7.2). */
+function WifiCard() {
+  const { data: config } = useWifiConfig()
+  const updateConfig = useUpdateWifiConfig()
+
+  const [ssid, setSsid] = useState('')
+  const [security, setSecurity] = useState<WifiSecurity>('WPA')
+  const [password, setPassword] = useState('')
+  const [hidden, setHidden] = useState(false)
+  const [isActive, setIsActive] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  // Seed from the saved config once; the password is returned (it's shown openly
+  // as a QR), so we prefill it rather than do a "leave blank to keep" dance.
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (config && !seeded.current) {
+      seeded.current = true
+      setSsid(config.ssid)
+      setSecurity(config.security)
+      setPassword(config.password)
+      setHidden(config.hidden)
+      setIsActive(config.isActive)
+    }
+  }, [config])
+
+  async function handleSave() {
+    setError(null)
+    setSaved(false)
+    try {
+      await updateConfig.mutateAsync({ ssid: ssid.trim(), security, password, hidden, isActive })
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the WiFi settings.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>WiFi QR code</CardTitle>
+        <CardDescription>
+          Set your network details so the dashboard can show a scan-to-join QR code. Anyone who can
+          see the wall tablet can join — the password is encrypted at rest but shown openly in the
+          code.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="wifi-ssid">Network name (SSID)</Label>
+          <Input
+            id="wifi-ssid"
+            value={ssid}
+            onChange={(e) => setSsid(e.target.value)}
+            placeholder="My Home Network"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="wifi-security">Security</Label>
+          <select
+            id="wifi-security"
+            value={security}
+            onChange={(e) => setSecurity(e.target.value as WifiSecurity)}
+            className="rounded-control border border-input bg-surface px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {WIFI_SECURITY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {security !== 'NONE' && (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="wifi-password">Password</Label>
+            <Input
+              id="wifi-password"
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Network password"
+              autoComplete="off"
+            />
+          </div>
+        )}
+
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={hidden}
+            onChange={(e) => setHidden(e.target.checked)}
+            className="size-4 rounded border-input"
+          />
+          Hidden network (SSID isn&apos;t broadcast)
+        </label>
+
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={isActive}
+            onChange={(e) => setIsActive(e.target.checked)}
+            className="size-4 rounded border-input"
+          />
+          Show the WiFi QR widget on the dashboard
+        </label>
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+        {saved && !error && (
+          <p className="flex items-center gap-2 text-sm text-sage">
+            <CheckCircle2 className="size-4 shrink-0" />
+            Saved.
+          </p>
+        )}
+
+        <div>
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={updateConfig.isPending || !ssid.trim()}
+          >
+            {updateConfig.isPending ? 'Saving…' : 'Save'}
+          </Button>
         </div>
       </CardContent>
     </Card>

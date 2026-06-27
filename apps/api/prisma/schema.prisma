@@ -362,6 +362,31 @@ model SmartHomeSettings {
   updatedAt        DateTime @updatedAt
 }
 
+// ── Phase 7.2: WiFi QR ───────────────────────────────────────────────────────
+
+/// Household WiFi credentials for the dashboard's WiFi QR widget (spec §8.12,
+/// §10 Phase 7.2). Singleton mirroring the HomeAssistant/Immich config pattern.
+/// The password is AES-256-GCM encrypted at rest (spec §11) — `password` holds
+/// the ciphertext blob (null for an open network), decrypted server-side only
+/// for the member-level read that feeds the QR. The code is shown openly on the
+/// wall tablet, so it isn't hidden from signed-in members, but it never sits in
+/// the database as plaintext.
+model WifiConfig {
+  id        String       @id @default("singleton") // enforce single row
+  ssid      String       @default("")
+  password  String? // AES-256-GCM ciphertext (see lib/crypto.ts); null when open/unset
+  security  WifiSecurity @default(WPA)
+  hidden    Boolean      @default(false)
+  isActive  Boolean      @default(false)
+  updatedAt DateTime     @updatedAt
+}
+
+enum WifiSecurity {
+  WPA
+  WEP
+  NONE
+}
+
 // ── Phase 5: Bins ────────────────────────────────────────────────────────────
 
 /// A kerbside bin collection schedule (spec §8.9). Recurs but is never completed

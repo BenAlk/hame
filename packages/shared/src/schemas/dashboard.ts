@@ -9,18 +9,20 @@ import { z } from 'zod'
  * with zero setup.
  */
 
-/** Every widget the dashboard can place. The Phase 7.2 widgets (clock,
- *  upcoming-events, wifi-qr) slot in here later. */
+/** Every widget the dashboard can place. */
 export const WIDGET_TYPES = [
+  'clockGreeting',
   'weather',
   'todaysMeals',
   'activeShopping',
   'todaysChores',
   'nextBinDay',
+  'upcomingEvents',
   'petReminders',
   'expiringSoon',
   'lowStock',
   'smartHome',
+  'wifiQr',
 ] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 export const WidgetTypeSchema = z.enum(WIDGET_TYPES)
@@ -48,6 +50,14 @@ export interface WidgetMeta {
 }
 
 export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
+  clockGreeting: {
+    label: 'Clock & greeting',
+    defaultW: 1,
+    defaultH: 2,
+    minW: 1,
+    minH: 2,
+    requiresHa: false,
+  },
   weather: { label: 'Weather', defaultW: 1, defaultH: 2, minW: 1, minH: 2, requiresHa: true },
   todaysMeals: {
     label: "Today's meals",
@@ -81,6 +91,14 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
     minH: 2,
     requiresHa: false,
   },
+  upcomingEvents: {
+    label: 'Upcoming events',
+    defaultW: 1,
+    defaultH: 3,
+    minW: 1,
+    minH: 2,
+    requiresHa: false,
+  },
   petReminders: {
     label: 'Pet reminders',
     defaultW: 1,
@@ -99,19 +117,23 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
   },
   lowStock: { label: 'Low stock', defaultW: 1, defaultH: 3, minW: 1, minH: 2, requiresHa: false },
   smartHome: { label: 'Smart home', defaultW: 1, defaultH: 2, minW: 1, minH: 2, requiresHa: true },
+  wifiQr: { label: 'WiFi QR code', defaultW: 1, defaultH: 3, minW: 1, minH: 3, requiresHa: false },
 }
 
-/** The default placement order — reading order of the legacy static grid. */
+/** The default placement order — clock first, then reading order of the grid. */
 export const DEFAULT_WIDGET_ORDER: WidgetType[] = [
+  'clockGreeting',
   'weather',
   'todaysMeals',
   'activeShopping',
   'todaysChores',
   'nextBinDay',
+  'upcomingEvents',
   'petReminders',
   'expiringSoon',
   'lowStock',
   'smartHome',
+  'wifiQr',
 ]
 
 /** One positioned tile in a react-grid-layout (`i` keys it to a widget id). */
