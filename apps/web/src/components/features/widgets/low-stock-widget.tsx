@@ -11,6 +11,11 @@ export function LowStockWidget() {
     <WidgetCard
       title="Low stock"
       action={items && items.length > 0 ? <span>{items.length}</span> : undefined}
+      footer={
+        <Link to="/pantry" className="inline-block text-xs text-accent hover:underline">
+          Open pantry
+        </Link>
+      }
     >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -38,9 +43,6 @@ export function LowStockWidget() {
             ))}
         </ul>
       )}
-      <Link to="/pantry" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open pantry
-      </Link>
     </WidgetCard>
   )
 }

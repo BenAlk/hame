@@ -32,7 +32,14 @@ export function UpcomingEventsWidget() {
   }, [events])
 
   return (
-    <WidgetCard title="Upcoming events">
+    <WidgetCard
+      title="Upcoming events"
+      footer={
+        <Link to="/calendar" className="inline-block text-xs text-accent hover:underline">
+          Open calendar
+        </Link>
+      }
+    >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : upcoming.length === 0 ? (
@@ -55,9 +62,6 @@ export function UpcomingEventsWidget() {
           ))}
         </ul>
       )}
-      <Link to="/calendar" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open calendar
-      </Link>
     </WidgetCard>
   )
 }

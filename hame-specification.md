@@ -1268,8 +1268,9 @@ with the date pending rather than silently dropped. It feeds a new **Home Assist
 the bin form's source picker that surfaces only when HA exposes such sensors, so a non-HA household
 never sees a dead end. Verified: typecheck / lint /
 format green, 226 API + 5 web tests (incl. the date-format parsing, attribute-priority, horizon-guard
-and disconnected-rejection cases), all builds clean. A live smoke against real Home Assistant (with
-the UK Bin Collection Data integration installed) is the one remaining check before it's battle-tested.
+and disconnected-rejection cases), all builds clean, plus a **live smoke against real Home Assistant**
+(with the UK Bin Collection Data integration installed) — the bin sensors read, mapped to a cached
+`BinOccurrence` and surfaced in the widget and aggregated feed. Battle-tested.
 
 ### Phase 7 — Dashboard Polish
 
@@ -1416,10 +1417,47 @@ The asset pool is fetched lazily (only once idle activates), so a household that
 or has no Immich — never hits the integration. Verified: typecheck / lint / format green, **270 API +
 21 web tests** (incl. the Immich album/asset/pool helpers, the config service's encrypt-at-rest /
 key-never-returned / omit-preserves contract and graceful-degrade, the idle-settings singleton, and the
-screensaver state machine), all builds clean. A live smoke against real Immich (Ben's homelab) is the
-one remaining check before it's battle-tested, like the HA bin source.
+screensaver state machine), all builds clean, plus a **live smoke against real Immich** — albums and
+photos pulled through the backend proxy and cycled in the screensaver, with no Immich credential ever
+reaching the browser. Battle-tested.
 
-> **Remaining in Phase 7**: responsive polish + PWA in 7.4.
+#### Phase 7.4 — Responsive polish + PWA ✅ Complete (29-06-2026)
+
+**Delivered**: Closes Phase 7 — Hame is now an installable **PWA** (§4 "Vite PWA Plugin", §8.12) and
+the UI is tuned for its two real targets, the **landscape wall tablet** and a **portrait phone**.
+Frontend-only, **no migration**.
+
+`vite-plugin-pwa` (Workbox `generateSW`) adds a web-app **manifest** (name/short_name "Hame",
+`standalone`, `start_url`/`scope` `/`, Hearth `#f4ede1` theme/background) and a **service worker**
+that precaches the built shell so an installed Hame opens offline, with an SPA `navigateFallback`
+whose **denylist keeps `/api`, `/caldav` and `/.well-known` always on the network** — app data, auth
+and CalDAV are **never** cached, so there's no stale household state and no CSRF/session breakage. The
+only runtime cache is a `StaleWhileRevalidate` rule for Google Fonts, so the typefaces still render
+offline; the SW is disabled in `pnpm dev` so it can't cache the Vite API/CalDAV proxy while iterating.
+
+A new Hearth-styled **app icon** (a terracotta house with a hearth flame on the warm cream field) is
+the source for the generated maskable/any 192·512 PNGs, the 180px apple-touch icon and a refreshed
+`favicon.svg`; `index.html` carries the apple-touch link and the iOS standalone metas. Registration
+and updates run through `useRegisterSW` (registerType `prompt`, `injectRegister` null to avoid a
+double register): a quiet bottom **"new version ready — Reload"** toast and a **"you're offline"**
+banner (`pwa-prompts.tsx`, mounted once at the root). The offline state is an in-app banner rather
+than a static `offline.html` — the SPA shell is always precached, so a standalone fallback page would
+never actually render, whereas a `navigator.onLine` banner reliably shows.
+
+Responsive polish was Tailwind-only (no structural rework — the nav shell and the dashboard / meal-plan
+grids already reflowed): tighter global `container` gutters on phones (`1rem`, widening to `2rem` from
+`sm`), a compacted **month grid** below `sm` (smaller cells / gaps / event pills so the seven columns
+stay legible on a phone), and a scaled-down dashboard greeting. An audit confirmed the rest already
+reflowed — no tables, no fixed-width overflow.
+
+Verified: typecheck / lint / format green, the full suite still **291 tests** (270 API + 21 web) — no
+new unit tests, the change being config + presentational — and the web build clean, emitting
+`manifest.webmanifest`, `sw.js` + the Workbox runtime and the precached shell/icons, with the
+generated SW confirmed to carry **no `/api` in its precache** (only in the navigation denylist).
+Installing on a phone/tablet for the real add-to-home-screen + offline check is the one remaining
+battle-test, like the Immich / HA live smokes.
+
+**Phase 7 is complete.**
 
 ### Phase 8 — Notifications
 

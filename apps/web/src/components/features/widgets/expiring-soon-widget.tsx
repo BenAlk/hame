@@ -12,6 +12,11 @@ export function ExpiringSoonWidget() {
     <WidgetCard
       title="Expiring soon"
       action={entries && entries.length > 0 ? <span>{entries.length}</span> : undefined}
+      footer={
+        <Link to="/pantry" className="inline-block text-xs text-accent hover:underline">
+          Open pantry
+        </Link>
+      }
     >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -39,9 +44,6 @@ export function ExpiringSoonWidget() {
           })}
         </ul>
       )}
-      <Link to="/pantry" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open pantry
-      </Link>
     </WidgetCard>
   )
 }

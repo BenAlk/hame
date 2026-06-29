@@ -14,6 +14,11 @@ export function TodaysChoresWidget() {
     <WidgetCard
       title="Today's chores"
       action={instances && instances.length > 0 ? <span>{instances.length}</span> : undefined}
+      footer={
+        <Link to="/chores" className="inline-block text-xs text-accent hover:underline">
+          Open chores
+        </Link>
+      }
     >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -56,9 +61,6 @@ export function TodaysChoresWidget() {
           })}
         </ul>
       )}
-      <Link to="/chores" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open chores
-      </Link>
     </WidgetCard>
   )
 }

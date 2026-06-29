@@ -26,7 +26,7 @@ export function HomePage() {
     <main className="container flex min-h-screen flex-col gap-8 py-10">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="font-serif text-4xl font-medium text-ink">
+          <p className="font-serif text-3xl font-medium text-ink sm:text-4xl">
             {greeting()}
             {current ? `, ${current.firstName}` : ''}.
           </p>

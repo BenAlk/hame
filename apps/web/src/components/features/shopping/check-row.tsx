@@ -60,7 +60,7 @@ export function CheckRow({ row, onToggle, onRemove, disabled }: CheckRowProps) {
         onClick={onRemove}
         disabled={disabled}
         aria-label={`Remove ${row.item.name}`}
-        className="shrink-0 rounded-control p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+        className="shrink-0 rounded-control p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted hover:text-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
       >
         <X className="size-4" />
       </button>

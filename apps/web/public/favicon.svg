@@ -1,5 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M3 9.5 12 3l9 6.5" />
-  <path d="M5 9v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" />
-  <path d="M9 21v-6h6v6" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hame">
+  <rect width="512" height="512" rx="96" fill="#f4ede1" />
+  <path
+    d="M256 116 L412 248 L412 388 Q412 408 392 408 L120 408 Q100 408 100 388 L100 248 Z"
+    fill="#d16a6a"
+  />
+  <path d="M198 408 L198 332 a58 58 0 0 1 116 0 L314 408 Z" fill="#f4ede1" />
+  <path d="M256 318 C 296 354, 290 398, 256 402 C 222 398, 216 354, 256 318 Z" fill="#d16a6a" />
 </svg>

@@ -7,7 +7,9 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: '2rem',
+      // Tighter gutters on phones so content (esp. the 7-col calendar) isn't
+      // squeezed; the roomier 2rem returns from the `sm` breakpoint up.
+      padding: { DEFAULT: '1rem', sm: '2rem' },
       screens: { '2xl': '1400px' },
     },
     extend: {

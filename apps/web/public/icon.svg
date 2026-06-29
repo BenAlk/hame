@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Hame">
+  <!-- Hearth palette: warm cream field, terracotta house, a hearth flame.
+       Full-bleed background + mark kept inside the central safe zone so the
+       same artwork works as a maskable icon. -->
+  <rect width="512" height="512" fill="#f4ede1" />
+  <!-- House silhouette (roof + walls), rounded bottom corners -->
+  <path
+    d="M256 116 L412 248 L412 388 Q412 408 392 408 L120 408 Q100 408 100 388 L100 248 Z"
+    fill="#d16a6a"
+  />
+  <!-- Arched hearth opening, cut from the cream field -->
+  <path d="M198 408 L198 332 a58 58 0 0 1 116 0 L314 408 Z" fill="#f4ede1" />
+  <!-- Hearth flame -->
+  <path d="M256 318 C 296 354, 290 398, 256 402 C 222 398, 216 354, 256 318 Z" fill="#d16a6a" />
+</svg>

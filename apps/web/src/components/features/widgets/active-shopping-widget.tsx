@@ -12,9 +12,9 @@ export function ActiveShoppingWidget() {
   return (
     <WidgetCard
       title="Weekly shop"
-      action={
-        <Link to="/shopping" className="text-accent hover:underline">
-          Open
+      footer={
+        <Link to="/shopping" className="inline-block text-xs text-accent hover:underline">
+          Open shopping
         </Link>
       }
     >

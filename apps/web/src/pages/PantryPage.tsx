@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
+import { format } from 'date-fns'
 import { Trash2 } from 'lucide-react'
 import type { PantryEntry } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
 import { useItems } from '@/api/items'
 import { useCreatePantryEntry, useDeletePantryEntry, usePantry } from '@/api/pantry'
@@ -19,6 +21,7 @@ import { isOverdueOrToday, quantityLabel, relativeDay } from '@/lib/format'
 export function PantryPage() {
   const { data: locations } = useStorageLocations()
   const { data: entries, isPending } = usePantry()
+  const [detail, setDetail] = useState<PantryEntry | null>(null)
 
   const grouped = useMemo(() => {
     const map = new Map<string, PantryEntry[]>()
@@ -47,7 +50,7 @@ export function PantryPage() {
               <WidgetCard key={location} title={location} action={<span>{rows.length}</span>}>
                 <div className="divide-y divide-line">
                   {rows.map((entry) => (
-                    <EntryRow key={entry.id} entry={entry} />
+                    <EntryRow key={entry.id} entry={entry} onOpen={() => setDetail(entry)} />
                   ))}
                 </div>
               </WidgetCard>
@@ -57,15 +60,20 @@ export function PantryPage() {
 
         <LocationsPanel />
       </div>
+
+      <EntryDetailModal entry={detail} onClose={() => setDetail(null)} />
     </main>
   )
 }
 
-function EntryRow({ entry }: { entry: PantryEntry }) {
-  const removeEntry = useDeletePantryEntry()
+function EntryRow({ entry, onOpen }: { entry: PantryEntry; onOpen: () => void }) {
   const urgent = entry.expiryDate ? isOverdueOrToday(entry.expiryDate) : false
   return (
-    <div className="group flex items-center gap-3 py-2 text-sm">
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+    >
       <span
         aria-hidden
         title={`Added by ${entry.addedBy.firstName}`}
@@ -88,15 +96,67 @@ function EntryRow({ entry }: { entry: PantryEntry }) {
           {relativeDay(entry.expiryDate)}
         </span>
       )}
-      <button
-        type="button"
-        onClick={() => void removeEntry.mutateAsync(entry.id)}
-        aria-label={`Remove ${entry.item.name}`}
-        className="shrink-0 rounded-control p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-      >
-        <Trash2 className="size-4" />
-      </button>
-    </div>
+    </button>
+  )
+}
+
+/** Detail view for a single pantry instance — quantity, location and crucially its use-by date. */
+function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClose: () => void }) {
+  const removeEntry = useDeletePantryEntry()
+  const urgent = entry?.expiryDate ? isOverdueOrToday(entry.expiryDate) : false
+
+  async function onRemove() {
+    if (!entry) return
+    await removeEntry.mutateAsync(entry.id)
+    onClose()
+  }
+
+  return (
+    <Modal open={entry !== null} onClose={onClose} title={entry?.item.name ?? ''}>
+      {entry && (
+        <div className="flex flex-col gap-4">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+            <dt className="text-muted-foreground">Quantity</dt>
+            <dd className="text-ink">{quantityLabel(entry.quantity, entry.unit) || '—'}</dd>
+
+            <dt className="text-muted-foreground">Location</dt>
+            <dd className="text-ink">{entry.location.name}</dd>
+
+            <dt className="text-muted-foreground">Expiry</dt>
+            <dd className={cn(urgent ? 'font-medium text-warning' : 'text-ink')}>
+              {entry.expiryDate
+                ? `${format(entry.expiryDate, 'd MMM yyyy')} · ${relativeDay(entry.expiryDate)}`
+                : 'No use-by date'}
+            </dd>
+
+            <dt className="text-muted-foreground">Added by</dt>
+            <dd className="flex items-center gap-2 text-ink">
+              <span
+                aria-hidden
+                className="inline-block size-2.5 shrink-0 rounded-pill"
+                style={{ backgroundColor: entry.addedBy.colour }}
+              />
+              {entry.addedBy.firstName}
+            </dd>
+
+            <dt className="text-muted-foreground">Added</dt>
+            <dd className="text-ink">{format(entry.addedAt, 'd MMM yyyy')}</dd>
+          </dl>
+
+          <div className="flex justify-end border-t border-line pt-4">
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={removeEntry.isPending}
+              onClick={() => void onRemove()}
+            >
+              <Trash2 className="size-4" />
+              {removeEntry.isPending ? 'Removing…' : 'Remove'}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }
 
@@ -256,8 +316,9 @@ function LocationsPanel() {
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Garage freezer"
           aria-label="New location name"
+          className="min-w-0"
         />
-        <Button type="submit" size="sm" disabled={createLocation.isPending}>
+        <Button type="submit" className="shrink-0" disabled={createLocation.isPending}>
           Add
         </Button>
       </form>

@@ -114,7 +114,7 @@ export function MealPlanPage() {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start">
           <Button
             variant="outline"
             size="icon"
@@ -135,14 +135,14 @@ export function MealPlanPage() {
             <ChevronRight className="size-4" />
           </Button>
           {weekOffset !== 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setWeekOffset(0)}>
+            <Button variant="ghost" onClick={() => setWeekOffset(0)}>
               This week
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start">
           {isAdmin && (
-            <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+            <Button variant="outline" onClick={() => setSettingsOpen(true)}>
               <Settings2 className="size-4" />
               Meal types
             </Button>

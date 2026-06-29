@@ -28,6 +28,11 @@ export function PetRemindersWidget() {
     <WidgetCard
       title="Pet reminders"
       action={petChores.length > 0 ? <span>{petChores.length}</span> : undefined}
+      footer={
+        <Link to="/pets" className="inline-block text-xs text-accent hover:underline">
+          Open pets
+        </Link>
+      }
     >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -61,9 +66,6 @@ export function PetRemindersWidget() {
           })}
         </ul>
       )}
-      <Link to="/pets" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open pets
-      </Link>
     </WidgetCard>
   )
 }

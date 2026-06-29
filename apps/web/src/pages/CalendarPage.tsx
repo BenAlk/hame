@@ -11,6 +11,7 @@ import {
   startOfWeek,
 } from 'date-fns'
 import { CalendarCog, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { parseISO } from 'date-fns'
 import type { CalendarEvent, CalendarEventType, CreateCustomEventInput } from '@hame/shared'
 import { EventForm, type EventFormInitial } from '@/components/features/calendar/event-form'
 import { CalendarSourcesManager } from '@/components/features/calendar/calendar-sources-manager'
@@ -45,6 +46,13 @@ function eventColour(event: CalendarEvent): string {
   return event.colour ?? TYPE_META[event.type].colour
 }
 
+/** Short time label for the day-detail list ("All day" or e.g. "18:30"). */
+function eventTimeLabel(event: CalendarEvent): string {
+  if (event.allDay) return 'All day'
+  const iso = typeof event.startTime === 'string' ? event.startTime : event.startTime.toISOString()
+  return format(new Date(iso), 'HH:mm')
+}
+
 type Editing =
   | { mode: 'create'; date: string }
   | { mode: 'edit'; sourceId: string; initial: EventFormInitial }
@@ -75,6 +83,7 @@ export function CalendarPage() {
   const deleteEvent = useDeleteCustomEvent()
 
   const [editing, setEditing] = useState<Editing | null>(null)
+  const [dayDetail, setDayDetail] = useState<string | null>(null)
   const [sourcesOpen, setSourcesOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -89,9 +98,16 @@ export function CalendarPage() {
     return map
   }, [events])
 
+  function openCreate(date: string) {
+    setError(null)
+    setDayDetail(null)
+    setEditing({ mode: 'create', date })
+  }
+
   function openEvent(event: CalendarEvent) {
     if (event.type !== 'EVENT') return // only custom events are editable here
     setError(null)
+    setDayDetail(null)
     setEditing({
       mode: 'edit',
       sourceId: event.sourceId,
@@ -130,7 +146,7 @@ export function CalendarPage() {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center justify-center gap-2 sm:w-auto sm:justify-start">
           <Button
             variant="outline"
             size="icon"
@@ -151,12 +167,12 @@ export function CalendarPage() {
             <ChevronRight className="size-4" />
           </Button>
           {monthOffset !== 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setMonthOffset(0)}>
+            <Button variant="ghost" onClick={() => setMonthOffset(0)}>
               Today
             </Button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex w-full flex-wrap items-center justify-center gap-3 sm:w-auto sm:justify-start">
           {Object.values(TYPE_META).map((meta) => (
             <span
               key={meta.label}
@@ -166,7 +182,7 @@ export function CalendarPage() {
               {meta.label}
             </span>
           ))}
-          <Button variant="outline" size="sm" onClick={() => setSourcesOpen(true)}>
+          <Button variant="outline" onClick={() => setSourcesOpen(true)}>
             <CalendarCog className="size-4" />
             Calendars
           </Button>
@@ -181,16 +197,22 @@ export function CalendarPage() {
       </div>
 
       {/* Month grid */}
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-7 gap-1 sm:gap-2">
         {days.map((day) => {
           const dayKey = format(day, 'yyyy-MM-dd')
           const dayEvents = byDay.get(dayKey) ?? []
           const inMonth = isSameMonth(day, monthAnchor)
           return (
-            <div
+            <button
               key={dayKey}
+              type="button"
+              onClick={() => {
+                setError(null)
+                setDayDetail(dayKey)
+              }}
+              aria-label={`${format(day, 'EEEE d MMMM')}${dayEvents.length ? `, ${dayEvents.length} events` : ''}`}
               className={cn(
-                'group flex min-h-28 flex-col gap-1 rounded-card border border-line bg-surface p-2',
+                'group flex min-h-20 flex-col gap-1 rounded-card border border-line bg-surface p-1.5 text-left transition-colors hover:border-accent sm:min-h-28 sm:p-2',
                 !inMonth && 'opacity-50',
                 isToday(day) && 'border-accent',
               )}
@@ -201,44 +223,75 @@ export function CalendarPage() {
                 >
                   {format(day, 'd')}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null)
-                    setEditing({ mode: 'create', date: dayKey })
-                  }}
-                  aria-label={`Add event on ${format(day, 'd MMM')}`}
-                  className="text-muted-foreground opacity-0 transition-opacity hover:text-accent focus:opacity-100 group-hover:opacity-100"
-                >
-                  <Plus className="size-3.5" />
-                </button>
+                <Plus className="size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
               </div>
               <div className="flex flex-col gap-1">
                 {dayEvents.map((event) => (
-                  <button
+                  <span
                     key={event.id}
-                    type="button"
-                    onClick={() => openEvent(event)}
                     title={event.title}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-control px-1.5 py-0.5 text-left text-xs text-ink',
-                      event.type === 'EVENT'
-                        ? 'cursor-pointer hover:bg-accent-soft/50'
-                        : 'cursor-default',
-                    )}
+                    className="flex items-center gap-1 rounded-control px-1 py-0.5 text-xs text-ink sm:gap-1.5 sm:px-1.5"
                   >
                     <span
                       className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: eventColour(event) }}
                     />
                     <span className="truncate">{event.title}</span>
-                  </button>
+                  </span>
                 ))}
               </div>
-            </div>
+            </button>
           )
         })}
       </div>
+
+      <Modal
+        open={dayDetail !== null}
+        onClose={() => setDayDetail(null)}
+        title={dayDetail ? format(parseISO(dayDetail), 'EEEE d MMMM') : ''}
+      >
+        {dayDetail && (
+          <div className="flex flex-col gap-3">
+            {(byDay.get(dayDetail) ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nothing scheduled.</p>
+            ) : (
+              <ul className="flex flex-col divide-y divide-line">
+                {(byDay.get(dayDetail) ?? []).map((event) => {
+                  const editable = event.type === 'EVENT'
+                  return (
+                    <li key={event.id}>
+                      <button
+                        type="button"
+                        onClick={() => editable && openEvent(event)}
+                        disabled={!editable}
+                        className={cn(
+                          'flex w-full items-center gap-3 py-2.5 text-left',
+                          editable && 'rounded-control hover:bg-muted',
+                        )}
+                      >
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: eventColour(event) }}
+                        />
+                        <span className="min-w-0 flex-1 truncate text-sm text-ink">
+                          {event.title}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {eventTimeLabel(event)}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <Button variant="outline" className="self-start" onClick={() => openCreate(dayDetail)}>
+              <Plus className="size-4" />
+              Add event
+            </Button>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={editing !== null}

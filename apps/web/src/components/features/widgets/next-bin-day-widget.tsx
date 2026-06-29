@@ -35,7 +35,14 @@ export function NextBinDayWidget() {
     : []
 
   return (
-    <WidgetCard title="Next bin day">
+    <WidgetCard
+      title="Next bin day"
+      footer={
+        <Link to="/bins" className="inline-block text-xs text-accent hover:underline">
+          Open bins
+        </Link>
+      }
+    >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : !next ? (
@@ -62,9 +69,6 @@ export function NextBinDayWidget() {
           </ul>
         </div>
       )}
-      <Link to="/bins" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open bins
-      </Link>
     </WidgetCard>
   )
 }

@@ -62,3 +62,54 @@
       'calt' 1;
   }
 }
+
+/* Dashboard resize handle (edit mode). react-grid-layout's stock handle is a
+   faint grey arrow flush in the corner that adjacent cards can paint over.
+   Replace it with a circular chip that mirrors the remove "✕" button (same
+   surface + border treatment, bottom-right instead of top-right) carrying a
+   grip arrow, lifted above neighbouring tiles. Unlayered so it beats the
+   library's own (also unlayered) rule regardless of import order. */
+.react-resizable-handle {
+  background-image: none !important;
+  width: 24px;
+  height: 24px;
+  right: -8px;
+  bottom: -8px;
+  z-index: 10;
+  border-radius: 9999px;
+  border: 1px solid var(--line);
+  background-color: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  border-bottom-right-radius: 2px;
+}
+
+/* Dashboard resize handle (edit mode). react-grid-layout's stock handle is a
+   faint grey arrow that all but disappears on the dark Hearth surface, so draw
+   a clear accent corner grip in its place. Unlayered so it beats the library's
+   own (also unlayered) rule regardless of import order. */
+.react-resizable-handle {
+  background-image: none !important;
+  width: 24px;
+  height: 24px;
+}
+.react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  border-bottom-right-radius: 2px;
+}

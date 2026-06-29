@@ -19,7 +19,14 @@ export function TodaysMealsWidget() {
   const meals = [...(entries ?? [])].sort((a, b) => MEAL_ORDER[a.mealType] - MEAL_ORDER[b.mealType])
 
   return (
-    <WidgetCard title="Today's meals">
+    <WidgetCard
+      title="Today's meals"
+      footer={
+        <Link to="/meal-plan" className="inline-block text-xs text-accent hover:underline">
+          Open meal plan
+        </Link>
+      }
+    >
       {isPending ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : meals.length === 0 ? (
@@ -45,9 +52,6 @@ export function TodaysMealsWidget() {
           ))}
         </ul>
       )}
-      <Link to="/meal-plan" className="mt-3 inline-block text-xs text-accent hover:underline">
-        Open meal plan
-      </Link>
     </WidgetCard>
   )
 }

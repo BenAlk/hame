@@ -62,15 +62,16 @@ export function ShoppingPage() {
 
       <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
         {/* List selector */}
-        <aside className="flex flex-col gap-3">
+        <aside className="flex min-w-0 flex-col gap-3">
           <form onSubmit={onCreateList} className="flex gap-2">
             <Input
               value={newListName}
               onChange={(e) => setNewListName(e.target.value)}
               placeholder="New list…"
               aria-label="New list name"
+              className="min-w-0"
             />
-            <Button type="submit" size="sm" disabled={createList.isPending}>
+            <Button type="submit" className="shrink-0" disabled={createList.isPending}>
               Add
             </Button>
           </form>
@@ -149,7 +150,7 @@ function ListButton({
         selected ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-muted'
       }`}
     >
-      <span className="truncate">
+      <span className="min-w-0 truncate">
         {list.name}
         {list.status === 'ARCHIVED' && (
           <span className="ml-1 text-xs text-muted-foreground">(archived)</span>
@@ -197,7 +198,7 @@ function ListDetail({
   }
 
   return (
-    <section className="rounded-card border border-line bg-surface p-5">
+    <section className="min-w-0 rounded-card border border-line bg-surface p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-2xl font-medium text-ink">{list.name}</h2>
         <div className="flex gap-2">
@@ -221,13 +222,14 @@ function ListDetail({
             placeholder="Add an item…"
             list="quick-add-items"
             aria-label="Add an item"
+            className="min-w-0"
           />
           <datalist id="quick-add-items">
             {quickAddItems?.map((item) => (
               <option key={item.id} value={item.name} />
             ))}
           </datalist>
-          <Button type="submit" disabled={addItem.isPending}>
+          <Button type="submit" className="shrink-0" disabled={addItem.isPending}>
             Add
           </Button>
         </form>

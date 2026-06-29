@@ -91,25 +91,25 @@ export function UsersPage() {
               {users?.map((user) => (
                 <div
                   key={user.id}
-                  className="flex items-center justify-between rounded-inner border border-line px-4 py-3"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-inner border border-line px-4 py-3"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <span
                       aria-hidden
-                      className="inline-block size-3 rounded-pill"
+                      className="inline-block size-3 shrink-0 rounded-pill"
                       style={{ backgroundColor: user.colour }}
                     />
-                    <div>
-                      <p className="text-sm font-medium text-ink">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">
                         {user.firstName} {user.surname}
                       </p>
-                      <p className="text-xs text-muted-foreground">@{user.username}</p>
+                      <p className="truncate text-xs text-muted-foreground">@{user.username}</p>
                     </div>
-                    <span className="rounded-pill bg-accent-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent">
+                    <span className="shrink-0 rounded-pill bg-accent-soft px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent">
                       {user.role}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => toggleRole(user)}>
                       {user.role === 'ADMIN' ? 'Make member' : 'Make admin'}
                     </Button>
