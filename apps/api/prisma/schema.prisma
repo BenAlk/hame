@@ -534,3 +534,40 @@ model DashboardLayout {
   widgets     Json
   updatedAt   DateTime @updatedAt
 }
+
+// ── Phase 7.3: Idle mode / Immich screensaver ────────────────────────────────
+
+/// Connection to a self-hosted Immich photo library (spec §8.14, §10 Phase 7.3).
+/// Singleton mirroring the HomeAssistant/WiFi config pattern. The API key is
+/// AES-256-GCM encrypted at rest (spec §11) — `apiKey` holds the ciphertext blob,
+/// decrypted server-side only, and is *never* returned to the client (the read
+/// shape carries only `hasApiKey`). The browser never gets Immich credentials:
+/// the idle screensaver pulls photos through Hame's backend proxy, so it works
+/// remotely without exposing Immich. `selectedAlbumIds` empty = all photos.
+model ImmichConfig {
+  id               String    @id @default("singleton") // enforce single row
+  url              String?
+  apiKey           String? // AES-256-GCM ciphertext (see lib/crypto.ts); never returned
+  selectedAlbumIds String[]  @default([])
+  isActive         Boolean   @default(false)
+  lastConnectedAt  DateTime?
+  updatedAt        DateTime  @updatedAt
+}
+
+/// Wall-tablet idle / screensaver behaviour (spec §8.14, §10 Phase 7.3).
+/// Singleton — household-wide, not per-user, because the wall tablet is shared
+/// and no one is actively logged in during idle. After `activationMinutes` of
+/// inactivity the dashboard cycles Immich photos (`photoDisplaySeconds` each)
+/// and a large clock (`clockDisplaySeconds`); touch wakes it. `immichEnabled`
+/// off (or no photos) falls back to clock-only.
+model IdleModeSettings {
+  id                     String   @id @default("singleton") // enforce single row
+  enabled                Boolean  @default(true)
+  activationMinutes      Int      @default(5)
+  photoDisplaySeconds    Int      @default(30)
+  clockDisplaySeconds    Int      @default(120)
+  shufflePhotos          Boolean  @default(true)
+  showWeatherInClockMode Boolean  @default(true)
+  immichEnabled          Boolean  @default(true)
+  updatedAt              DateTime @updatedAt
+}

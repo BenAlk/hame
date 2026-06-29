@@ -1377,8 +1377,49 @@ plus a live API smoke — unauth 401, member read 200, member write 403 (admin-o
 secured-without-password 400 refinement, the open-network path, and the stored password confirmed as
 ciphertext.
 
-> **Remaining in Phase 7**: idle mode with the Immich screensaver + clock cycling (§8.14) in 7.3;
-> responsive polish + PWA in 7.4.
+#### Phase 7.3 — Idle mode / Immich screensaver ✅ Complete (29-06-2026)
+
+**Delivered**: The wall tablet becomes a photo frame when left idle (§8.14). A Phase 7.3 migration
+adds two singletons mirroring the existing config pattern: **`ImmichConfig`** (URL, an API key
+**AES-256-GCM encrypted at rest** — `lib/crypto`, §11 — and *never* returned, the read shape carrying
+only `hasApiKey`; plus `selectedAlbumIds`, empty = all photos) and **`IdleModeSettings`**
+(household-wide, not per-user, because the wall tablet is shared and no one is logged in during idle —
+the kill-switch, the activation / photo / clock timings, and the shuffle / weather / photos-on
+toggles, all with the §7.8 defaults). Shared `@hame/shared` gains the Immich config / update ("leave
+blank to keep") / test / album schemas and the idle-settings schema with min/max refinements.
+
+A dependency-free `integrations/immich` (native `fetch` + the `x-api-key` header, mirroring the HA REST
+probe) touches only the rock-solid album endpoints — `GET /api/albums`, `GET /api/albums/{id}`,
+`GET /api/assets/{id}/thumbnail?size=preview` and a best-effort `GET /api/server/version` — with the
+socket-free helpers (album/asset parsing, dedupe + shuffle pool building) split out and unit-tested,
+the same shape as the HA entity helpers. **"All photos" is interpreted as every image across all
+albums**, so nothing depends on Immich's shifting search API (a documented choice). An admin-only
+`/api/immich` slice (`GET` config / `PATCH` / `POST /test` / `GET /albums`) encrypts the key on write
+and never returns it; a member-level `/api/idle` slice serves the household settings (`GET` member,
+`PATCH` admin), the shuffled asset-id pool (`GET /photos`), and — the privacy keystone (§8.14 "Backend
+Proxy") — streams each preview through `GET /photo/:id`, so **no Immich credential ever reaches the
+browser** and the screensaver works remotely without exposing Immich.
+
+Web: TanStack Query hooks for the three resources, two admin **Settings** cards (Immich connection with
+a write-only key field, Test connection and an album multi-select; idle behaviour with the kill-switch,
+timings and toggles), and the screensaver itself. It is the **wall tablet's** behaviour, so it runs
+only on the home dashboard (mounted there, not app-wide) **and** only on the device showing the shared
+**Household** dashboard — never on a phone in normal use; the Household selection is exactly the
+wall-tablet signal (§10 Phase 7.1: the tablet stays on Household across reloads). A `useIdleMode` hook
+flips into idle after `activationMinutes` of no input
+(pointer / key / touch / wheel) and any input instantly wakes it; a **pure, unit-tested state machine**
+(`screensaver.ts`) drives the photo ⇄ clock cycle — a run of photos (each `photoDisplaySeconds`,
+crossfading via a two-layer stack) then a full-screen clock (`clockDisplaySeconds`, with optional
+weather read cheaply from the cached HA entities — no second SSE connection), looping until touch
+wakes the dashboard, and falling back to **clock-only** when photos are off or Immich is unconfigured.
+The asset pool is fetched lazily (only once idle activates), so a household that never goes idle —
+or has no Immich — never hits the integration. Verified: typecheck / lint / format green, **270 API +
+21 web tests** (incl. the Immich album/asset/pool helpers, the config service's encrypt-at-rest /
+key-never-returned / omit-preserves contract and graceful-degrade, the idle-settings singleton, and the
+screensaver state machine), all builds clean. A live smoke against real Immich (Ben's homelab) is the
+one remaining check before it's battle-tested, like the HA bin source.
+
+> **Remaining in Phase 7**: responsive polish + PWA in 7.4.
 
 ### Phase 8 — Notifications
 

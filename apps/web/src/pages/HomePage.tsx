@@ -1,6 +1,5 @@
 import type { PublicUser } from '@hame/shared'
 import { DashboardGrid } from '@/components/features/dashboard/dashboard-grid'
-import { DashboardOwnerProvider } from '@/components/features/dashboard/dashboard-owner'
 import { SmartHomeSuggestions } from '@/components/features/widgets/smart-home-suggestions'
 import { useCurrentUser } from '@/api/auth'
 import { useHaEntities, useHaEntityStream } from '@/api/home-assistant'
@@ -35,10 +34,8 @@ export function HomePage() {
         </div>
       </header>
 
-      <DashboardOwnerProvider>
-        {haActive && <SmartHomeSuggestions enabled={haActive} />}
-        <DashboardGrid />
-      </DashboardOwnerProvider>
+      {haActive && <SmartHomeSuggestions enabled={haActive} />}
+      <DashboardGrid />
     </main>
   )
 }

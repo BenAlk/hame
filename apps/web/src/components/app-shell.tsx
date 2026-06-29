@@ -21,6 +21,8 @@ import {
 } from 'lucide-react'
 import type { PublicUser } from '@hame/shared'
 import { useCurrentUser, useLogout } from '@/api/auth'
+import { DashboardOwnerProvider } from '@/components/features/dashboard/dashboard-owner'
+import { DashboardIdleMode } from '@/components/features/idle/idle-mode'
 import { cn } from '@/lib/utils'
 
 interface NavItemDef {
@@ -175,73 +177,81 @@ export function AppShell() {
   }, [open, close])
 
   return (
-    <div className="flex min-h-screen">
-      {/* Collapsed icon rail — tablet/desktop only */}
-      <aside className="sticky top-0 hidden h-screen w-16 shrink-0 flex-col border-r border-line bg-surface px-2 py-3 lg:flex">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Expand menu"
-          className="mb-2 flex justify-center rounded-control p-2.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Menu className="h-5 w-5" aria-hidden />
-        </button>
-        <NavItems user={user} expanded={false} onNavigate={close} />
-      </aside>
-
-      {/* Slim top bar — phone only */}
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open menu"
-          className="-ml-2 rounded-control p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Menu className="h-5 w-5" aria-hidden />
-        </button>
-        <span className="font-serif text-xl font-medium text-ink">Hame</span>
-      </header>
-
-      {/* Page content */}
-      <div className="min-w-0 flex-1 pt-14 lg:pt-0">
-        <Outlet />
-      </div>
-
-      {/* Expanded panel + shroud (shared by desktop-expand and phone-drawer) */}
-      <div
-        className={cn(
-          'fixed inset-0 z-40 transition-opacity duration-300',
-          open ? 'pointer-events-auto' : 'pointer-events-none',
-        )}
-        aria-hidden={!open}
-      >
-        <div
-          onClick={close}
-          className={cn(
-            'absolute inset-0 bg-black/40 transition-opacity duration-300',
-            open ? 'opacity-100' : 'opacity-0',
-          )}
-        />
-        <aside
-          className={cn(
-            'absolute left-0 top-0 flex h-full w-60 flex-col border-r border-line bg-surface px-3 py-3 shadow-ambient transition-transform duration-300 ease-out',
-            open ? 'translate-x-0' : '-translate-x-full',
-          )}
-        >
-          <div className="mb-2 flex items-center justify-between pl-2">
-            <span className="font-serif text-xl font-medium text-ink">Hame</span>
-            <button
-              type="button"
-              onClick={close}
-              aria-label="Close menu"
-              className="rounded-control p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <X className="h-5 w-5" aria-hidden />
-            </button>
-          </div>
-          <NavItems user={user} expanded onNavigate={close} />
+    // One shared dashboard-owner selection for the whole app (the dashboard, the
+    // smart-home page, and the wall-tablet screensaver all read the same owner).
+    <DashboardOwnerProvider>
+      <div className="flex min-h-screen">
+        {/* Collapsed icon rail — tablet/desktop only */}
+        <aside className="sticky top-0 hidden h-screen w-16 shrink-0 flex-col border-r border-line bg-surface px-2 py-3 lg:flex">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Expand menu"
+            className="mb-2 flex justify-center rounded-control p-2.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
+          <NavItems user={user} expanded={false} onNavigate={close} />
         </aside>
+
+        {/* Slim top bar — phone only */}
+        <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Open menu"
+            className="-ml-2 rounded-control p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </button>
+          <span className="font-serif text-xl font-medium text-ink">Hame</span>
+        </header>
+
+        {/* Page content */}
+        <div className="min-w-0 flex-1 pt-14 lg:pt-0">
+          <Outlet />
+        </div>
+
+        {/* Expanded panel + shroud (shared by desktop-expand and phone-drawer) */}
+        <div
+          className={cn(
+            'fixed inset-0 z-40 transition-opacity duration-300',
+            open ? 'pointer-events-auto' : 'pointer-events-none',
+          )}
+          aria-hidden={!open}
+        >
+          <div
+            onClick={close}
+            className={cn(
+              'absolute inset-0 bg-black/40 transition-opacity duration-300',
+              open ? 'opacity-100' : 'opacity-0',
+            )}
+          />
+          <aside
+            className={cn(
+              'absolute left-0 top-0 flex h-full w-60 flex-col border-r border-line bg-surface px-3 py-3 shadow-ambient transition-transform duration-300 ease-out',
+              open ? 'translate-x-0' : '-translate-x-full',
+            )}
+          >
+            <div className="mb-2 flex items-center justify-between pl-2">
+              <span className="font-serif text-xl font-medium text-ink">Hame</span>
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Close menu"
+                className="rounded-control p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+            <NavItems user={user} expanded onNavigate={close} />
+          </aside>
+        </div>
       </div>
-    </div>
+
+      {/* Wall-tablet screensaver — runs on any page (Household device only) and
+          returns to the dashboard on wake (spec §8.14). */}
+      <DashboardIdleMode />
+    </DashboardOwnerProvider>
   )
 }

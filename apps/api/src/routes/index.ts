@@ -23,6 +23,8 @@ import { calendarSourcesRouter } from './calendar-sources.js'
 import { caldavCredentialsRouter } from './caldav-credentials.js'
 import { dashboardRouter } from './dashboard.js'
 import { wifiConfigRouter } from './wifi-config.js'
+import { immichConfigRouter } from './immich-config.js'
+import { idleRouter } from './idle.js'
 
 export const apiRouter = Router()
 
@@ -50,3 +52,5 @@ apiRouter.use('/calendar-sources', calendarSourcesRouter)
 apiRouter.use('/caldav-credentials', caldavCredentialsRouter)
 apiRouter.use('/dashboard', dashboardRouter)
 apiRouter.use('/wifi', wifiConfigRouter)
+apiRouter.use('/immich', immichConfigRouter)
+apiRouter.use('/idle', idleRouter)

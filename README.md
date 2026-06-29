@@ -122,3 +122,18 @@ External bins cache their dates and refresh on a schedule (`BIN_SYNC_CRON`, nigh
 a **Sync now** button per bin. A failed fetch keeps the last good dates and just logs a warning. Some
 councils only publish "this week" plus a frequency, so a 4-weekly bin can take a sync or two before
 every future date is known — see the package README for why.
+
+## Optional: photo screensaver (Immich) + idle mode
+
+Left idle, the wall tablet turns into a digital photo frame — cycling photos from your self-hosted
+[Immich](https://immich.app) library and a large clock, until you touch it. It runs only on the home
+dashboard of the device showing the shared **Household** view (the wall tablet), so phones on their own
+"My dashboard" never screensave mid-use. It's controlled under **Settings → Idle mode** (kill-switch,
+how long before it activates, per-photo / per-clock durations, shuffle, and whether to show weather on
+the clock screen). With no photo library configured it falls back to a clock-only screensaver.
+
+To show photos, an admin connects Immich under **Settings → Immich**: the server URL and an **API
+key** (Immich → Account Settings → API Keys), then optionally pick which albums to include (none
+selected = all photos). The API key is **AES-256-GCM encrypted at rest** and never leaves the server —
+the screensaver pulls each photo **through Hame's backend proxy**, so your Immich credentials are never
+exposed to the browser and it works even when Hame is reached remotely.

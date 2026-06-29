@@ -4,10 +4,7 @@ import { Lightbulb, Play, Power, ToyBrick, type LucideIcon } from 'lucide-react'
 import type { HaEntityState } from '@hame/shared'
 import { HA_ACTIVATE_DOMAINS, HA_TOGGLE_DOMAINS } from '@hame/shared'
 import { Button } from '@/components/ui/button'
-import {
-  DashboardOwnerProvider,
-  useDashboardOwner,
-} from '@/components/features/dashboard/dashboard-owner'
+import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { ApiError } from '@/api/client'
 import {
   useHaEntities,
@@ -39,14 +36,6 @@ function label(entity: HaEntityState): string {
  * curating, sharing the owner selection with the dashboard view (same key).
  */
 export function SmartHomePage() {
-  return (
-    <DashboardOwnerProvider>
-      <SmartHomePageInner />
-    </DashboardOwnerProvider>
-  )
-}
-
-function SmartHomePageInner() {
   const { owner, setOwner } = useDashboardOwner()
   const { data: entities, isPending: entitiesPending } = useHaEntities()
   const { data: settings, isPending: settingsPending } = useSmartHomeControls(owner)
