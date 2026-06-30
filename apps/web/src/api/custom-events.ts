@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { CreateCustomEventInput, CustomEvent, UpdateCustomEventInput } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 /** Custom events surface in the calendar feed, so refresh it on every change. */
 function invalidate(qc: ReturnType<typeof useQueryClient>) {
@@ -33,6 +34,9 @@ export function useDeleteCustomEvent() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/custom-events/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: () => {
+      invalidate(qc)
+      toast.success('Event deleted.')
+    },
   })
 }

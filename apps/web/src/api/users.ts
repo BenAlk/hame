@@ -7,6 +7,7 @@ import type {
   UpdateUserInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const USERS_KEY = ['users'] as const
 
@@ -49,7 +50,10 @@ export function useDeleteUser() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/users/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: USERS_KEY }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: USERS_KEY })
+      toast.success('User deleted.')
+    },
   })
 }
 

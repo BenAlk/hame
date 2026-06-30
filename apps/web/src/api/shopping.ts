@@ -11,6 +11,7 @@ import type {
   UpdateShoppingListInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const LISTS_KEY = ['shopping-lists'] as const
 
@@ -71,10 +72,15 @@ export function useArchiveShoppingList() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateLists(qc)
       // Archiving stocks the pantry, so refresh its widgets too.
       void qc.invalidateQueries({ queryKey: ['pantry'] })
+      toast.success(
+        result.newList
+          ? 'List archived — unbought items rolled over to a new list.'
+          : 'List archived.',
+      )
     },
   })
 }

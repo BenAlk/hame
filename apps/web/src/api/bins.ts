@@ -10,6 +10,7 @@ import type {
   UpdateBinInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const BINS_KEY = ['bins'] as const
 
@@ -61,7 +62,10 @@ export function useDeleteBin() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/bins/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: () => {
+      invalidate(qc)
+      toast.success('Bin deleted.')
+    },
   })
 }
 
@@ -70,7 +74,13 @@ export function useSyncBin() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<BinSyncResult>(`/api/bins/${id}/sync`, { method: 'POST' }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: (result) => {
+      invalidate(qc)
+      // A graceful-degrade sync returns ok:false without throwing (cache kept),
+      // so surface its message either way rather than letting it pass silently.
+      if (result.ok) toast.success(result.message)
+      else toast.error(result.message)
+    },
   })
 }
 

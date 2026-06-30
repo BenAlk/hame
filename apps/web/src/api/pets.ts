@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CreatePetInput, Pet, PetWithHistory, UpdatePetInput } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const PETS_KEY = ['pets'] as const
 
@@ -41,6 +42,9 @@ export function useDeletePet() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/pets/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: PETS_KEY }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: PETS_KEY })
+      toast.success('Pet removed.')
+    },
   })
 }

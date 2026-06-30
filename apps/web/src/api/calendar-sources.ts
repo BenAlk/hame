@@ -6,6 +6,7 @@ import type {
   UpdateCalendarSourceInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const SOURCES_KEY = ['calendar-sources'] as const
 
@@ -50,7 +51,10 @@ export function useDeleteCalendarSource() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/calendar-sources/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: () => {
+      invalidate(qc)
+      toast.success('Calendar removed.')
+    },
   })
 }
 
@@ -59,6 +63,12 @@ export function useSyncCalendarSource() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch<CalendarSyncResult>(`/api/calendar-sources/${id}/sync`, { method: 'POST' }),
-    onSuccess: () => invalidate(qc),
+    onSuccess: (result) => {
+      invalidate(qc)
+      // Like bin sync, a failed fetch degrades to ok:false (cache kept) rather
+      // than throwing — surface the outcome message either way.
+      if (result.ok) toast.success(result.message)
+      else toast.error(result.message)
+    },
   })
 }

@@ -7,6 +7,7 @@ import type {
   UpdateChoreInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const CHORES_KEY = ['chores'] as const
 const INSTANCES_KEY = ['chore-instances'] as const
@@ -56,7 +57,10 @@ export function useDeleteChore() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/chores/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidateAll(qc),
+    onSuccess: () => {
+      invalidateAll(qc)
+      toast.success('Chore deleted.')
+    },
   })
 }
 

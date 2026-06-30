@@ -8,6 +8,7 @@ import type {
   UpdateRecipeInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const RECIPES_KEY = ['recipes'] as const
 
@@ -58,7 +59,10 @@ export function useDeleteRecipe() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/recipes/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidateAll(qc),
+    onSuccess: () => {
+      invalidateAll(qc)
+      toast.success('Recipe deleted.')
+    },
   })
 }
 
