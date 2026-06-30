@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CalDavCard } from '@/components/features/caldav/caldav-card'
+import { NotificationsCard } from '@/components/features/notifications/notifications-card'
 import { useCurrentUser } from '@/api/auth'
 import { useUpdateProfile } from '@/api/users'
 import { applyApiErrors } from '@/lib/form'
@@ -92,7 +93,10 @@ export function ProfilePage() {
           </CardContent>
         </Card>
 
-        <CalDavCard />
+        <div className="flex flex-col gap-6">
+          <NotificationsCard />
+          <CalDavCard />
+        </div>
       </div>
     </main>
   )

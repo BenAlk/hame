@@ -11,6 +11,7 @@ import {
   getHomeAssistantConfig,
   listHomeAssistantBinSensors,
   listHomeAssistantCalendars,
+  listHomeAssistantNotifyTargets,
   testHomeAssistant,
   updateHomeAssistantConfig,
 } from '../services/home-assistant-config.service.js'
@@ -74,6 +75,15 @@ export const getHomeAssistantCalendarsController: RequestHandler = async (_req, 
 /** List HA bin-collection sensors for the bin-source picker (spec §10 Phase 6). */
 export const getHomeAssistantBinSensorsController: RequestHandler = (_req, res) => {
   res.json(listHomeAssistantBinSensors())
+}
+
+/** List HA notify services so a user can pick their phone for push (spec §10 Phase 8). */
+export const getHomeAssistantNotifyTargetsController: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await listHomeAssistantNotifyTargets())
+  } catch (err) {
+    next(err)
+  }
 }
 
 /** The owner's curated smart-home control list (spec §10 Phase 6.3, 7.1b). */

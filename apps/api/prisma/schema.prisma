@@ -46,6 +46,7 @@ model User {
   calDavCredentials    CalDavCredential[]
   dashboardLayout      DashboardLayout?
   smartHomeSettings    SmartHomeSettings?
+  notificationPrefs    NotificationPreference?
 }
 
 enum Role {
@@ -570,4 +571,36 @@ model IdleModeSettings {
   showWeatherInClockMode Boolean  @default(true)
   immichEnabled          Boolean  @default(true)
   updatedAt              DateTime @updatedAt
+}
+
+// ── Phase 8: Notifications ───────────────────────────────────────────────────
+
+/// Per-user notification preferences (spec §8.13, §10 Phase 8). One row per user
+/// (created lazily, all categories on by default). Scheduled reminders are pushed
+/// through Home Assistant's mobile-app notify service (HA handles the phone push),
+/// so Hame keeps no notification infra of its own — there is deliberately no
+/// stored Notification feed (spec §7 defines none): a reminder fires once at its
+/// moment and is gone. `haNotifyService` is the `notify.*` target the user picked
+/// for their phone (e.g. `mobile_app_bens_phone`); without one, push is skipped.
+/// `criticalAlerts` opts into the high-priority / iOS critical payload that breaks
+/// through silent/DND (off by default — routine reminders shouldn't override it).
+model NotificationPreference {
+  id                   String  @id @default(uuid())
+  userId               String  @unique
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  binReminders         Boolean @default(true)
+  choreReminders       Boolean @default(true)
+  expiryWarnings       Boolean @default(true)
+  lowStockAlerts       Boolean @default(true)
+  petCareReminders     Boolean @default(true)
+  customEventReminders Boolean @default(true)
+  // Master switch for Home Assistant phone push; in-app toasts are unaffected.
+  pushViaHA            Boolean @default(true)
+  // The HA `notify.*` service for this user's phone (the part after `notify.`),
+  // e.g. `mobile_app_bens_phone`. Null until they pick one — push then no-ops.
+  haNotifyService      String?
+  // Opt-in: send as a high-priority / iOS critical alert (bypasses silent/DND).
+  criticalAlerts       Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
 }

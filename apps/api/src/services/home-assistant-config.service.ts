@@ -1,6 +1,7 @@
 import type {
   HaBinSensor,
   HaCalendar,
+  HaNotifyTarget,
   HaServiceCallInput,
   HaServiceCallResult,
   HomeAssistantConfig,
@@ -16,6 +17,7 @@ import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { haClient } from '../integrations/home-assistant/client.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
 import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
+import { fetchNotifyTargets } from '../integrations/home-assistant/notifications.js'
 import {
   binGroupKey,
   binSensorScore,
@@ -184,6 +186,23 @@ export function listHomeAssistantBinSensors(): HaBinSensor[] {
       ([name, { entityId, nextCollection }]): HaBinSensor => ({ entityId, name, nextCollection }),
     )
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * List the Home Assistant `notify.*` services (spec §8.13, §10 Phase 8) so a user
+ * can pick their phone for push reminders. Member-level data (no token), mirroring
+ * `listHomeAssistantCalendars`: empty when HA isn't configured, 502 when it's
+ * configured but unreachable.
+ */
+export async function listHomeAssistantNotifyTargets(): Promise<HaNotifyTarget[]> {
+  const settings = await getConnectionSettings()
+  if (!settings) return []
+  try {
+    return await fetchNotifyTargets(settings.url, settings.token)
+  } catch (err) {
+    logger.warn({ err }, 'Could not list Home Assistant notify targets')
+    throw HttpError.badGateway('Could not reach Home Assistant to list notify targets.')
+  }
 }
 
 /**
