@@ -657,14 +657,16 @@ model DashboardLayout {
 model NotificationPreference {
   id                   String   @id @default(uuid())
   userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id])
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   binReminders         Boolean  @default(true)
   choreReminders       Boolean  @default(true)
   expiryWarnings       Boolean  @default(true)
   lowStockAlerts       Boolean  @default(true)
   petCareReminders     Boolean  @default(true)
   customEventReminders Boolean  @default(true)
-  pushViaHA            Boolean  @default(true)
+  pushViaHA            Boolean  @default(true)             // master switch for HA phone push
+  haNotifyService      String?                             // user's notify.* target; null = no phone picked
+  criticalAlerts       Boolean  @default(false)            // opt-in iOS critical / high-priority alert
 }
 
 model ImmichConfig {
@@ -1464,6 +1466,91 @@ battle-test, like the Immich / HA live smokes.
 In-app toasts, per-user preferences, push via HA, streak tracking & stats.
 
 **Goal**: Reminders reach you when away from dashboard.
+
+Split into sub-phases (mirroring the earlier phases), each landing green: **8.1** in-app toasts,
+**8.2** per-user preferences + scheduled push via Home Assistant, **8.3** chore streak tracking &
+"pulling your weight" stats.
+
+#### Phase 8.1 — In-app toasts ✅ Complete (30-06-2026)
+
+**Delivered**: A lightweight, dependency-free toast layer for feedback while a user is active
+(spec §8.13). A Zustand `toast` store (`stores/toast.ts`) holds a small queue with per-tone
+auto-dismiss (success 3s, info 4s, error 6s; a zero duration disables it) and a context-free
+`toast.success` / `.error` / `.info` API callable from anywhere, rendered by a single Hearth-styled
+`Toaster` mounted once at the root (`main.tsx`) — stacked bottom, dismissible, screen-reader
+announced. The existing TanStack Query mutation hooks (shopping, chores, pets, recipes, custom
+events, bins, calendar sources, users) now fire a toast on success/failure, so every state-changing
+action gives consistent confirmation without per-page wiring. Frontend-only, no migration. Verified:
+typecheck / lint / format green and the store unit-tested (enqueue, distinct ids, tone durations,
+immediate dismiss, auto-dismiss-off).
+
+#### Phase 8.2 — Per-user preferences + push via Home Assistant ✅ Complete (30-06-2026)
+
+**Delivered**: Scheduled reminders pushed to each member's phone through Home Assistant — HA owns the
+phone push, so there's no duplicated notification infra (spec §8.13) — gated by per-user preferences.
+A Phase 8 migration adds the `NotificationPreference` model (§7.8): one row per user, the six category
+toggles (bins / chores / expiry / low-stock / pet-care / custom-events), a `pushViaHA` master switch,
+the chosen `haNotifyService` (the user's `notify.*` target, null until picked → push no-ops) and an
+opt-in `criticalAlerts` (iOS critical / high-priority, bypasses silent/DND). The row is created lazily
+all-on on first read, so a household that never opens settings still gets toasts and would get push
+the moment they pick a phone.
+
+Shared `@hame/shared` gains the preference read/update schemas and the `HaNotifyTarget` shape. The
+reminder logic is split pure/impure like the HA protocol helpers: a **pure `reminder-engine`**
+(`integrations/notifications`) takes a pre-digested snapshot of the household's day plus one user's
+prefs and returns the push(es) — a morning day-ahead digest (bins out today, the assignee's own chores
+& pet-care, expiring-soon, low-stock, today's events) and an evening "bins out tomorrow" heads-up —
+assembling text by category and slot and never sending a blank. Delivery is **stateless and
+time-anchored** (spec §7 models no feed): a `node-cron` job (`NOTIFICATION_CRON`, hourly by default;
+single-instance caveat, §4) fires the `notification.service`, which picks the slot from the hour,
+builds one shared day snapshot, and for each user with push + a phone target pushes through
+`sendHaNotification` — so a reminder goes out once a day by virtue of the hour, with no "already-sent"
+store, and does **not** re-fire at boot (a restart shouldn't re-push the day). Degrades gracefully
+throughout (no HA → nothing sent; a failed push is logged and the run continues).
+
+The API adds the member-level `notification-preferences` slice (`GET` / `PATCH`, lazy-upsert) and a
+`GET /api/home-assistant/notify-targets` that discovers the household's phones for the picker — the
+`notify.*` domain is a grab-bag (Alexa media players, groups, scripts), so it filters to the
+Companion-app devices (`notify.mobile_app_*`) and labels each with its friendly name from HA's device
+registry (fetched over the live socket, since HA exposes the registry only over WebSocket; a
+`mobile_app_<slug>` service is HA's slugify of the device name, so the two map cleanly, preferring a
+user's device rename). Best-effort — if the socket's mid-reconnect the slug-derived label stands — and
+an unreachable HA is swallowed to an empty list. Web: a **Notifications**
+panel on the Profile page — the category toggles, the push master switch, the HA phone dropdown
+(from notify-targets) and the critical-alerts opt-in — with toast confirmation on save. Verified:
+typecheck / lint / format green, tests for the reminder engine (slot/category assembly, assignee-only
+chores, empty-suppression), the preference service (lazy default, partial update, target clear) and
+the HA notification builder, plus a **live smoke against real Home Assistant** — a morning digest and
+an evening bins heads-up delivered to a phone via the mobile-app notify service.
+
+#### Phase 8.3 — Chore streaks & "pulling your weight" stats ✅ Complete (02-07-2026)
+
+**Delivered**: The household chore stats §8.7 / §9.4 always said the instance pattern would unlock —
+**no migration and no new model**, derived live from `ChoreInstance` completion history. Shared
+`@hame/shared` gains two pure, DST-safe helpers (`chore-stats.ts`, the same pure/impure split as the
+recurrence and reminder engines): `computeStreak` — the run of consecutive days, ending today or
+yesterday (a grace day so it doesn't reset the instant midnight passes), on which a user completed at
+least one chore — and `isOnTime` — completed on or before the due day, comparing a full local
+timestamp against a UTC date-only `dueDate` by calendar day. Both reduce dates to a `Date.UTC`-based
+integer day-ordinal so daylight-saving shifts can't misalign a run. Plus the `ChoreStats` /
+`UserChoreStats` read schemas and the `STATS_WINDOWS` (7 / 30 / 90 days) `?days=` query schema
+(default 30).
+
+The API adds a member-level, read-only `GET /api/stats/chores?days=` behind a thin controller: the
+`stats.service` reads every completion over the wider of the selected window and a 90-day streak
+look-back in one query, then the counts / household-share / on-time rate use the window subset while
+the streak uses the full tail, returning per-user rows sorted most-completed first. Web: a
+`useChoreStats` hook, a **Stats** page (new nav entry) with a 7/30/90 window picker and per-member
+share bars, completions, on-time % and current streak, and a compact **Chore stats** dashboard widget
+(a 30-day leaderboard with streak flames) slotted into the Phase 7.1 widget framework (catalogue
+entry, registry component, default order — so fresh clones get it; existing dashboards add it from the
+edit tray). Verified: typecheck / lint / format green, 13 new tests (the streak
+grace/break/dedupe/order cases, the on-time boundaries, and the service's aggregation incl.
+window-exclusion and the empty-household case), all builds clean.
+
+**Phase 8 is complete.** (Deeper gamification — streak badges, longest-streak records, a fuller
+"pulling your weight" dashboard — stays a §12 down-the-line nicety, not needed for a two-person
+household.)
 
 ### Phase 9 — Polish & Portfolio Prep
 

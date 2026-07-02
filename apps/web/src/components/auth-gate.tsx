@@ -15,6 +15,7 @@ import { BinsPage } from '@/pages/BinsPage'
 import { SmartHomePage } from '@/pages/SmartHomePage'
 import { PetsPage } from '@/pages/PetsPage'
 import { PetProfilePage } from '@/pages/PetProfilePage'
+import { StatsPage } from '@/pages/StatsPage'
 import { ProfilePage } from '@/pages/ProfilePage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { UsersPage } from '@/pages/admin/UsersPage'
@@ -63,6 +64,7 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
         <Route path="/smart-home" element={<SmartHomePage />} />
         <Route path="/pets" element={<PetsPage />} />
         <Route path="/pets/:id" element={<PetProfilePage />} />
+        <Route path="/stats" element={<StatsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route
           path="/admin/users"

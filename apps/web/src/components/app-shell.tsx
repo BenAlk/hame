@@ -5,6 +5,7 @@ import {
   ChefHat,
   LayoutDashboard,
   Lightbulb,
+  BarChart3,
   ListChecks,
   LogOut,
   type LucideIcon,
@@ -43,6 +44,7 @@ const PRIMARY_NAV: NavItemDef[] = [
   { to: '/bins', label: 'Bins', icon: Trash2 },
   { to: '/pets', label: 'Pets', icon: PawPrint },
   { to: '/smart-home', label: 'Smart home', icon: Lightbulb },
+  { to: '/stats', label: 'Stats', icon: BarChart3 },
 ]
 
 const PROFILE_NAV: NavItemDef = { to: '/profile', label: 'Profile', icon: User }

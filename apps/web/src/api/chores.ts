@@ -72,7 +72,10 @@ export function useCompleteInstance() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => invalidateAll(qc),
+    onSuccess: () => {
+      invalidateAll(qc)
+      toast.success('Chore completed.')
+    },
   })
 }
 
@@ -81,6 +84,9 @@ export function useUncompleteInstance() {
   return useMutation({
     mutationFn: (id: string) =>
       apiFetch<Chore>(`/api/chore-instances/${id}/uncomplete`, { method: 'POST' }),
-    onSuccess: () => invalidateAll(qc),
+    onSuccess: () => {
+      invalidateAll(qc)
+      toast.success('Chore marked not done.')
+    },
   })
 }

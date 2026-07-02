@@ -17,8 +17,14 @@ import { logger } from '../../lib/logger.js'
 
 const REQUEST_TIMEOUT_MS = 10_000
 
-/** HA's default group service — not a phone, so it's hidden from the picker. */
-const EXCLUDED_NOTIFY_SERVICES = new Set(['persistent_notification'])
+/**
+ * HA's mobile-app integration registers one `notify.mobile_app_<device>` service
+ * per phone/tablet running the Companion app — that prefix is the reliable "this
+ * is a personal push device" signal. We filter to it so the picker shows only
+ * phones, not the other things that also live under the `notify` domain (Alexa
+ * media players, notify groups, `persistent_notification`, custom notify scripts).
+ */
+const MOBILE_APP_PREFIX = 'mobile_app_'
 
 interface HaServiceDomain {
   domain?: unknown
@@ -26,10 +32,10 @@ interface HaServiceDomain {
 }
 
 /**
- * Project HA's `GET /api/services` payload to the notify targets a user can pick.
- * HA returns an array of `{ domain, services: { <name>: {...} } }`; we take the
- * `notify` domain's service keys (each `notify.<key>` is a target), drop the
- * default group, and humanise the key for the dropdown label.
+ * Project HA's `GET /api/services` payload to the phones a user can pick. HA
+ * returns an array of `{ domain, services: { <name>: {...} } }`; we take the
+ * `notify` domain's service keys (each `notify.<key>` is a target), keep only the
+ * mobile-app devices, and humanise the key for the dropdown label.
  */
 export function mapNotifyTargets(payload: unknown): HaNotifyTarget[] {
   if (!Array.isArray(payload)) return []
@@ -37,15 +43,72 @@ export function mapNotifyTargets(payload: unknown): HaNotifyTarget[] {
   if (!notify || !notify.services || typeof notify.services !== 'object') return []
 
   return Object.keys(notify.services as Record<string, unknown>)
-    .filter((service) => !EXCLUDED_NOTIFY_SERVICES.has(service))
+    .filter((service) => service.startsWith(MOBILE_APP_PREFIX))
     .map((service) => ({ service, name: humanise(service) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** "mobile_app_bens_phone" → "Mobile app bens phone" — a readable dropdown label. */
+/** "mobile_app_bens_phone" → "Bens phone" — the device name, prefix stripped. */
 function humanise(service: string): string {
-  const spaced = service.replace(/_/g, ' ').trim()
+  const spaced = service.slice(MOBILE_APP_PREFIX.length).replace(/_/g, ' ').trim()
+  if (!spaced) return service
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+/** A Home Assistant device-registry entry (only the fields we read for names). */
+interface HaDevice {
+  name?: unknown
+  name_by_user?: unknown
+  identifiers?: unknown
+}
+
+/**
+ * Overlay friendly device names from HA's device registry onto the notify targets.
+ * A `notify.mobile_app_<slug>` service is HA's slugify of the device's registration
+ * name, so we key each mobile-app device by that same slug and prefer the user's
+ * rename (`name_by_user`) then the registration `name` (e.g. "Galaxy Watch5 (1RAB)"
+ * instead of "Galaxy watch5 1rab"). Targets with no matching device keep their
+ * slug-derived label. Pure — the (WS-only) registry fetch lives in the client.
+ */
+export function enrichWithDeviceNames(
+  targets: HaNotifyTarget[],
+  devices: unknown[],
+): HaNotifyTarget[] {
+  const nameBySlug = new Map<string, string>()
+  for (const device of devices as HaDevice[]) {
+    if (!isMobileAppDevice(device)) continue
+    const registrationName = typeof device.name === 'string' ? device.name : null
+    if (!registrationName) continue
+    const renamed =
+      typeof device.name_by_user === 'string' && device.name_by_user.trim()
+        ? device.name_by_user
+        : registrationName
+    nameBySlug.set(slugifyDeviceName(registrationName), renamed)
+  }
+  if (nameBySlug.size === 0) return targets
+
+  return targets
+    .map((target) => {
+      const friendly = nameBySlug.get(target.service.slice(MOBILE_APP_PREFIX.length))
+      return friendly ? { ...target, name: friendly } : target
+    })
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** Whether a device-registry entry is a mobile-app (Companion app) device. */
+function isMobileAppDevice(device: HaDevice): boolean {
+  return (
+    Array.isArray(device.identifiers) &&
+    device.identifiers.some((pair) => Array.isArray(pair) && pair[0] === 'mobile_app')
+  )
+}
+
+/** HA's slugify for the fields we match on: lowercase, non-alphanumerics → `_`. */
+export function slugifyDeviceName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
 }
 
 /**

@@ -41,6 +41,13 @@ interface PendingCommand {
   timer: NodeJS.Timeout
 }
 
+/** A read-only WS request awaiting its `result` frame — resolves the payload. */
+interface PendingRequest {
+  resolve: (result: unknown) => void
+  reject: (err: Error) => void
+  timer: NodeJS.Timeout
+}
+
 interface HaSettings {
   url: string
   token: string
@@ -71,6 +78,8 @@ class HomeAssistantClient {
   private readonly removalListeners = new Set<EntityRemovalListener>()
   /** In-flight `call_service` commands, keyed by their command id. */
   private readonly pending = new Map<number, PendingCommand>()
+  /** In-flight read-only requests (e.g. the device registry), keyed by command id. */
+  private readonly pendingRequests = new Map<number, PendingRequest>()
 
   getStatus(): HaStatus {
     return { status: this.status, haVersion: this.haVersion, lastError: this.lastError }
@@ -109,6 +118,50 @@ class HomeAssistantClient {
         this.settlePending(id, err instanceof Error ? err : new Error('Failed to send command'))
       }
     })
+  }
+
+  /**
+   * Fetch Home Assistant's device registry over the live socket (spec §10 Phase 8).
+   * Read-only, and HA exposes it only over WS (no REST equivalent); used to resolve
+   * the friendly names behind the mobile-app notify services. Resolves the raw
+   * device array, or rejects if the link is down / HA errors — the caller then
+   * degrades to the slug-derived labels.
+   */
+  async fetchDeviceRegistry(): Promise<unknown[]> {
+    const result = await this.request('config/device_registry/list')
+    return Array.isArray(result) ? result : []
+  }
+
+  /** Send a read-only WS command and resolve with its `result` payload. Separate
+   *  from {@link callService}'s pending map, so the control path is untouched. */
+  private request(type: string): Promise<unknown> {
+    const socket = this.ws
+    if (this.status !== 'connected' || !socket) {
+      return Promise.reject(new Error('Home Assistant is not connected'))
+    }
+    const id = ++this.commandId
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(
+        () => this.settleRequest(id, new Error('Home Assistant did not respond in time')),
+        COMMAND_TIMEOUT_MS,
+      )
+      this.pendingRequests.set(id, { resolve, reject, timer })
+      try {
+        socket.send(JSON.stringify({ id, type }))
+      } catch (err) {
+        this.settleRequest(id, err instanceof Error ? err : new Error('Failed to send request'))
+      }
+    })
+  }
+
+  /** Resolve or reject one pending read-only request, clearing its timeout. */
+  private settleRequest(id: number, error: Error | null, result?: unknown): void {
+    const request = this.pendingRequests.get(id)
+    if (!request) return
+    clearTimeout(request.timer)
+    this.pendingRequests.delete(id)
+    if (error) request.reject(error)
+    else request.resolve(result)
   }
 
   /** Current dashboard-relevant entity states (empty until connected). */
@@ -249,6 +302,20 @@ class HomeAssistantClient {
       this.settlePending(message.id, ok ? null : new Error(reason))
       return
     }
+    // A read-only request's result (e.g. the device registry).
+    if (
+      message.type === 'result' &&
+      typeof message.id === 'number' &&
+      this.pendingRequests.has(message.id)
+    ) {
+      const ok = message.success !== false
+      this.settleRequest(
+        message.id,
+        ok ? null : new Error('Home Assistant rejected the request'),
+        message.result,
+      )
+      return
+    }
     if (message.type === 'result' && message.id === this.getStatesId) {
       if (Array.isArray(message.result)) {
         for (const raw of message.result as RawHaState[]) this.ingest(raw, false)
@@ -294,13 +361,18 @@ class HomeAssistantClient {
     else command.resolve()
   }
 
-  /** Fail every in-flight command — the link dropped before they were acked. */
+  /** Fail every in-flight command/request — the link dropped before they acked. */
   private rejectAllPending(reason: string): void {
     for (const command of this.pending.values()) {
       clearTimeout(command.timer)
       command.reject(new Error(reason))
     }
     this.pending.clear()
+    for (const request of this.pendingRequests.values()) {
+      clearTimeout(request.timer)
+      request.reject(new Error(reason))
+    }
+    this.pendingRequests.clear()
   }
 
   private onClose(): void {

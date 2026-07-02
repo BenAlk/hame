@@ -17,7 +17,10 @@ import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { haClient } from '../integrations/home-assistant/client.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
 import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
-import { fetchNotifyTargets } from '../integrations/home-assistant/notifications.js'
+import {
+  enrichWithDeviceNames,
+  fetchNotifyTargets,
+} from '../integrations/home-assistant/notifications.js'
 import {
   binGroupKey,
   binSensorScore,
@@ -197,11 +200,23 @@ export function listHomeAssistantBinSensors(): HaBinSensor[] {
 export async function listHomeAssistantNotifyTargets(): Promise<HaNotifyTarget[]> {
   const settings = await getConnectionSettings()
   if (!settings) return []
+
+  let targets: HaNotifyTarget[]
   try {
-    return await fetchNotifyTargets(settings.url, settings.token)
+    targets = await fetchNotifyTargets(settings.url, settings.token)
   } catch (err) {
     logger.warn({ err }, 'Could not list Home Assistant notify targets')
     throw HttpError.badGateway('Could not reach Home Assistant to list notify targets.')
+  }
+
+  // Best-effort: overlay friendly device-registry names (WS-only, spec §10 Phase 8).
+  // If the socket isn't connected or the lookup fails, keep the slug-derived labels.
+  try {
+    const devices = await haClient.fetchDeviceRegistry()
+    return enrichWithDeviceNames(targets, devices)
+  } catch (err) {
+    logger.debug({ err }, 'Device registry unavailable; using slug notify labels')
+    return targets
   }
 }
 

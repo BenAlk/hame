@@ -20,6 +20,7 @@ import { SmartHomeWidget } from './smart-home-widget'
 import { ClockGreetingWidget } from './clock-greeting-widget'
 import { UpcomingEventsWidget } from './upcoming-events-widget'
 import { WifiQrWidget } from './wifi-qr-widget'
+import { ChoreStatsWidget } from './chore-stats-widget'
 
 /** The component rendered for each placeable widget type (spec §10 Phase 7.1). */
 export const WIDGET_COMPONENTS: Record<WidgetType, ComponentType> = {
@@ -35,6 +36,7 @@ export const WIDGET_COMPONENTS: Record<WidgetType, ComponentType> = {
   lowStock: LowStockWidget,
   smartHome: SmartHomeWidget,
   wifiQr: WifiQrWidget,
+  choreStats: ChoreStatsWidget,
 }
 
 const CONTROLLABLE = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as readonly string[]
