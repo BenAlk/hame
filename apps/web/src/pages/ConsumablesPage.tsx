@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { RotateCw, X } from 'lucide-react'
 import type { Consumable } from '@hame/shared'
+import { isConsumableDue } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DueChip } from '@/components/features/shopping/due-chip'
 import { ApiError } from '@/api/client'
 import {
   useConsumables,
@@ -97,7 +99,10 @@ function ConsumableRow({ consumable }: { consumable: Consumable }) {
   return (
     <li className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-ink">{consumable.name}</p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium text-ink">{consumable.name}</p>
+          {isConsumableDue(consumable) && <DueChip />}
+        </div>
         <p className="text-xs text-muted-foreground">
           {consumable.lastBoughtAt
             ? `Last bought ${relativeDay(consumable.lastBoughtAt).toLowerCase()}`

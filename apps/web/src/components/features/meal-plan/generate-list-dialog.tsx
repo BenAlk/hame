@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ShoppingCart } from 'lucide-react'
 import type { GenerateShoppingListResult } from '@hame/shared'
+import { isConsumableDue } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { DueChip } from '@/components/features/shopping/due-chip'
 import { ApiError } from '@/api/client'
 import { useGenerateShoppingList, usePreviewShoppingList } from '@/api/meal-plans'
 import { useConsumables } from '@/api/consumables'
@@ -42,6 +44,15 @@ export function GenerateListDialog({ defaultStart, defaultEnd, onClose }: Genera
     if (!start || !end || end < start) return
     previewMutate({ startDate: new Date(start), endDate: new Date(end) })
   }, [start, end, previewMutate])
+
+  // Pre-tick the consumables that look due, once, when they first load (spec §12).
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (seeded.current || !consumables) return
+    seeded.current = true
+    const due = consumables.filter((c) => isConsumableDue(c)).map((c) => c.id)
+    if (due.length > 0) setTicked(new Set(due))
+  }, [consumables])
 
   function toggle(id: string) {
     setTicked((prev) => {
@@ -187,6 +198,7 @@ export function GenerateListDialog({ defaultStart, defaultEnd, onClose }: Genera
                         className="size-4 shrink-0 accent-accent"
                       />
                       <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.name}</span>
+                      {isConsumableDue(c) && <DueChip />}
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {c.lastBoughtAt ? relativeDay(c.lastBoughtAt).toLowerCase() : '—'}
                       </span>

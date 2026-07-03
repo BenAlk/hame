@@ -303,7 +303,7 @@ model Item {
   minimumQuantity Float?                        // triggers low stock (expressed in baseUnit)
   isStaple        Boolean             @default(false)  // pantry staple (salt, water) — excluded from generated shopping lists
   isConsumable    Boolean             @default(false)  // household consumable (loo roll, foil, dishwasher tabs) — surfaced as a re-order checklist (§8.3); not expiry- or recipe-tracked
-  reorderIntervalDays Int?                             // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (§12)
+  reorderIntervalDays Int?                             // rough re-order cadence (days); drives the "probably due" highlight (§8.3)
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   tags            Tag[]               @relation("ItemTags")
@@ -1594,8 +1594,9 @@ optional cadence field), an always-available **"Add consumables"** checklist on 
 **×N merge badge** on summed lines, and the **two-panel generate modal** (food list + consumables
 checklist).
 
-**Deferred to §12**: the `reorderIntervalDays`-driven "probably due" highlight / pre-tick — the
-cadence data is captured now, the logic lands later.
+**"Probably due" highlight**: a consumable whose cadence (`reorderIntervalDays`) has elapsed since
+its last purchase is flagged with a **Due** chip and pre-ticked in the add-consumables panel and
+the generate modal. A consumable never bought stays neutral (no baseline to nag from).
 
 ### Phase 9 — Polish & Portfolio Prep
 
@@ -1674,7 +1675,6 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - "Pulling your weight" stats dashboard
 - Streak tracking gamification
 - Family announcement / notice board widget
-- Consumables "probably due" — use `Item.reorderIntervalDays` + last-bought history to pre-tick / highlight consumables likely needing a re-order (the data is captured in Phase 8.4)
 
 ### Deferred Decisions
 

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { ChevronDown, Repeat } from 'lucide-react'
+import { isConsumableDue } from '@hame/shared'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { DueChip } from '@/components/features/shopping/due-chip'
 import { useConsumables } from '@/api/consumables'
 import { useAddConsumablesToList } from '@/api/shopping'
 import { relativeDay } from '@/lib/format'
@@ -28,6 +30,17 @@ export function AddConsumablesPanel({ listId }: { listId: string }) {
     })
   }
 
+  // Opening pre-ticks the consumables that look due, so a quick "add" grabs them
+  // (spec §12). Reopening re-seeds — the user hasn't committed to anything yet.
+  function togglePanel() {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setTicked(new Set((consumables ?? []).filter((c) => isConsumableDue(c)).map((c) => c.id)))
+    setOpen(true)
+  }
+
   async function onAdd() {
     if (ticked.size === 0) return
     await addConsumables.mutateAsync([...ticked])
@@ -39,7 +52,7 @@ export function AddConsumablesPanel({ listId }: { listId: string }) {
     <div className="mb-4 rounded-card border border-line">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={togglePanel}
         aria-expanded={open}
         className="flex w-full items-center gap-2 rounded-card px-4 py-2.5 text-left text-sm font-medium text-ink hover:bg-muted"
       >
@@ -67,6 +80,7 @@ export function AddConsumablesPanel({ listId }: { listId: string }) {
                     className="size-4 shrink-0 accent-accent"
                   />
                   <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.name}</span>
+                  {isConsumableDue(c) && <DueChip />}
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {c.lastBoughtAt ? relativeDay(c.lastBoughtAt).toLowerCase() : 'not bought yet'}
                   </span>
