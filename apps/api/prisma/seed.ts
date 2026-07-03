@@ -239,6 +239,37 @@ async function main() {
     console.log('✅ Seeded "Weekly Shop" shopping list')
   }
 
+  // An archived shop dated 40 days ago, so a couple of consumables read as
+  // "probably due" out of the box (spec §8.3): last-bought is derived live from
+  // the newest bought line, so Toilet roll (21d) and Kitchen roll (30d) are due
+  // while Dishwasher tablets (45d) is not — showing the cadence, not just age.
+  const demoName = 'Household re-stock (archived)'
+  const hasDemo = await prisma.shoppingList.findFirst({ where: { name: demoName } })
+  if (!hasDemo) {
+    const boughtAt = new Date()
+    boughtAt.setDate(boughtAt.getDate() - 40)
+    await prisma.shoppingList.create({
+      data: {
+        name: demoName,
+        status: 'ARCHIVED',
+        archivedAt: boughtAt,
+        createdById: admin.id,
+        items: {
+          create: ['Toilet roll', 'Kitchen roll', 'Dishwasher tablets'].map((name) => ({
+            itemId: items[name],
+            quantity: 1,
+            unit: 'pack',
+            isBought: true,
+            boughtAt,
+            sources: ['CONSUMABLES'],
+            addedById: admin.id,
+          })),
+        },
+      },
+    })
+    console.log('✅ Seeded an archived shop so some consumables read as "due"')
+  }
+
   const existingPantry = await prisma.pantryEntry.count()
   if (existingPantry === 0) {
     const soon = new Date()
