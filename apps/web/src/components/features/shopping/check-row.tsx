@@ -1,5 +1,5 @@
 import { Check, X } from 'lucide-react'
-import type { ShoppingListItem } from '@hame/shared'
+import type { ShoppingItemSource, ShoppingListItem } from '@hame/shared'
 import { cn } from '@/lib/utils'
 import { quantityLabel } from '@/lib/format'
 
@@ -8,6 +8,33 @@ interface CheckRowProps {
   onToggle: () => void
   onRemove: () => void
   disabled?: boolean
+}
+
+const SOURCE_LABELS: Record<ShoppingItemSource, string> = {
+  MANUAL: 'added by hand',
+  MEAL_PLAN: 'meal plan',
+  CONSUMABLES: 'consumables',
+  ROLLOVER: 'rolled over',
+}
+
+/**
+ * A ×N badge on lines summed from more than one channel (spec §8.3): N is the
+ * count of distinct sources (capped at 4), so a merged quantity is easy to spot
+ * and sanity-check. Its tooltip names the sources.
+ */
+function MergeBadge({ sources }: { sources: ShoppingItemSource[] }) {
+  if (sources.length < 2) return null
+  const n = Math.min(sources.length, 4)
+  const title = `Summed from: ${sources.map((s) => SOURCE_LABELS[s]).join(', ')}`
+  return (
+    <span
+      title={title}
+      aria-label={title}
+      className="inline-flex size-5 shrink-0 items-center justify-center rounded-pill bg-accent-soft text-[10px] font-semibold text-accent"
+    >
+      ×{n}
+    </span>
+  )
 }
 
 /**
@@ -45,6 +72,8 @@ export function CheckRow({ row, onToggle, onRemove, disabled }: CheckRowProps) {
         </p>
         {row.notes && <p className="truncate text-xs text-muted-foreground">{row.notes}</p>}
       </div>
+
+      <MergeBadge sources={row.sources} />
 
       {qty && <span className="shrink-0 text-xs text-muted-foreground">{qty}</span>}
 

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CheckRow } from '@/components/features/shopping/check-row'
 import { ArchiveDialog } from '@/components/features/shopping/archive-dialog'
+import { AddConsumablesPanel } from '@/components/features/shopping/add-consumables-panel'
 import { ApiError } from '@/api/client'
 import { useItems } from '@/api/items'
 import {
@@ -213,6 +214,8 @@ function ListDetail({
           )}
         </div>
       </div>
+
+      {isActive && <AddConsumablesPanel listId={list.id} />}
 
       {isActive && (
         <form onSubmit={onAdd} className="mb-4 flex gap-2">

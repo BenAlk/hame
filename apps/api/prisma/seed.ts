@@ -127,6 +127,8 @@ async function main() {
     minimumQuantity?: number
     defaultUnit?: string
     tags?: string[]
+    isConsumable?: boolean
+    reorderIntervalDays?: number
   }
   const itemSpecs: ItemSpec[] = [
     {
@@ -160,6 +162,30 @@ async function main() {
     { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen', 'meat'] },
     { name: 'Pasta', baseUnit: 'g', minimumQuantity: 500, tags: ['dry-goods', 'ambient'] },
     { name: 'Coffee', baseUnit: 'g', minimumQuantity: 200, tags: ['quick-add', 'ambient'] },
+    // Consumables (spec §8.3): household re-order goods, not recipe/expiry tracked.
+    {
+      name: 'Toilet roll',
+      baseUnit: 'unit',
+      defaultUnit: 'pack',
+      isConsumable: true,
+      reorderIntervalDays: 21,
+    },
+    {
+      name: 'Kitchen roll',
+      baseUnit: 'unit',
+      defaultUnit: 'pack',
+      isConsumable: true,
+      reorderIntervalDays: 30,
+    },
+    {
+      name: 'Dishwasher tablets',
+      baseUnit: 'unit',
+      defaultUnit: 'box',
+      isConsumable: true,
+      reorderIntervalDays: 45,
+    },
+    { name: 'Washing-up liquid', baseUnit: 'ml', defaultUnit: 'bottle', isConsumable: true },
+    { name: 'Kitchen foil', baseUnit: 'unit', defaultUnit: 'roll', isConsumable: true },
   ]
 
   const items: Record<string, string> = {}
@@ -172,6 +198,8 @@ async function main() {
         baseUnit: spec.baseUnit,
         minimumQuantity: spec.minimumQuantity ?? null,
         defaultUnit: spec.defaultUnit ?? null,
+        isConsumable: spec.isConsumable ?? false,
+        reorderIntervalDays: spec.reorderIntervalDays ?? null,
         createdById: admin.id,
         tags: { connect: spec.tags?.map((name) => ({ id: tags[name] })) ?? [] },
       },

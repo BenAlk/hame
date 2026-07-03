@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express'
 import type {
   CreateMealPlanEntryInput,
   GenerateShoppingListInput,
+  PreviewShoppingListInput,
   UpdateMealPlanEntryInput,
 } from '@hame/shared'
 import {
@@ -9,6 +10,7 @@ import {
   deleteMealPlanEntry,
   generateShoppingList,
   listMealPlanEntries,
+  previewShoppingList,
   updateMealPlanEntry,
 } from '../services/meal-plan.service.js'
 
@@ -53,6 +55,14 @@ export const deleteMealPlanEntryController: RequestHandler = async (req, res, ne
   try {
     await deleteMealPlanEntry(req.params.id)
     res.status(204).end()
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const previewShoppingListController: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await previewShoppingList(req.body as PreviewShoppingListInput))
   } catch (err) {
     next(err)
   }

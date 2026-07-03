@@ -302,6 +302,8 @@ model Item {
   typicalUnitGrams Float?                       // grams of one countable unit (1 onion ≈ 110g) — see §10 Phase 4.5
   minimumQuantity Float?                        // triggers low stock (expressed in baseUnit)
   isStaple        Boolean             @default(false)  // pantry staple (salt, water) — excluded from generated shopping lists
+  isConsumable    Boolean             @default(false)  // household consumable (loo roll, foil, dishwasher tabs) — surfaced as a re-order checklist (§8.3); not expiry- or recipe-tracked
+  reorderIntervalDays Int?                             // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (§12)
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   tags            Tag[]               @relation("ItemTags")
@@ -350,6 +352,7 @@ model ShoppingListItem {
   quantity         Float?
   unit             String?
   notes            String?
+  sources          ShoppingItemSource[]  @default([MANUAL])  // distinct channels merged into this line — drives the ×N badge (§8.3)
   isBought         Boolean       @default(false)
   boughtAt         DateTime?
   addedById        String
@@ -364,6 +367,13 @@ model ShoppingListItem {
 enum ListStatus {
   ACTIVE
   ARCHIVED
+}
+
+enum ShoppingItemSource {
+  MANUAL                                         // typed / quick-add
+  MEAL_PLAN                                      // generate-shopping-list (§8.6)
+  CONSUMABLES                                    // the consumables checklist (§8.3)
+  ROLLOVER                                       // carried from an archived list
 }
 ```
 
@@ -733,6 +743,10 @@ model IdleModeSettings {
   4. If any roll-overs selected → create new active list
   5. Original list status set to `ARCHIVED`
 - **History preserved** — archived lists viewable for historical reference
+- **Consumables** (household re-order checklist) — non-perishable, non-recipe household goods (loo roll, kitchen roll, foil, washing-up liquid, dishwasher tabs, sugar) that aren't expiry- or recipe-tracked but still fill a shop. Modelled as `Item.isConsumable` (mirrors `isStaple`), **not** a separate list.
+  - **Consumables page** — the curated list is every `Item` with `isConsumable`. A find-or-create input adds an item _and_ auto-sets the flag in one gesture; removing just unsets it (the `Item` and its history survive). An optional per-item `reorderIntervalDays` is captured here for later.
+  - **"Add consumables" panel** (always available on the Shopping page) — a checklist beside the current list; ticking adds an ordinary `ShoppingListItem` (using the item's `defaultQuantity`/`defaultUnit`, source `CONSUMABLES`). Items already on the list show ticked/greyed. Each row shows **"last bought N days ago"**, derived live from the most recent `boughtAt` across archived lists — no new tracking.
+- **Merge badge** — when the same `Item` reaches a list from more than one channel (manual, meal-plan generate, consumables, rollover) its quantities **sum** into one line (base units, §9.2) and the line's `sources` set unions. A small circle **×N** badge (N = distinct sources, max 4) flags it, so a summed quantity is easy to sanity-check.
 
 ### 8.4 Pantry
 
@@ -768,7 +782,7 @@ model IdleModeSettings {
 
   ```
   POST /api/meal-plans/generate-shopping-list
-  Body: { startDate, endDate, listName? }
+  Body: { startDate, endDate, targetListId?, listName? }
 
   Logic:
     1. Fetch all MealPlanEntry between dates with linked recipes
@@ -779,9 +793,16 @@ model IdleModeSettings {
     4. Subtract pantry from required → shortfall per Item
        (rows whose unit can't convert to baseUnit are flagged, not summed;
         Items with isStaple=true are excluded entirely)
-    5. Create new ShoppingList with ShoppingListItem rows for each shortfall
-    6. Return new list ID
+    5. Fold the shortfall into the target list — the most-recently-updated
+       ACTIVE list by default, or a new list when requested (Body
+       `targetListId` / `listName`). Where an Item is already on the target
+       list, SUM into the existing line (base units, §9.2) and union
+       `MEAL_PLAN` into its `sources`; otherwise add a new ShoppingListItem
+       (source `MEAL_PLAN`).
+    6. Return the target list ID
   ```
+
+- **Two-panel generate modal** — left: the generated food list; right: the **consumables checklist** (§8.3, same "last bought N days ago" hints). Ticked consumables fold into the target list alongside the food shortfall (any already on it are pre-ticked); unticking excludes them, with nothing persisted until confirm. This is why generate now **folds into a target list** rather than always minting a new one — one evolving list, with the ×N merge badge (§8.3) flagging anything summed from more than one source.
 
 ### 8.7 Chores & Cleaning
 
@@ -1552,6 +1573,30 @@ window-exclusion and the empty-household case), all builds clean.
 "pulling your weight" dashboard — stays a §12 down-the-line nicety, not needed for a two-person
 household.)
 
+### Phase 8.4 — Consumables (household re-order checklist)
+
+A shopping enhancement (slotted here in build order — not part of Phase 8's notifications theme;
+§8.3 / §8.6): non-perishable, non-recipe household goods — loo roll, kitchen roll, foil, washing-up
+liquid, dishwasher tabs, sugar — get a curated **consumables list** to tick from when building a
+shop, instead of falling through the recipe/pantry cracks.
+
+**Goal**: The boring-but-essential household items never get forgotten off a shop.
+
+**Scope (v1)**: One migration adds `Item.isConsumable` (mirrors `isStaple`) and a nullable
+`Item.reorderIntervalDays` (captured now, drives nothing yet), plus `ShoppingListItem.sources` (the
+new `ShoppingItemSource` enum — `MANUAL | MEAL_PLAN | CONSUMABLES | ROLLOVER`) behind the ×N merge
+badge. Shared `@hame/shared` gains the consumable / source schemas. The API adds a **consumables**
+slice (list / flag / unflag via find-or-create, and a "last bought N days ago" read from `boughtAt`
+history) and folds the **merge-and-union** rule into both the shopping add path and
+`generate-shopping-list`, which now **folds the shortfall into a target list** (most-recent active, or
+new) rather than always minting one. Web: a **Consumables** page (curated list, auto-flag add,
+optional cadence field), an always-available **"Add consumables"** checklist on the Shopping page, the
+**×N merge badge** on summed lines, and the **two-panel generate modal** (food list + consumables
+checklist).
+
+**Deferred to §12**: the `reorderIntervalDays`-driven "probably due" highlight / pre-tick — the
+cadence data is captured now, the logic lands later.
+
 ### Phase 9 — Polish & Portfolio Prep
 
 Comprehensive README, demo data seed script, architecture diagrams, tests for critical flows, production Docker setup, blog post draft.
@@ -1629,6 +1674,7 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - "Pulling your weight" stats dashboard
 - Streak tracking gamification
 - Family announcement / notice board widget
+- Consumables "probably due" — use `Item.reorderIntervalDays` + last-bought history to pre-tick / highlight consumables likely needing a re-order (the data is captured in Phase 8.4)
 
 ### Deferred Decisions
 

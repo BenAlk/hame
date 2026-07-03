@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import {
+  AddConsumablesToListSchema,
   AddShoppingItemSchema,
   ArchiveShoppingListSchema,
   CreateShoppingListSchema,
@@ -10,6 +11,7 @@ import { validateBody } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
 import {
+  addConsumablesToListController,
   addShoppingItemController,
   archiveShoppingListController,
   createShoppingListController,
@@ -47,6 +49,14 @@ shoppingListsRouter.post(
   verifyCsrf,
   validateBody(ArchiveShoppingListSchema),
   archiveShoppingListController,
+)
+
+shoppingListsRouter.post(
+  '/:id/consumables',
+  requireAuth,
+  verifyCsrf,
+  validateBody(AddConsumablesToListSchema),
+  addConsumablesToListController,
 )
 
 // List items (nested under a list)

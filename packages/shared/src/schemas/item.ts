@@ -16,6 +16,8 @@ const ItemFields = z.object({
   typicalUnitGrams: z.number().positive().nullish(),
   minimumQuantity: z.number().positive().nullish(),
   isStaple: z.boolean().optional(),
+  isConsumable: z.boolean().optional(),
+  reorderIntervalDays: z.number().int().positive().max(3650).nullish(),
   tagIds: z.array(z.string().uuid()).optional(),
 })
 
@@ -35,6 +37,8 @@ export const ItemSchema = z.object({
   typicalUnitGrams: z.number().nullable(),
   minimumQuantity: z.number().nullable(),
   isStaple: z.boolean(),
+  isConsumable: z.boolean(),
+  reorderIntervalDays: z.number().nullable(),
   tags: z.array(TagSchema),
   createdById: z.string().uuid(),
   createdAt: z.coerce.date(),

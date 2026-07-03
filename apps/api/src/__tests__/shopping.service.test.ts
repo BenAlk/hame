@@ -12,7 +12,29 @@ vi.mock('../lib/prisma.js', () => ({
   },
 }))
 
-const { archiveShoppingList } = await import('../services/shopping.service.js')
+const { archiveShoppingList, mergeOrCreateLine } = await import('../services/shopping.service.js')
+
+/** A tx stub whose findMany returns the given existing unbought lines. */
+function txWith(candidates: unknown[]) {
+  return {
+    shoppingListItem: {
+      findMany: vi.fn().mockResolvedValue(candidates),
+      update: vi.fn().mockResolvedValue({ id: 'updated' }),
+      create: vi.fn().mockResolvedValue({ id: 'created' }),
+    },
+  }
+}
+
+function line(over: Record<string, unknown>) {
+  return {
+    id: 'x',
+    quantity: null,
+    unit: null,
+    sources: ['MANUAL'],
+    item: { baseUnit: null },
+    ...over,
+  }
+}
 
 const activeList = {
   id: 'l1',
@@ -76,5 +98,110 @@ describe('archiveShoppingList guards', () => {
       ),
     ).rejects.toMatchObject({ status: 400 })
     expect(transaction).not.toHaveBeenCalled()
+  })
+})
+
+describe('mergeOrCreateLine', () => {
+  const base = { itemId: 'it1', userId: 'u1' }
+
+  it('creates a fresh line with a single source when nothing matches', async () => {
+    const tx = txWith([])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 2,
+      unit: 'g',
+      source: 'MANUAL',
+    })
+    expect(tx.shoppingListItem.create).toHaveBeenCalledOnce()
+    expect(tx.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({
+      itemId: 'it1',
+      quantity: 2,
+      unit: 'g',
+      sources: ['MANUAL'],
+    })
+  })
+
+  it('sums same-unit lines and unions the source', async () => {
+    const tx = txWith([
+      line({ quantity: 2, unit: 'g', sources: ['MANUAL'], item: { baseUnit: 'g' } }),
+    ])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 3,
+      unit: 'g',
+      source: 'MEAL_PLAN',
+    })
+    expect(tx.shoppingListItem.create).not.toHaveBeenCalled()
+    expect(tx.shoppingListItem.update.mock.calls[0][0].data).toMatchObject({
+      quantity: 5,
+      unit: 'g',
+      sources: { set: ['MANUAL', 'MEAL_PLAN'] },
+    })
+  })
+
+  it('does not duplicate a source already on the line', async () => {
+    const tx = txWith([
+      line({ quantity: 2, unit: 'g', sources: ['MANUAL'], item: { baseUnit: 'g' } }),
+    ])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 1,
+      unit: 'g',
+      source: 'MANUAL',
+    })
+    const data = tx.shoppingListItem.update.mock.calls[0][0].data
+    expect(data.quantity).toBe(3)
+    expect(data.sources).toBeUndefined() // source unchanged, so no set
+  })
+
+  it('sums compatible different units in the base unit', async () => {
+    const tx = txWith([
+      line({ quantity: 1, unit: 'kg', sources: ['MANUAL'], item: { baseUnit: 'g' } }),
+    ])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 200,
+      unit: 'g',
+      source: 'MEAL_PLAN',
+    })
+    expect(tx.shoppingListItem.update.mock.calls[0][0].data).toMatchObject({
+      quantity: 1200, // 1kg → 1000g + 200g
+      unit: 'g',
+    })
+  })
+
+  it('keeps incompatible units as a separate line', async () => {
+    const tx = txWith([
+      line({ quantity: 2, unit: 'g', sources: ['MANUAL'], item: { baseUnit: 'g' } }),
+    ])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 1,
+      unit: 'unit',
+      source: 'CONSUMABLES',
+    })
+    expect(tx.shoppingListItem.update).not.toHaveBeenCalled()
+    expect(tx.shoppingListItem.create.mock.calls[0][0].data).toMatchObject({
+      quantity: 1,
+      unit: 'unit',
+      sources: ['CONSUMABLES'],
+    })
+  })
+
+  it('merges into a line with an unspecified quantity, keeping the concrete one', async () => {
+    const tx = txWith([
+      line({ quantity: null, unit: null, sources: ['MANUAL'], item: { baseUnit: null } }),
+    ])
+    await mergeOrCreateLine(tx as never, 'l1', {
+      ...base,
+      quantity: 4,
+      unit: 'pack',
+      source: 'MEAL_PLAN',
+    })
+    expect(tx.shoppingListItem.update.mock.calls[0][0].data).toMatchObject({
+      quantity: 4,
+      unit: 'pack',
+      sources: { set: ['MANUAL', 'MEAL_PLAN'] },
+    })
   })
 })

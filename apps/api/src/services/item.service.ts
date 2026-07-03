@@ -19,6 +19,8 @@ export function toItem(item: ItemWithTags): Item {
     typicalUnitGrams: item.typicalUnitGrams,
     minimumQuantity: item.minimumQuantity,
     isStaple: item.isStaple,
+    isConsumable: item.isConsumable,
+    reorderIntervalDays: item.reorderIntervalDays,
     tags: item.tags.map(toTag),
     createdById: item.createdById,
     createdAt: item.createdAt,
@@ -53,6 +55,8 @@ export async function createItem(input: CreateItemInput, userId: string): Promis
       typicalUnitGrams: input.typicalUnitGrams ?? null,
       minimumQuantity: input.minimumQuantity ?? null,
       isStaple: input.isStaple ?? false,
+      isConsumable: input.isConsumable ?? false,
+      reorderIntervalDays: input.reorderIntervalDays ?? null,
       createdById: userId,
       ...(input.tagIds && { tags: { connect: input.tagIds.map((id) => ({ id })) } }),
     },
@@ -74,6 +78,10 @@ export async function updateItem(id: string, input: UpdateItemInput): Promise<It
       ...(input.typicalUnitGrams !== undefined && { typicalUnitGrams: input.typicalUnitGrams }),
       ...(input.minimumQuantity !== undefined && { minimumQuantity: input.minimumQuantity }),
       ...(input.isStaple !== undefined && { isStaple: input.isStaple }),
+      ...(input.isConsumable !== undefined && { isConsumable: input.isConsumable }),
+      ...(input.reorderIntervalDays !== undefined && {
+        reorderIntervalDays: input.reorderIntervalDays,
+      }),
       // `tagIds` fully replaces the item's tag set when present.
       ...(input.tagIds && { tags: { set: input.tagIds.map((tid) => ({ id: tid })) } }),
     },

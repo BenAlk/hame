@@ -13,6 +13,8 @@ import type {
 import { apiFetch } from './client'
 import { toast } from '@/stores/toast'
 
+const CONSUMABLES_ADDED = 'Consumables added to the list.'
+
 const LISTS_KEY = ['shopping-lists'] as const
 
 function invalidateLists(qc: ReturnType<typeof useQueryClient>) {
@@ -94,6 +96,22 @@ export function useAddShoppingItem(listId: string) {
         body: JSON.stringify(body),
       }),
     onSuccess: () => invalidateLists(qc),
+  })
+}
+
+/** Fold ticked consumables into a list from the "Add consumables" panel (§8.3). */
+export function useAddConsumablesToList(listId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (itemIds: string[]) =>
+      apiFetch<ShoppingList>(`/api/shopping-lists/${listId}/consumables`, {
+        method: 'POST',
+        body: JSON.stringify({ itemIds }),
+      }),
+    onSuccess: () => {
+      invalidateLists(qc)
+      toast.success(CONSUMABLES_ADDED)
+    },
   })
 }
 

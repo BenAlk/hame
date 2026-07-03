@@ -2,20 +2,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const entryFindMany = vi.fn()
 const pantryFindMany = vi.fn()
+const listFindFirst = vi.fn()
+const listFindUnique = vi.fn()
 const listCreate = vi.fn()
+const itemFindMany = vi.fn()
+const transaction = vi.fn()
 const getShoppingList = vi.fn()
+const mergeOrCreateLine = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
     mealPlanEntry: { findMany: entryFindMany },
     pantryEntry: { findMany: pantryFindMany },
-    shoppingList: { create: listCreate },
+    shoppingList: { findFirst: listFindFirst, findUnique: listFindUnique, create: listCreate },
+    item: { findMany: itemFindMany },
+    $transaction: transaction,
   },
 }))
 
-vi.mock('../services/shopping.service.js', () => ({ getShoppingList }))
+vi.mock('../services/shopping.service.js', () => ({ getShoppingList, mergeOrCreateLine }))
 
-const { generateShoppingList } = await import('../services/meal-plan.service.js')
+const { previewShoppingList, generateShoppingList } =
+  await import('../services/meal-plan.service.js')
 
 function ing(
   name: string,
@@ -28,14 +36,36 @@ function ing(
 }
 
 beforeEach(() => {
-  for (const fn of [entryFindMany, pantryFindMany, listCreate, getShoppingList]) fn.mockReset()
-  listCreate.mockResolvedValue({ id: 'new-list' })
-  getShoppingList.mockResolvedValue({ id: 'new-list', items: [] })
+  for (const fn of [
+    entryFindMany,
+    pantryFindMany,
+    listFindFirst,
+    listFindUnique,
+    listCreate,
+    itemFindMany,
+    transaction,
+    getShoppingList,
+    mergeOrCreateLine,
+  ])
+    fn.mockReset()
+  // Run the transaction callback against a tx that reuses the same mocks.
+  transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+    cb({
+      shoppingList: { findFirst: listFindFirst, findUnique: listFindUnique, create: listCreate },
+      item: { findMany: itemFindMany },
+    }),
+  )
+  itemFindMany.mockResolvedValue([])
+  getShoppingList.mockResolvedValue({ id: 'target', items: [] })
 })
 
-const range = { startDate: new Date('2026-06-22'), endDate: new Date('2026-06-28') }
+const range = {
+  startDate: new Date('2026-06-22'),
+  endDate: new Date('2026-06-28'),
+  consumableItemIds: [] as string[],
+}
 
-describe('generateShoppingList', () => {
+describe('previewShoppingList (shortfall computation)', () => {
   it('scales by servings, subtracts pantry, excludes staples and flags bad units', async () => {
     // One recipe (serves 4) planned at 8 servings → scale ×2.
     entryFindMany.mockResolvedValue([
@@ -58,29 +88,24 @@ describe('generateShoppingList', () => {
       { itemId: 'Eggs', quantity: 6, unit: 'unit', item: { baseUnit: 'unit' } },
     ])
 
-    const result = await generateShoppingList(range, 'u1')
+    const preview = await previewShoppingList(range)
 
-    expect(listCreate).toHaveBeenCalledTimes(1)
-    const items = listCreate.mock.calls[0][0].data.items.create
-    expect(items).toEqual([
-      { itemId: 'Flour', quantity: 300, unit: 'g', addedById: 'u1' }, // 400 - 100
-      { itemId: 'Milk', quantity: 2000, unit: 'ml', addedById: 'u1' }, // none in pantry
+    expect(preview.lines).toEqual([
+      { itemId: 'Flour', name: 'Flour', quantity: 300, unit: 'g' }, // 400 - 100
+      { itemId: 'Milk', name: 'Milk', quantity: 2000, unit: 'ml' }, // none in pantry
     ])
-    expect(result.warnings).toEqual(['Spice'])
-    expect(result.list).toMatchObject({ id: 'new-list' })
+    expect(preview.warnings).toEqual(['Spice'])
   })
 
   it('treats a unit-less quantity as a bare count even with no item base unit', async () => {
-    // "1 large tomato" — quantity but no unit, item never got a base unit.
     entryFindMany.mockResolvedValue([
       { servings: null, recipe: { servings: 4, ingredients: [ing('Tomato', null, 1, null)] } },
     ])
     pantryFindMany.mockResolvedValue([])
 
-    const result = await generateShoppingList(range, 'u1')
-    const items = listCreate.mock.calls[0][0].data.items.create
-    expect(items).toEqual([{ itemId: 'Tomato', quantity: 1, unit: 'unit', addedById: 'u1' }])
-    expect(result.warnings).toEqual([])
+    const preview = await previewShoppingList(range)
+    expect(preview.lines).toEqual([{ itemId: 'Tomato', name: 'Tomato', quantity: 1, unit: 'unit' }])
+    expect(preview.warnings).toEqual([])
   })
 
   it('subtracts unit-less pantry stock from a unit-less requirement', async () => {
@@ -91,12 +116,11 @@ describe('generateShoppingList', () => {
       { itemId: 'Tomato', quantity: 1, unit: null, item: { baseUnit: null } },
     ])
 
-    await generateShoppingList(range, 'u1')
-    const items = listCreate.mock.calls[0][0].data.items.create
-    expect(items).toEqual([{ itemId: 'Tomato', quantity: 1, unit: 'unit', addedById: 'u1' }]) // 2 - 1
+    const preview = await previewShoppingList(range)
+    expect(preview.lines).toEqual([{ itemId: 'Tomato', name: 'Tomato', quantity: 1, unit: 'unit' }]) // 2 - 1
   })
 
-  it('returns no list when the pantry already covers everything', async () => {
+  it('returns no lines when the pantry already covers everything', async () => {
     entryFindMany.mockResolvedValue([
       { servings: null, recipe: { servings: 4, ingredients: [ing('Flour', 'g', 200, 'g')] } },
     ])
@@ -104,17 +128,15 @@ describe('generateShoppingList', () => {
       { itemId: 'Flour', quantity: 500, unit: 'g', item: { baseUnit: 'g' } },
     ])
 
-    const result = await generateShoppingList(range, 'u1')
-    expect(listCreate).not.toHaveBeenCalled()
-    expect(result.list).toBeNull()
+    const preview = await previewShoppingList(range)
+    expect(preview.lines).toEqual([])
   })
 
-  it('returns no list and no pantry lookup when nothing is planned', async () => {
+  it('returns nothing and skips the pantry lookup when nothing is planned', async () => {
     entryFindMany.mockResolvedValue([])
-    const result = await generateShoppingList(range, 'u1')
+    const preview = await previewShoppingList(range)
     expect(pantryFindMany).not.toHaveBeenCalled()
-    expect(listCreate).not.toHaveBeenCalled()
-    expect(result).toEqual({ list: null, warnings: [] })
+    expect(preview).toEqual({ lines: [], warnings: [] })
   })
 
   it('sums the same item across multiple recipes', async () => {
@@ -124,8 +146,68 @@ describe('generateShoppingList', () => {
     ])
     pantryFindMany.mockResolvedValue([])
 
+    const preview = await previewShoppingList(range)
+    expect(preview.lines).toEqual([{ itemId: 'Flour', name: 'Flour', quantity: 350, unit: 'g' }])
+  })
+})
+
+describe('generateShoppingList (fold into a target list)', () => {
+  it('folds the shortfall into the most-recent active list with MEAL_PLAN source', async () => {
+    entryFindMany.mockResolvedValue([
+      { servings: null, recipe: { servings: 4, ingredients: [ing('Flour', 'g', 200, 'g')] } },
+    ])
+    pantryFindMany.mockResolvedValue([])
+    listFindFirst.mockResolvedValue({ id: 'active1', status: 'ACTIVE' })
+
     await generateShoppingList(range, 'u1')
-    const items = listCreate.mock.calls[0][0].data.items.create
-    expect(items).toEqual([{ itemId: 'Flour', quantity: 350, unit: 'g', addedById: 'u1' }])
+
+    expect(listFindFirst).toHaveBeenCalledTimes(1) // resolve most-recent active
+    expect(listCreate).not.toHaveBeenCalled()
+    expect(mergeOrCreateLine).toHaveBeenCalledWith(expect.anything(), 'active1', {
+      itemId: 'Flour',
+      quantity: 200,
+      unit: 'g',
+      source: 'MEAL_PLAN',
+      userId: 'u1',
+    })
+  })
+
+  it('mints a new named list when listName is given', async () => {
+    entryFindMany.mockResolvedValue([
+      { servings: null, recipe: { servings: 4, ingredients: [ing('Flour', 'g', 200, 'g')] } },
+    ])
+    pantryFindMany.mockResolvedValue([])
+    listCreate.mockResolvedValue({ id: 'fresh' })
+
+    await generateShoppingList({ ...range, listName: 'Big shop' }, 'u1')
+
+    expect(listFindFirst).not.toHaveBeenCalled() // named → skip active-list reuse
+    expect(listCreate).toHaveBeenCalledWith({ data: { name: 'Big shop', createdById: 'u1' } })
+  })
+
+  it('folds ticked consumables in with the CONSUMABLES source', async () => {
+    entryFindMany.mockResolvedValue([])
+    listFindFirst.mockResolvedValue({ id: 'active1', status: 'ACTIVE' })
+    itemFindMany.mockResolvedValue([
+      { id: 'loo-roll', defaultQuantity: 1, defaultUnit: 'pack', isConsumable: true },
+    ])
+
+    await generateShoppingList({ ...range, consumableItemIds: ['loo-roll'] }, 'u1')
+
+    expect(mergeOrCreateLine).toHaveBeenCalledWith(expect.anything(), 'active1', {
+      itemId: 'loo-roll',
+      quantity: 1,
+      unit: 'pack',
+      source: 'CONSUMABLES',
+      userId: 'u1',
+    })
+  })
+
+  it('does nothing when nothing is short and no consumables are ticked', async () => {
+    entryFindMany.mockResolvedValue([])
+    const result = await generateShoppingList(range, 'u1')
+    expect(transaction).not.toHaveBeenCalled()
+    expect(mergeOrCreateLine).not.toHaveBeenCalled()
+    expect(result).toEqual({ list: null, warnings: [] })
   })
 })

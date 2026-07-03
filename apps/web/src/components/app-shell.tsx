@@ -12,6 +12,7 @@ import {
   Menu,
   PawPrint,
   Refrigerator,
+  Repeat,
   Settings,
   ShoppingCart,
   Trash2,
@@ -36,6 +37,7 @@ interface NavItemDef {
 const PRIMARY_NAV: NavItemDef[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/shopping', label: 'Shopping', icon: ShoppingCart },
+  { to: '/consumables', label: 'Consumables', icon: Repeat },
   { to: '/pantry', label: 'Pantry', icon: Refrigerator },
   { to: '/recipes', label: 'Recipes', icon: ChefHat },
   { to: '/meal-plan', label: 'Meal plan', icon: UtensilsCrossed },

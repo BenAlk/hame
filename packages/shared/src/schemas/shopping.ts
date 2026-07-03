@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import { LIST_STATUSES } from '../constants/index.js'
+import { LIST_STATUSES, SHOPPING_ITEM_SOURCES } from '../constants/index.js'
 import { ItemSchema } from './item.js'
 import { MemberSummarySchema } from './user.js'
+
+export const ShoppingItemSourceSchema = z.enum(SHOPPING_ITEM_SOURCES)
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
 const atLeastOneFieldMessage = { message: 'At least one field must be provided' }
@@ -85,6 +87,8 @@ export const ShoppingListItemSchema = z.object({
   notes: z.string().nullable(),
   isBought: z.boolean(),
   boughtAt: z.coerce.date().nullable(),
+  /** Distinct channels merged into this line — drives the ×N badge (spec §8.3). */
+  sources: z.array(ShoppingItemSourceSchema),
   addedBy: MemberSummarySchema,
   createdAt: z.coerce.date(),
 })
@@ -107,3 +111,47 @@ export interface ArchiveShoppingListResult {
   list: ShoppingList
   newList: ShoppingList | null
 }
+
+// ── Consumables (spec §8.3, §10 Phase 8.4) ───────────────────────────────────
+
+/**
+ * A curated consumable — an `Item` flagged `isConsumable`, plus `lastBoughtAt`
+ * derived live from the newest `boughtAt` across archived lists (no new
+ * tracking). Drives the re-order checklist's "last bought N days ago" hint.
+ */
+export const ConsumableSchema = ItemSchema.extend({
+  lastBoughtAt: z.coerce.date().nullable(),
+})
+export type Consumable = z.infer<typeof ConsumableSchema>
+
+/**
+ * Add a consumable by referencing an existing Item (`itemId`) or by name
+ * (`itemName`, find-or-created) — either way the item's `isConsumable` flag is
+ * set. Exactly one of the two must be supplied. Optional re-order cadence.
+ */
+export const SetConsumableSchema = z
+  .object({
+    itemId: z.string().uuid().optional(),
+    itemName: z.string().min(1).max(80).optional(),
+    reorderIntervalDays: z.number().int().positive().max(3650).nullish(),
+  })
+  .refine((d) => Boolean(d.itemId) !== Boolean(d.itemName), {
+    message: 'Provide either itemId or itemName, not both',
+  })
+export type SetConsumableInput = z.infer<typeof SetConsumableSchema>
+
+/** Update a consumable's re-order cadence (nullable to clear it). */
+export const UpdateConsumableSchema = z.object({
+  reorderIntervalDays: z.number().int().positive().max(3650).nullable(),
+})
+export type UpdateConsumableInput = z.infer<typeof UpdateConsumableSchema>
+
+/**
+ * Fold a set of consumables into an active list from the "Add consumables"
+ * checklist (spec §8.3). Each lands with the `CONSUMABLES` source, merging into
+ * an existing line when compatible.
+ */
+export const AddConsumablesToListSchema = z.object({
+  itemIds: z.array(z.string().uuid()).min(1, 'Pick at least one consumable'),
+})
+export type AddConsumablesToListInput = z.infer<typeof AddConsumablesToListSchema>

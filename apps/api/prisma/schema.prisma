@@ -74,6 +74,8 @@ model Item {
   typicalUnitGrams Float? // grams of one countable unit (1 onion ≈ 110g) — see spec §10 Phase 4.5
   minimumQuantity  Float? // triggers low stock (expressed in baseUnit)
   isStaple        Boolean            @default(false) // pantry staple — excluded from generated shopping lists
+  isConsumable    Boolean            @default(false) // household consumable — surfaced as a re-order checklist (spec §8.3)
+  reorderIntervalDays Int? // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (spec §12)
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
   tags            Tag[]              @relation("ItemTags")
@@ -109,6 +111,7 @@ model ShoppingListItem {
   notes            String?
   isBought         Boolean            @default(false)
   boughtAt         DateTime?
+  sources          ShoppingItemSource[] @default([MANUAL]) // distinct channels merged into this line — drives the ×N badge (spec §8.3)
   addedById        String
   addedBy          User               @relation(fields: [addedById], references: [id])
   rolledOverFromId String? // self-relation: the item this one was rolled over from
@@ -121,6 +124,15 @@ model ShoppingListItem {
 enum ListStatus {
   ACTIVE
   ARCHIVED
+}
+
+// Where a shopping-list line's quantity came from (spec §8.3). A line unions
+// every channel that fed it, so a summed quantity carries a ×N merge badge.
+enum ShoppingItemSource {
+  MANUAL
+  MEAL_PLAN
+  CONSUMABLES
+  ROLLOVER
 }
 
 // ── Phase 2: Pantry ──────────────────────────────────────────────────────────

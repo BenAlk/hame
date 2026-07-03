@@ -63,23 +63,64 @@ export type MealPlanEntry = z.infer<typeof MealPlanEntrySchema>
 
 // ── Generate shopping list (spec §8.6) ───────────────────────────────────────
 
-/** Aggregate a date range's meal-plan ingredients into a new shopping list. */
-export const GenerateShoppingListSchema = z
-  .object({
-    startDate: z.coerce.date(),
-    endDate: z.coerce.date(),
-    listName: z.string().min(1).max(60).optional(),
-  })
-  .refine((d) => d.endDate >= d.startDate, {
-    path: ['endDate'],
-    message: 'End date must be on or after the start date',
-  })
-export type GenerateShoppingListInput = z.infer<typeof GenerateShoppingListSchema>
+const dateRangeOrdered: { path: (string | number)[]; message: string } = {
+  path: ['endDate'],
+  message: 'End date must be on or after the start date',
+}
+
+/** Date range shared by the generate preview and commit. */
+const GenerateDateRange = z.object({
+  startDate: z.coerce.date(),
+  endDate: z.coerce.date(),
+})
 
 /**
- * Outcome of a generate run: the created list (null when nothing was short) plus
- * human-readable warnings for ingredients that couldn't be summed — e.g. a unit
- * that doesn't convert to the item's base unit (spec §9.2).
+ * Dry-run a generate over a date range: compute the food shortfall without
+ * writing anything, so the two-panel modal can show the list before it commits.
+ */
+export const PreviewShoppingListSchema = GenerateDateRange.refine(
+  (d) => d.endDate >= d.startDate,
+  dateRangeOrdered,
+)
+export type PreviewShoppingListInput = z.infer<typeof PreviewShoppingListSchema>
+
+/**
+ * Commit a generate: fold the recomputed food shortfall (and any ticked
+ * consumables) into a target list. `targetListId` picks an existing active list;
+ * omitted, the server resolves the most-recent active list or mints a new one.
+ * Quantities are always recomputed server-side — client previews are never
+ * trusted (spec §8.6).
+ */
+export const GenerateShoppingListSchema = GenerateDateRange.extend({
+  listName: z.string().min(1).max(60).optional(),
+  targetListId: z.string().uuid().optional(),
+  consumableItemIds: z.array(z.string().uuid()).default([]),
+}).refine((d) => d.endDate >= d.startDate, dateRangeOrdered)
+export type GenerateShoppingListInput = z.infer<typeof GenerateShoppingListSchema>
+
+/** One preview line of the food shortfall, in the item's base unit. */
+export const ShoppingListPreviewLineSchema = z.object({
+  itemId: z.string().uuid(),
+  name: z.string(),
+  quantity: z.number(),
+  unit: z.string().nullable(),
+})
+export type ShoppingListPreviewLine = z.infer<typeof ShoppingListPreviewLineSchema>
+
+/**
+ * Outcome of a generate preview: the food shortfall lines (nothing persisted)
+ * plus human-readable warnings for ingredients that couldn't be summed — e.g. a
+ * unit that doesn't convert to the item's base unit (spec §9.2).
+ */
+export const ShoppingListPreviewSchema = z.object({
+  lines: z.array(ShoppingListPreviewLineSchema),
+  warnings: z.array(z.string()),
+})
+export type ShoppingListPreview = z.infer<typeof ShoppingListPreviewSchema>
+
+/**
+ * Outcome of a generate commit: the target list (null when nothing was short and
+ * no consumables were ticked) plus the same unsummable-ingredient warnings.
  */
 export const GenerateShoppingListResultSchema = z.object({
   list: ShoppingListSchema.nullable(),

@@ -4,6 +4,8 @@ import type {
   GenerateShoppingListInput,
   GenerateShoppingListResult,
   MealPlanEntry,
+  PreviewShoppingListInput,
+  ShoppingListPreview,
   UpdateMealPlanEntryInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
@@ -51,7 +53,18 @@ export function useDeleteMealPlanEntry() {
   })
 }
 
-/** The killer feature (spec §8.6): aggregate a date range into a shopping list. */
+/** Dry-run a generate (spec §8.6): the food shortfall, nothing persisted. */
+export function usePreviewShoppingList() {
+  return useMutation({
+    mutationFn: (body: PreviewShoppingListInput) =>
+      apiFetch<ShoppingListPreview>('/api/meal-plans/preview-shopping-list', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+/** The killer feature (spec §8.6): fold a date range's shortfall into a list. */
 export function useGenerateShoppingList() {
   const qc = useQueryClient()
   return useMutation({

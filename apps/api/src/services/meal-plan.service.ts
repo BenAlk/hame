@@ -4,6 +4,8 @@ import type {
   GenerateShoppingListInput,
   GenerateShoppingListResult,
   MealPlanEntry,
+  PreviewShoppingListInput,
+  ShoppingListPreview,
   UpdateMealPlanEntryInput,
 } from '@hame/shared'
 import { convertToBase, DEFAULT_SERVINGS } from '@hame/shared'
@@ -11,7 +13,7 @@ import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { toTag } from './tag.service.js'
 import { toMemberSummary } from './user.service.js'
-import { getShoppingList } from './shopping.service.js'
+import { getShoppingList, mergeOrCreateLine } from './shopping.service.js'
 
 const memberSelect = { select: { id: true, firstName: true, colour: true } } as const
 
@@ -127,18 +129,27 @@ interface Requirement {
   requiredBase: number
 }
 
+/** A per-item shortfall to shop for, in the item's base unit. */
+interface Shortfall {
+  itemId: string
+  name: string
+  unit: string | null
+  quantity: number
+}
+
 /**
- * Build a shopping list from a date range's planned recipes:
+ * Compute a date range's shopping shortfall — the read-only core shared by the
+ * generate preview and commit (spec §8.6):
  *   1. sum each recipe ingredient (scaled by servings) per Item, in base units,
  *   2. subtract what the pantry already holds,
- *   3. create list rows for the shortfall.
- * Staples are excluded; ingredients whose unit can't convert to the item's base
- * unit are surfaced as warnings rather than silently mis-summed (spec §9.2).
+ *   3. return the positive remainder per item.
+ * Writes nothing. Staples are excluded; ingredients whose unit can't convert to
+ * the item's base unit are surfaced as warnings, never silently mis-summed.
  */
-export async function generateShoppingList(
-  input: GenerateShoppingListInput,
-  userId: string,
-): Promise<GenerateShoppingListResult> {
+async function computeShortfall(input: {
+  startDate: Date
+  endDate: Date
+}): Promise<{ shortfalls: Shortfall[]; warnings: string[] }> {
   const entries = await prisma.mealPlanEntry.findMany({
     where: {
       date: { gte: input.startDate, lte: input.endDate },
@@ -186,9 +197,7 @@ export async function generateShoppingList(
     }
   }
 
-  if (required.size === 0) {
-    return { list: null, warnings: [...warnings] }
-  }
+  if (required.size === 0) return { shortfalls: [], warnings: [...warnings] }
 
   // Subtract what's already in the pantry, converted to each item's base unit.
   const pantryRows = await prisma.pantryEntry.findMany({
@@ -205,33 +214,111 @@ export async function generateShoppingList(
   // Round to tame floating-point drift (e.g. 0.1 + 0.2) before comparing.
   const shortfalls = [...required.values()]
     .map((req) => ({
-      ...req,
-      shortfall: Math.round((req.requiredBase - (pantryByItem.get(req.itemId) ?? 0)) * 1000) / 1000,
+      itemId: req.itemId,
+      name: req.name,
+      unit: req.baseUnit,
+      quantity: Math.round((req.requiredBase - (pantryByItem.get(req.itemId) ?? 0)) * 1000) / 1000,
     }))
-    .filter((req) => req.shortfall > 0)
+    .filter((req) => req.quantity > 0)
 
-  if (shortfalls.length === 0) {
-    return { list: null, warnings: [...warnings] }
+  return { shortfalls, warnings: [...warnings] }
+}
+
+/**
+ * Dry-run a generate: return the food shortfall for the two-panel modal to show
+ * before anything is written (spec §8.6). Nothing is persisted.
+ */
+export async function previewShoppingList(
+  input: PreviewShoppingListInput,
+): Promise<ShoppingListPreview> {
+  const { shortfalls, warnings } = await computeShortfall(input)
+  return {
+    lines: shortfalls.map((s) => ({
+      itemId: s.itemId,
+      name: s.name,
+      quantity: s.quantity,
+      unit: s.unit,
+    })),
+    warnings,
+  }
+}
+
+/**
+ * Commit a generate (spec §8.6): recompute the shortfall server-side (client
+ * previews are never trusted), resolve a target list, and fold both the food
+ * shortfall and any ticked consumables into it via the shared merge helper — so
+ * summed lines carry the ×N badge. The target is `targetListId` when given, a
+ * freshly named list when `listName` is given, else the most-recent active list
+ * (or a new default-named one when none exists).
+ */
+export async function generateShoppingList(
+  input: GenerateShoppingListInput,
+  userId: string,
+): Promise<GenerateShoppingListResult> {
+  const { shortfalls, warnings } = await computeShortfall(input)
+  const consumableIds = input.consumableItemIds ?? []
+
+  if (shortfalls.length === 0 && consumableIds.length === 0) {
+    return { list: null, warnings }
   }
 
-  const name =
-    input.listName ?? `Meal plan shop (${isoDate(input.startDate)} – ${isoDate(input.endDate)})`
-  const created = await prisma.shoppingList.create({
-    data: {
-      name,
-      createdById: userId,
-      items: {
-        create: shortfalls.map((req) => ({
-          itemId: req.itemId,
-          quantity: req.shortfall,
-          unit: req.baseUnit,
-          addedById: userId,
-        })),
-      },
-    },
+  const listId = await prisma.$transaction(async (tx) => {
+    const targetId = await resolveTargetList(tx, input, userId)
+
+    for (const s of shortfalls) {
+      await mergeOrCreateLine(tx, targetId, {
+        itemId: s.itemId,
+        quantity: s.quantity,
+        unit: s.unit,
+        source: 'MEAL_PLAN',
+        userId,
+      })
+    }
+
+    if (consumableIds.length > 0) {
+      const items = await tx.item.findMany({
+        where: { id: { in: consumableIds }, isConsumable: true },
+      })
+      for (const item of items) {
+        await mergeOrCreateLine(tx, targetId, {
+          itemId: item.id,
+          quantity: item.defaultQuantity ?? null,
+          unit: item.defaultUnit ?? null,
+          source: 'CONSUMABLES',
+          userId,
+        })
+      }
+    }
+
+    return targetId
   })
 
-  return { list: await getShoppingList(created.id), warnings: [...warnings] }
+  return { list: await getShoppingList(listId), warnings }
+}
+
+/** Pick the list a generate commit folds into (spec §8.6). */
+async function resolveTargetList(
+  tx: Prisma.TransactionClient,
+  input: GenerateShoppingListInput,
+  userId: string,
+): Promise<string> {
+  if (input.targetListId) {
+    const target = await tx.shoppingList.findUnique({ where: { id: input.targetListId } })
+    if (!target) throw HttpError.badRequest('Target list not found')
+    if (target.status !== 'ACTIVE') throw HttpError.badRequest('Target list is archived')
+    return target.id
+  }
+  if (!input.listName) {
+    const active = await tx.shoppingList.findFirst({
+      where: { status: 'ACTIVE' },
+      orderBy: { updatedAt: 'desc' },
+    })
+    if (active) return active.id
+  }
+  const name =
+    input.listName ?? `Meal plan shop (${isoDate(input.startDate)} – ${isoDate(input.endDate)})`
+  const created = await tx.shoppingList.create({ data: { name, createdById: userId } })
+  return created.id
 }
 
 // ── internals ──────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express'
 import type {
+  AddConsumablesToListInput,
   AddShoppingItemInput,
   ArchiveShoppingListInput,
   CreateShoppingListInput,
@@ -9,6 +10,7 @@ import type {
 } from '@hame/shared'
 import { LIST_STATUSES } from '@hame/shared'
 import {
+  addConsumablesToList,
   addShoppingItem,
   archiveShoppingList,
   createShoppingList,
@@ -77,6 +79,19 @@ export const archiveShoppingListController: RequestHandler = async (req, res, ne
       req.user!.id,
     )
     res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const addConsumablesToListController: RequestHandler = async (req, res, next) => {
+  try {
+    const list = await addConsumablesToList(
+      req.params.id,
+      (req.body as AddConsumablesToListInput).itemIds,
+      req.user!.id,
+    )
+    res.status(201).json(list)
   } catch (err) {
     next(err)
   }

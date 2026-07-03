@@ -31,6 +31,17 @@ export const QUICK_ADD_TAG = 'quick-add'
 /** Items expiring within this many days surface in the "expiring soon" widget. */
 export const EXPIRY_SOON_DAYS = 3
 
+/**
+ * Where a shopping-list line's quantity came from (spec §8.3, §10 Phase 8.4).
+ * A line's `sources` set unions every channel that contributed to it, so a
+ * quantity summed from more than one place carries a small ×N merge badge.
+ * `MANUAL` is a hand-added line, `MEAL_PLAN` a generate-shopping-list shortfall,
+ * `CONSUMABLES` a re-order checklist tick, `ROLLOVER` an item carried over from
+ * an archived list.
+ */
+export const SHOPPING_ITEM_SOURCES = ['MANUAL', 'MEAL_PLAN', 'CONSUMABLES', 'ROLLOVER'] as const
+export type ShoppingItemSource = (typeof SHOPPING_ITEM_SOURCES)[number]
+
 // ── Phase 3: Chores & pets ───────────────────────────────────────────────────
 
 export const RECURRENCE_TYPES = ['INTERVAL', 'WEEKLY', 'DATE_OF_MONTH', 'ONE_OFF'] as const
