@@ -699,6 +699,8 @@ model IdleModeSettings {
   shufflePhotos          Boolean  @default(true)
   showWeatherInClockMode Boolean  @default(true)
   immichEnabled          Boolean  @default(true)          // turn off photos entirely if desired
+  showBinsInIdle         Boolean  @default(true)          // rotate in a "bin due today/tomorrow" screen
+  showMealsInIdle        Boolean  @default(true)          // rotate in today's meal for the current slot
   updatedAt              DateTime @updatedAt
 }
 ```
@@ -923,12 +925,34 @@ Idle activated (after activationMinutes inactivity)
         ↓
 [Clock mode — large clock + date + weather, for clockDisplaySeconds]
         ↓
+[Bins screen — a bin due today/tomorrow, 20s]      (only when one is due)
+        ↓
+[Meal screen — today's meal for the current slot, 20s]  (only when planned)
+        ↓
 [Photo cycle again]
         ↓
 ... loops until touch / motion wakes display
 ```
 
 Smooth fade transitions between photos and modes. Touch wakes back to dashboard.
+
+**Info screens (conditional).** Two optional screens join the rotation only when
+they have content at that moment, so an empty one is skipped rather than shown blank:
+
+- **Bins** (`showBinsInIdle`, 20s) — a stylised full-screen reminder when a bin is
+  due **today or tomorrow** (`nextCollection ∈ {today, tomorrow}`, so a Thursday
+  collection shows Wednesday and Thursday only; leads with today's when both).
+  A colour-coded wheelie bin per due collection, under an "Out today / tomorrow"
+  headline.
+- **Meals** (`showMealsInIdle`, 20s) — today's meal for the current time-of-day
+  slot (breakfast 06:00–10:00, lunch 10:00–14:00, dinner 14:00–20:00; nothing
+  otherwise), shown only when one is planned. Full-bleed recipe photo + title,
+  falling back to a stylised typographic card for a custom label ("Takeaway") or
+  an image-less recipe.
+
+Both reuse existing data (the bins and meal-plan endpoints) — no new backend. The
+clock stays the guaranteed fallback, so with photos off and nothing else to show
+it remains clock-only.
 
 #### Immich API Integration
 
@@ -967,6 +991,8 @@ Benefits:
   - `shufflePhotos` — default true
   - `showWeatherInClockMode` — default true
   - `immichEnabled` — toggle photos off, clock-only mode
+  - `showBinsInIdle` — default true; the conditional bin-reminder screen
+  - `showMealsInIdle` — default true; the conditional today's-meal screen
 
 #### Future Enhancements (mentioned in §12)
 
@@ -1443,6 +1469,18 @@ key-never-returned / omit-preserves contract and graceful-degrade, the idle-sett
 screensaver state machine), all builds clean, plus a **live smoke against real Immich** — albums and
 photos pulled through the backend proxy and cycled in the screensaver, with no Immich credential ever
 reaching the browser. Battle-tested.
+
+**Follow-up — idle info screens (04-07-2026).** The photo ⇄ clock cycle grew from two modes to a
+skip-empty **rotation** (§8.14): the pure state machine (`screensaver.ts`) now walks a fixed ring
+(`photo → clock → bins → meals → …`), skipping any info screen with no content at the transition, with
+the clock always in the ring as the guaranteed fallback. Two conditional screens joined it, each 20s and
+individually toggleable (`IdleModeSettings.showBinsInIdle` / `showMealsInIdle`, a small
+`idle_info_screens` migration): a **bins** screen (a colour-coded wheelie bin per bin due today/tomorrow,
+"Out today/tomorrow") and a **meals** screen (today's meal for the current slot — breakfast 06–10, lunch
+10–14, dinner 14–20 — as a full-bleed recipe photo + title, with a typographic terracotta fallback).
+Pure selectors (`idle-info.ts` — `mealTypeForHour`, `selectDueBins`, `selectSlotMeal`) keep the windowing
+unit-tested, the same pure/impure split as the state machine. No new backend data: both reuse the
+existing bins and meal-plan endpoints. Two toggles added to the Settings idle card.
 
 #### Phase 7.4 — Responsive polish + PWA ✅ Complete (29-06-2026)
 

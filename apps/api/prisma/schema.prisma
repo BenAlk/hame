@@ -582,6 +582,8 @@ model IdleModeSettings {
   shufflePhotos          Boolean  @default(true)
   showWeatherInClockMode Boolean  @default(true)
   immichEnabled          Boolean  @default(true)
+  showBinsInIdle         Boolean  @default(true) // rotate in a "bin due today/tomorrow" screen
+  showMealsInIdle        Boolean  @default(true) // rotate in today's meal for the current slot
   updatedAt              DateTime @updatedAt
 }
 

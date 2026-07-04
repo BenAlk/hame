@@ -1,15 +1,21 @@
-import { memo, useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import { format } from 'date-fns'
 import type { HaEntityState, IdleModeSettings } from '@hame/shared'
 import { useIdlePhotos } from '@/api/idle'
 import { useHaEntities } from '@/api/home-assistant'
+import { useBins } from '@/api/bins'
+import { useMealPlan } from '@/api/meal-plans'
 import { cn } from '@/lib/utils'
 import {
   advanceScreensaver,
   initialScreensaverState,
   phaseDurationMs,
+  type ScreensaverContext,
   type ScreensaverState,
 } from './screensaver'
+import { selectDueBins, selectSlotMeal } from './idle-info'
+import { BinsScreen } from './bins-screen'
+import { MealsScreen } from './meals-screen'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -203,9 +209,35 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
   const { data: entities } = useHaEntities(settings.showWeatherInClockMode)
   const weather = useMemo(() => entities?.find((e) => e.domain === 'weather'), [entities])
 
-  // The photo ⇄ clock state machine, driven by a single self-scheduling timer.
+  // Info-screen data. A coarse `now` (30s tick) drives both the day/slot windows
+  // and the clock's date line, so a slot or day rollover re-selects without a
+  // reload. Selection is gated on the per-household toggles.
+  const now = useNow()
+  const { data: bins } = useBins()
+  const today = format(now, 'yyyy-MM-dd')
+  const { data: mealEntries } = useMealPlan(today, today)
+
+  const dueBins = useMemo(
+    () => (settings.showBinsInIdle ? selectDueBins(bins ?? [], now) : null),
+    [settings.showBinsInIdle, bins, now],
+  )
+  const slotMeal = useMemo(
+    () => (settings.showMealsInIdle ? selectSlotMeal(mealEntries ?? [], now) : null),
+    [settings.showMealsInIdle, mealEntries, now],
+  )
+
+  // Availability fed into the state machine so it skips an empty info screen.
+  const screenCtx: ScreensaverContext = {
+    poolLength: pool.length,
+    binsAvailable: dueBins !== null,
+    mealAvailable: slotMeal !== null,
+  }
+
+  // The rotation state machine, driven by a single self-scheduling timer. The
+  // reducer closes over the latest `screenCtx`, so each transition sees current
+  // availability.
   const [state, dispatch] = useReducer(
-    (prev: ScreensaverState) => advanceScreensaver(prev, pool.length),
+    (prev: ScreensaverState) => advanceScreensaver(prev, screenCtx),
     pool.length,
     initialScreensaverState,
   )
@@ -227,14 +259,28 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
   const showPhoto = state.mode === 'photo' && pool.length > 0
   const assetId = showPhoto ? (pool[state.photoIndex % pool.length] ?? null) : null
 
+  // The non-photo overlay for the current mode. Availability can flip between a
+  // transition and this render, so an info screen falls back to the clock if its
+  // data has just gone.
+  let overlay: ReactNode = null
+  if (!showPhoto) {
+    if (state.mode === 'bins' && dueBins) {
+      overlay = <BinsScreen due={dueBins} />
+    } else if (state.mode === 'meals' && slotMeal) {
+      overlay = <MealsScreen entry={slotMeal} />
+    } else {
+      overlay = (
+        <div className="flex h-full w-full items-center justify-center bg-background">
+          <ClockFace weather={weather} showWeather={settings.showWeatherInClockMode} />
+        </div>
+      )
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[60] overflow-hidden bg-background">
       <PhotoStack assetId={assetId} />
-      {!showPhoto && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background">
-          <ClockFace weather={weather} showWeather={settings.showWeatherInClockMode} />
-        </div>
-      )}
+      {overlay && <div className="absolute inset-0">{overlay}</div>}
     </div>
   )
 }

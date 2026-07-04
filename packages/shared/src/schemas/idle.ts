@@ -6,7 +6,9 @@ import { z } from 'zod'
  * and no one is actively logged in during idle. After `activationMinutes` of
  * inactivity the dashboard cycles Immich photos (`photoDisplaySeconds` each) and
  * a large clock (`clockDisplaySeconds`); touch wakes it. `immichEnabled` off (or
- * no photos available) falls back to clock-only.
+ * no photos available) falls back to clock-only. Two optional info screens join
+ * the rotation when they have content: a bin reminder (a bin due today/tomorrow)
+ * and today's meal for the current time-of-day slot — each toggleable.
  */
 
 /** Read/update shape (member read so the wall tablet can apply it; admin write). */
@@ -18,6 +20,8 @@ export const IdleModeSettingsSchema = z.object({
   shufflePhotos: z.boolean(),
   showWeatherInClockMode: z.boolean(),
   immichEnabled: z.boolean(),
+  showBinsInIdle: z.boolean(),
+  showMealsInIdle: z.boolean(),
   updatedAt: z.coerce.date(),
 })
 export type IdleModeSettings = z.infer<typeof IdleModeSettingsSchema>

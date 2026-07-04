@@ -874,6 +874,8 @@ function IdleModeCard() {
         shufflePhotos: form.shufflePhotos,
         showWeatherInClockMode: form.showWeatherInClockMode,
         immichEnabled: form.immichEnabled,
+        showBinsInIdle: form.showBinsInIdle,
+        showMealsInIdle: form.showMealsInIdle,
       })
       setSaved(true)
     } catch (err) {
@@ -887,9 +889,9 @@ function IdleModeCard() {
         <CardTitle>Idle mode (screensaver)</CardTitle>
         <CardDescription>
           When the wall tablet&apos;s Household dashboard is left idle it becomes a photo frame —
-          cycling Immich photos and a large clock. Touch wakes it. It runs only on the device
-          showing the Household dashboard, not on phones. These settings are shared across the
-          household.
+          cycling Immich photos, a large clock, and (when there&apos;s something to show) bin and
+          meal reminders. Touch wakes it. It runs only on the device showing the Household
+          dashboard, not on phones. These settings are shared across the household.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -934,6 +936,18 @@ function IdleModeCard() {
             checked={form.showWeatherInClockMode}
             disabled={!form.enabled || update.isPending}
             onChange={(v) => set('showWeatherInClockMode', v)}
+          />
+          <ToggleRow
+            label="Show bin reminders (a bin due today or tomorrow)"
+            checked={form.showBinsInIdle}
+            disabled={!form.enabled || update.isPending}
+            onChange={(v) => set('showBinsInIdle', v)}
+          />
+          <ToggleRow
+            label="Show today's meal (for the current time of day)"
+            checked={form.showMealsInIdle}
+            disabled={!form.enabled || update.isPending}
+            onChange={(v) => set('showMealsInIdle', v)}
           />
         </div>
 
