@@ -1668,6 +1668,7 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 
 - Budget & bill tracking
 - Energy monitoring widget (HA energy data)
+- Camera feeds (ONVIF/RTSP) — a Cameras page + dashboard widget showing live IoT camera streams. Browsers can't play RTSP directly, so front the cameras with an off-the-shelf media gateway (e.g. **go2rtc**, already used under the hood by Home Assistant) that repackages RTSP → WebRTC/HLS; Hame owns the authenticated UI + credential-hiding backend proxy (the Immich-proxy pattern, §8.14), **not** the media engine. Remote viewing is the real cost — WebRTC + TURN for sub-second latency vs HLS over the existing proxy (simpler, higher latency, Cloudflare-ToS gray area for sustained video) vs a VPN (Tailscale/WireGuard, best quality, remote device must join). Check whether the cameras emit H.264 (cheap passthrough) or H.265 (needs transcoding — real CPU per stream). Keep the cameras on an isolated, internet-less VLAN reachable only via the gateway.
 - Notes (could replace Memos)
 - Home maintenance log (boiler service, MOT etc.)
 - Document storage (warranties, manuals)
