@@ -123,6 +123,7 @@ export async function getIdleAssetIds(shufflePhotos: boolean): Promise<string[]>
   if (!conn) return []
   try {
     const ids = await fetchAssetIds(conn, conn.selectedAlbumIds)
+    cachePool(ids)
     return buildAssetPool(ids, shufflePhotos)
   } catch (err) {
     logger.warn({ err }, 'Could not list Immich assets')
@@ -130,11 +131,42 @@ export async function getIdleAssetIds(shufflePhotos: boolean): Promise<string[]>
   }
 }
 
+// The photo proxy only serves assets in the configured pool — otherwise a member
+// could enumerate the *whole* Immich library through it by guessing asset ids.
+// The pool is cached briefly so this check costs nothing on the screensaver's
+// per-photo requests, and album/selection changes still apply within the TTL.
+const POOL_TTL_MS = 5 * 60 * 1000
+let poolCache: { ids: Set<string>; expiresAt: number } | null = null
+
+function cachePool(ids: string[]): void {
+  poolCache = { ids: new Set(ids), expiresAt: Date.now() + POOL_TTL_MS }
+}
+
+async function isAssetInPool(
+  conn: ImmichConnection & { selectedAlbumIds: string[] },
+  assetId: string,
+): Promise<boolean> {
+  if (!poolCache || poolCache.expiresAt <= Date.now()) {
+    cachePool(await fetchAssetIds(conn, conn.selectedAlbumIds))
+  }
+  return poolCache!.ids.has(assetId)
+}
+
 /** Proxy one asset's preview bytes (spec §8.14 "Backend Proxy"). 502 if Immich
- *  is unreachable, 404 if it isn't configured. */
+ *  is unreachable, 404 if it isn't configured or the asset isn't in the pool. */
 export async function getPhoto(assetId: string): Promise<{ contentType: string; body: Buffer }> {
   const conn = await getConnection()
   if (!conn) throw HttpError.notFound('Immich is not configured.')
+
+  let inPool: boolean
+  try {
+    inPool = await isAssetInPool(conn, assetId)
+  } catch (err) {
+    logger.warn({ err }, 'Could not verify Immich asset pool')
+    throw HttpError.badGateway('Could not fetch the photo from Immich.')
+  }
+  if (!inPool) throw HttpError.notFound('Photo not found.')
+
   try {
     return await fetchAssetPreview(conn, assetId)
   } catch (err) {

@@ -11,7 +11,7 @@ import { ApiError } from '@/api/client'
 import { useTags } from '@/api/tags'
 import { useDeleteRecipe, useRecipe, useUpdateRecipe } from '@/api/recipes'
 import { quantityLabel } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { cn, safeExternalUrl } from '@/lib/utils'
 
 export function RecipeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -100,9 +100,9 @@ export function RecipeDetailPage() {
               <Users className="size-4" />
               Serves {recipe.servings}
             </span>
-            {recipe.sourceUrl && (
+            {safeExternalUrl(recipe.sourceUrl) && (
               <a
-                href={recipe.sourceUrl}
+                href={safeExternalUrl(recipe.sourceUrl)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-accent hover:underline"

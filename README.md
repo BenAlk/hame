@@ -45,6 +45,11 @@ pnpm dev
 - Web: http://localhost:5173
 - API: http://localhost:4000
 
+> **First-run credentials.** `pnpm db:seed` creates demo users with the password
+> `changeme123` (admin: `alex`, member: `sam`). These are for local development
+> only — if you deploy Hame, either skip the seed and use the first-run setup
+> wizard to create your admin, or change every seeded password immediately.
+
 ## Workspace scripts
 
 | Command           | Description                                 |

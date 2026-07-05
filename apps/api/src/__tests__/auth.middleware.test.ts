@@ -14,12 +14,13 @@ const { requireAuth } = await import('../middleware/auth.js')
 const { errorHandler } = await import('../middleware/error.js')
 const { SESSION_COOKIE } = await import('../lib/cookies.js')
 
-const secret = new TextEncoder().encode('test-secret-test-secret')
+// Must match vitest.config.ts's JWT_SECRET (what lib/token.ts verifies against).
+const secret = new TextEncoder().encode('test-secret-test-secret-test-secret')
 
 /** Sign a session token whose `iat` is `ageSeconds` in the past. */
-function tokenAged(ageSeconds: number): Promise<string> {
+function tokenAged(ageSeconds: number, tv = 0): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ role: 'ADMIN' })
+  return new SignJWT({ role: 'ADMIN', tv })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject('user-1')
     .setIssuedAt(now - ageSeconds)
@@ -45,6 +46,7 @@ const FAKE_USER = {
   colour: '#3B82F6',
   dob: new Date('1990-01-01'),
   role: 'ADMIN',
+  tokenVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 }
@@ -91,5 +93,15 @@ describe('requireAuth (network-aware sliding session)', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.id).toBe('user-1')
+  })
+
+  it('rejects a token whose version is behind the user (password/role changed)', async () => {
+    findUnique.mockResolvedValue({ ...FAKE_USER, tokenVersion: 1 })
+    const token = await tokenAged(60, 0) // minted before the bump
+    const res = await request(buildApp())
+      .get('/protected')
+      .set('Cookie', `${SESSION_COOKIE}=${token}`)
+
+    expect(res.status).toBe(401)
   })
 })

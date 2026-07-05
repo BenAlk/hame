@@ -18,13 +18,14 @@ function renderAt(path: string, props: { requiresSetup: boolean; user: PublicUse
 
 const adminUser: PublicUser = {
   id: 'a1',
-  username: 'ben',
-  firstName: 'Ben',
-  surname: 'Alkureishi',
+  username: 'alex',
+  firstName: 'Alex',
+  surname: 'Morgan',
   avatarUrl: null,
   colour: '#3B82F6',
   dob: new Date('1990-01-01'),
   role: 'ADMIN',
+  tokenVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 }

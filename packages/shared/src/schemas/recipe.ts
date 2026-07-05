@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { NORMALISER_STRATEGIES } from '../constants/index.js'
+import { httpUrl } from './common.js'
 import { ItemSchema } from './item.js'
 import { TagSchema } from './tag.js'
 
@@ -43,8 +44,8 @@ export type RecipeStepInput = z.infer<typeof RecipeStepInputSchema>
 const RecipeFields = z.object({
   title: z.string().min(1, 'Title is required').max(120, 'Title is too long'),
   description: z.string().max(2000).nullish(),
-  imageUrl: z.string().url().nullish(),
-  sourceUrl: z.string().url().nullish(),
+  imageUrl: httpUrl().nullish(),
+  sourceUrl: httpUrl().nullish(),
   prepTimeMinutes: z.number().int().nonnegative().nullish(),
   cookTimeMinutes: z.number().int().nonnegative().nullish(),
   servings: z.number().int().positive().max(100),
@@ -63,7 +64,7 @@ export const UpdateRecipeSchema = RecipeFields.partial().refine(
 export type UpdateRecipeInput = z.infer<typeof UpdateRecipeSchema>
 
 /** Import a recipe from a URL by parsing its schema.org metadata (spec §8.5). */
-export const ImportRecipeSchema = z.object({ url: z.string().url('Enter a valid URL') })
+export const ImportRecipeSchema = z.object({ url: httpUrl('Enter a valid URL') })
 export type ImportRecipeInput = z.infer<typeof ImportRecipeSchema>
 
 // ── Public shapes ────────────────────────────────────────────────────────────

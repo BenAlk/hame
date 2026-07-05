@@ -10,6 +10,8 @@ export interface SessionClaims {
   /** User id (JWT `sub`). */
   sub: string
   role: Role
+  /** Token version — must match the user's current `tokenVersion` (§11). */
+  tv: number
   /** Issued-at, seconds since epoch — drives the network-aware idle check. */
   iat: number
 }
@@ -17,9 +19,14 @@ export interface SessionClaims {
 /**
  * Sign a session JWT. `exp` is the hard cap (JWT_REFRESH_EXPIRY); the shorter
  * network-aware idle window is enforced separately against `iat` in requireAuth.
+ * `tv` carries the user's `tokenVersion` so a password/role change can revoke it.
  */
-export function signSessionToken(payload: { sub: string; role: Role }): Promise<string> {
-  return new SignJWT({ role: payload.role })
+export function signSessionToken(payload: {
+  sub: string
+  role: Role
+  tokenVersion: number
+}): Promise<string> {
+  return new SignJWT({ role: payload.role, tv: payload.tokenVersion })
     .setProtectedHeader({ alg: ALG })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -30,11 +37,16 @@ export function signSessionToken(payload: { sub: string; role: Role }): Promise<
 /** Verify signature + `exp`, returning typed claims. Throws on any invalid token. */
 export async function verifySessionToken(token: string): Promise<SessionClaims> {
   const { payload } = await jwtVerify(token, secret, { algorithms: [ALG] })
-  const { sub, role, iat } = payload
-  if (typeof sub !== 'string' || typeof iat !== 'number' || !isRole(role)) {
+  const { sub, role, tv, iat } = payload
+  if (
+    typeof sub !== 'string' ||
+    typeof iat !== 'number' ||
+    typeof tv !== 'number' ||
+    !isRole(role)
+  ) {
     throw new Error('Malformed session token')
   }
-  return { sub, role, iat }
+  return { sub, role, tv, iat }
 }
 
 function isRole(value: unknown): value is Role {

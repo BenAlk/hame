@@ -18,6 +18,7 @@ import {
   type NormalisedIngredient,
 } from '@hame/shared'
 import { HttpError } from '../../lib/http-error.js'
+import { safeFetch } from '../../lib/safe-fetch.js'
 
 const FETCH_TIMEOUT_MS = 10_000
 const MAX_HTML_BYTES = 5_000_000 // guard against unbounded pages
@@ -43,7 +44,7 @@ async function fetchHtml(url: string): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; HameRecipeImport/1.0)' },
       signal: controller.signal,
     })

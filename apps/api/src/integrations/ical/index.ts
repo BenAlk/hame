@@ -7,6 +7,7 @@
  * network; {@link fetchICalEvents} is the thin fetch wrapper around it.
  */
 import ical, { type VEvent } from 'node-ical'
+import { safeFetch } from '../../lib/safe-fetch.js'
 
 /** One external event, ready to persist as a `SyncedEvent`. */
 export interface ParsedSyncedEvent {
@@ -92,7 +93,7 @@ export async function fetchICalEvents(url: string): Promise<ParsedSyncedEvent[]>
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; HameCalendarSync/1.0)' },
       signal: controller.signal,
     })

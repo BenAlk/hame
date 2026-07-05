@@ -8,7 +8,7 @@ export default defineConfig({
       NODE_ENV: 'test',
       DATABASE_URL: 'postgresql://hame:hame@localhost:5432/hame_test?schema=public',
       CORS_ORIGINS: 'http://localhost:5173',
-      JWT_SECRET: 'test-secret-test-secret',
+      JWT_SECRET: 'test-secret-test-secret-test-secret',
       ENCRYPTION_KEY: '0'.repeat(64),
     },
   },

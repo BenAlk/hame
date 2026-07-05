@@ -9,6 +9,16 @@ import { hashPassword, verifyPassword } from '../lib/password.js'
 /** Unambiguous charset (no 0/o/1/l) for a readable app password. */
 const CHARSET = 'abcdefghijkmnpqrstuvwxyz23456789'
 
+// A real argon2 hash of a throwaway value, computed once. Verifying against it
+// when the username is unknown (or has no app passwords) equalises response
+// timing so valid CalDAV usernames can't be enumerated by how long a failed
+// auth takes — the same defence as the login path (auth.service.ts).
+let dummyHash: Promise<string> | null = null
+function getDummyHash(): Promise<string> {
+  dummyHash ??= hashPassword('hame-caldav-timing-equaliser')
+  return dummyHash
+}
+
 /** A grouped, readable app password, e.g. `abcde-fghij-klmnp-qrstu`. */
 function generatePassword(): string {
   const bytes = randomBytes(20)
@@ -81,7 +91,12 @@ export async function verifyCalDavAuth(
     where: { username },
     select: { id: true, calDavCredentials: { select: { id: true, passwordHash: true } } },
   })
-  if (!user) return null
+  if (!user || user.calDavCredentials.length === 0) {
+    // Burn one hash verify so an unknown / credential-less user takes the same
+    // time as a real password check (see getDummyHash).
+    await verifyPassword(await getDummyHash(), password).catch(() => false)
+    return null
+  }
   for (const cred of user.calDavCredentials) {
     if (await verifyPassword(cred.passwordHash, password).catch(() => false)) {
       await prisma.calDavCredential

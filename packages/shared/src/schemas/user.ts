@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { HEX_COLOUR_REGEX, ROLES } from '../constants/index.js'
+import { httpUrl } from './common.js'
 
 export const RoleSchema = z.enum(ROLES)
 
@@ -28,7 +29,7 @@ const ProfileFields = z.object({
   firstName: z.string().min(1).optional(),
   surname: z.string().min(1).optional(),
   colour: z.string().regex(HEX_COLOUR_REGEX).optional(),
-  avatarUrl: z.string().url().nullish(),
+  avatarUrl: httpUrl().nullish(),
   password: z.string().min(8).optional(),
   dob: z.coerce.date().optional(),
 })
@@ -64,6 +65,8 @@ export const PublicUserSchema = z.object({
   colour: z.string(),
   dob: z.coerce.date(),
   role: RoleSchema,
+  /** Session-invalidation counter (bumped on password/role change). Non-sensitive. */
+  tokenVersion: z.number().int(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
 })

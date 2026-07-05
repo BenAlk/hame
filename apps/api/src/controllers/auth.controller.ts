@@ -14,7 +14,11 @@ export const loginController: RequestHandler = async (req, res, next) => {
     const { username, password } = req.body as LoginInput
     const user = await login(username, password)
 
-    const token = await signSessionToken({ sub: user.id, role: user.role })
+    const token = await signSessionToken({
+      sub: user.id,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+    })
     setSessionCookie(res, token)
     // Refresh the CSRF token alongside the new session.
     setCsrfCookie(res, generateCsrfToken())

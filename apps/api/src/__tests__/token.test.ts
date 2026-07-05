@@ -3,15 +3,16 @@ import { signSessionToken, verifySessionToken } from '../lib/token.js'
 
 describe('session token', () => {
   it('round-trips claims', async () => {
-    const token = await signSessionToken({ sub: 'user-1', role: 'ADMIN' })
+    const token = await signSessionToken({ sub: 'user-1', role: 'ADMIN', tokenVersion: 3 })
     const claims = await verifySessionToken(token)
     expect(claims.sub).toBe('user-1')
     expect(claims.role).toBe('ADMIN')
+    expect(claims.tv).toBe(3)
     expect(typeof claims.iat).toBe('number')
   })
 
   it('rejects a tampered token', async () => {
-    const token = await signSessionToken({ sub: 'user-1', role: 'MEMBER' })
+    const token = await signSessionToken({ sub: 'user-1', role: 'MEMBER', tokenVersion: 0 })
     await expect(verifySessionToken(token + 'x')).rejects.toThrow()
   })
 

@@ -20,7 +20,7 @@ const EnvSchema = z.object({
         .map((origin) => origin.trim())
         .filter(Boolean),
     ),
-  JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   // External (off-LAN) session idle window — short, re-auth required after it lapses.
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   // Local (on-LAN) session idle window + hard cap on the session JWT.

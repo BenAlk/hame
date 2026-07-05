@@ -3,6 +3,7 @@ import helmet from 'helmet'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import { rateLimit } from 'express-rate-limit'
+import type { Request } from 'express'
 import { pinoHttp } from 'pino-http'
 import { env } from './lib/env.js'
 import { logger } from './lib/logger.js'
@@ -44,6 +45,27 @@ export function createApp() {
   // Ensure every client has a readable CSRF token to echo back on mutations.
   app.use(ensureCsrfCookie)
 
+  // Rate-limit key: behind Cloudflare, req.ip is Cloudflare's edge IP (every
+  // external user would share one bucket), so prefer the real client from
+  // CF-Connecting-IP. On-LAN there's no CF header and req.ip is the device.
+  const clientIpKey = (req: Request): string =>
+    (req.headers['cf-connecting-ip'] as string | undefined) ?? req.ip ?? 'unknown'
+
+  // Coarse backstop across the whole API so no single client can hammer
+  // expensive endpoints (e.g. the outbound-fetch recipe import). Generous enough
+  // for the wall tablet's polling + SSE; the strict login limiter sits on top.
+  app.use(
+    '/api',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 1200,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      keyGenerator: clientIpKey,
+      validate: { ip: false },
+    }),
+  )
+
   // Brute-force protection on login only (5 attempts / 15 min per IP). Scoped to
   // the credential-guessing surface — NOT the whole /api/auth tree, since `/me`
   // is called on every page load and `/logout` is benign; throttling those would
@@ -55,6 +77,8 @@ export function createApp() {
       limit: 5,
       standardHeaders: 'draft-7',
       legacyHeaders: false,
+      keyGenerator: clientIpKey,
+      validate: { ip: false },
     }),
   )
 
@@ -64,6 +88,22 @@ export function createApp() {
   // via /.well-known/caldav. Self-gates on the household toggle + app-password auth.
   // Any method (DAVx5 uses PROPFIND here, not GET) → redirect to the CalDAV root.
   app.all('/.well-known/caldav', (_req, res) => res.redirect(301, '/caldav/'))
+
+  // Brute-force protection for CalDAV app passwords (HTTP Basic). Only failed
+  // requests count (skipSuccessfulRequests), so a synced client's frequent
+  // getctag/REPORT polling is never throttled — only repeated 401s are.
+  app.use(
+    '/caldav',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 30,
+      skipSuccessfulRequests: true,
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      keyGenerator: clientIpKey,
+      validate: { ip: false },
+    }),
+  )
   app.use('/caldav', caldavRouter)
 
   app.use(notFoundHandler)

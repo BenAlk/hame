@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { SPECIES } from '../constants/index.js'
+import { httpUrl } from './common.js'
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
 const atLeastOneFieldMessage = { message: 'At least one field must be provided' }
@@ -12,7 +13,7 @@ const PetFields = z.object({
   species: SpeciesSchema,
   breed: z.string().max(60).nullish(),
   dob: z.coerce.date().nullish(),
-  imageUrl: z.string().url().nullish(),
+  imageUrl: httpUrl().nullish(),
 })
 
 export const CreatePetSchema = PetFields

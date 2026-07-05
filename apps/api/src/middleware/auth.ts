@@ -37,10 +37,17 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     const user = await prisma.user.findUnique({ where: { id: claims.sub } })
     if (!user) throw HttpError.unauthorized()
 
+    // Reject a token minted before the user's last password/role change (§11).
+    if (claims.tv !== user.tokenVersion) throw HttpError.unauthorized('Session expired')
+
     req.user = toPublicUser(user)
 
     // Slide the session forward so active use never lapses within the window.
-    const fresh = await signSessionToken({ sub: user.id, role: user.role })
+    const fresh = await signSessionToken({
+      sub: user.id,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+    })
     setSessionCookie(res, fresh)
 
     next()

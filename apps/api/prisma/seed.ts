@@ -15,13 +15,13 @@ async function main() {
   const password = await argon2.hash('changeme123')
 
   const admin = await prisma.user.upsert({
-    where: { username: 'ben' },
+    where: { username: 'alex' },
     update: {},
     create: {
-      username: 'ben',
+      username: 'alex',
       password,
-      firstName: 'Ben',
-      surname: 'Alkureishi',
+      firstName: 'Alex',
+      surname: 'Morgan',
       colour: '#d16a6a',
       dob: new Date('1990-01-01'),
       role: 'ADMIN',
@@ -31,13 +31,13 @@ async function main() {
 
   // A second household member so rotating chores have someone to cycle to.
   const partner = await prisma.user.upsert({
-    where: { username: 'partner' },
+    where: { username: 'sam' },
     update: {},
     create: {
-      username: 'partner',
+      username: 'sam',
       password,
-      firstName: 'Robin',
-      surname: 'Alkureishi',
+      firstName: 'Sam',
+      surname: 'Rivers',
       colour: '#6f8169',
       dob: new Date('1991-05-02'),
       role: 'MEMBER',

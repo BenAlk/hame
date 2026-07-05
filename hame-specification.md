@@ -1695,6 +1695,47 @@ cases, the precedence and cadence-state matrix, and the service's toggle-gated c
 builds clean, plus a live integration smoke against the real DB — a consumable with four ~21-day-apart
 purchases reads `none` with the toggle off and `auto · 21 days` (confident, effective 21) with it on.
 
+### Phase 8.6 — Security hardening (pre-open-source) ✅ Complete (05-07-2026)
+
+A focused hardening pass before the repository goes public — closing the attack
+vectors a reviewer (or a self-hoster with a less-trusted household) could reach,
+and tightening a few defaults. One migration (`security_token_version`);
+otherwise service / middleware / schema changes.
+
+- **SSRF guard on user-supplied fetches.** Recipe import (§8.5) and external iCal
+  feeds (§8.10) fetch arbitrary URLs, so a member could otherwise point them at
+  internal services. A shared `safeFetch` (`lib/safe-fetch.ts`) rejects any
+  non-http(s) scheme and any host that resolves to a loopback / private /
+  link-local / reserved address (incl. the `169.254.169.254` metadata endpoint),
+  and **re-validates on every redirect hop** so a public URL can't 302 onto an
+  internal one. Deliberately **not** applied to the admin-configured Home
+  Assistant / Immich / Ollama clients, which are *meant* to reach the LAN.
+- **URL-scheme validation (stored-XSS fix).** Zod's `.url()` accepts
+  `javascript:` / `data:`; a shared `httpUrl()` now constrains user URL fields
+  (recipe source/image, pet image, avatar) to http(s) at the schema, with a
+  defence-in-depth guard at the one render site that puts a URL in an `href`.
+- **CSP + security headers** on the served HTML (`docker/nginx.conf`) —
+  `default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`, plus
+  `X-Content-Type-Options` / `Referrer-Policy` / `X-Frame-Options`.
+- **Session revocation.** A `User.tokenVersion` is embedded in the session JWT
+  and checked in `requireAuth`; a password or role change bumps it, invalidating
+  outstanding sessions at once (previously a captured token stayed valid for the
+  whole idle window).
+- **Rate limiting broadened.** A coarse per-client limiter now spans the whole
+  API (not just login), and every limiter keys on `CF-Connecting-IP` behind
+  Cloudflare so external clients don't share one edge-IP bucket. The CalDAV
+  server gained a failed-attempt limiter and a timing-equalised app-password
+  check (matching the login path).
+- **Immich proxy scoped.** The screensaver photo proxy (§8.14) now serves only
+  assets in the configured album pool (cached briefly), so a member can't
+  enumerate the whole library by guessing asset ids.
+- **Tighter defaults.** `JWT_SECRET` minimum raised to 32 chars; demo seed data
+  de-personalised.
+
+Verified: typecheck / lint / format green, 399 tests (356 API + 43 web, incl. the
+SSRF guard's scheme / private-range / redirect cases and the token-version
+rejection), all builds clean.
+
 ### Phase 9 — Polish & Portfolio Prep
 
 Comprehensive README, demo data seed script, architecture diagrams, tests for critical flows, production Docker setup, blog post draft.
@@ -1713,10 +1754,13 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - **Middleware**:
   - `helmet` for security headers
   - `cors` locked to allowed origins
-  - `express-rate-limit` on the login endpoint `/api/auth/login` (5 attempts / 15 mins per IP) — scoped to the credential-guessing surface, not the whole `/api/auth` tree, so the per-page-load `/me` check and `/logout` aren't throttled
+  - `express-rate-limit` on the login endpoint `/api/auth/login` (5 attempts / 15 mins per IP) — scoped to the credential-guessing surface, not the whole `/api/auth` tree, so the per-page-load `/me` check and `/logout` aren't throttled — plus a coarse per-client limiter across the whole `/api`, and a failed-attempt limiter on the CalDAV server (Phase 8.6). Every limiter keys on `CF-Connecting-IP` so external clients don't share one Cloudflare edge-IP bucket.
 - **Trust proxy / real client IP**: the app sits behind Cloudflare + a reverse proxy, so Express must set `trust proxy` correctly and derive the client IP from `CF-Connecting-IP`. Otherwise every request appears to come from a proxy IP and the per-IP rate limit collapses into a single shared bucket. Do **not** blindly trust `X-Forwarded-For` (spoofable) — pin to the known proxy.
 - **CSRF**: because JWT is stored in an httpOnly cookie, cookie-based requests need CSRF protection — set `SameSite=Lax` (or `Strict`) on the auth cookie and add a double-submit CSRF token for state-changing routes. (Bearer-token requests are exempt.)
-- **Env vars** validated at startup with Zod — fail fast if misconfigured
+- **Session revocation**: the session JWT carries a `User.tokenVersion`; a password or role change bumps it and `requireAuth` rejects any stale token, so outstanding sessions are invalidated at once (Phase 8.6).
+- **SSRF guard on outbound fetches**: user-supplied URLs (recipe import, iCal feeds) go through a shared `safeFetch` that refuses non-http(s) schemes and hosts resolving to loopback/private/link-local/reserved addresses, re-checking each redirect hop. Admin-configured integrations (HA/Immich/Ollama), which legitimately target the LAN, are exempt (Phase 8.6).
+- **Content-Security-Policy** and companion headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) on the served HTML; user URL fields are constrained to http(s) at the Zod schema to prevent `javascript:`-scheme stored XSS (Phase 8.6).
+- **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
 - **httpOnly cookies** for JWT preferred over localStorage
 

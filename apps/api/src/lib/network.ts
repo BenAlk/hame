@@ -91,6 +91,38 @@ function getClientIp(req: Request): string | undefined {
   return req.ip ?? req.socket.remoteAddress ?? undefined
 }
 
+// Address ranges an outbound fetch must never reach — loopback, private LAN,
+// link-local (incl. the 169.254.169.254 cloud-metadata endpoint), CGNAT, and the
+// IPv6 equivalents. Used by the SSRF guard (lib/safe-fetch.ts) to keep a
+// user-supplied URL (recipe import, iCal feeds) from probing internal services.
+const BLOCKED_FETCH_CIDRS: ParsedCidr[] = [
+  '0.0.0.0/8', // "this host"
+  '10.0.0.0/8', // private
+  '100.64.0.0/10', // CGNAT
+  '127.0.0.0/8', // loopback
+  '169.254.0.0/16', // link-local (incl. cloud metadata)
+  '172.16.0.0/12', // private
+  '192.0.0.0/24', // IETF protocol assignments
+  '192.168.0.0/16', // private
+  '198.18.0.0/15', // benchmarking
+  '::1/128', // loopback
+  'fc00::/7', // unique local
+  'fe80::/10', // link-local
+]
+  .map(parseCidr)
+  .filter((c): c is ParsedCidr => c !== null)
+
+/**
+ * True if an IP literal falls in a loopback / private / link-local / reserved
+ * range that an outbound fetch should refuse. Malformed input is treated as
+ * blocked (fail closed). See {@link BLOCKED_FETCH_CIDRS}.
+ */
+export function isBlockedFetchIp(ip: string): boolean {
+  const parsed = parseIp(ip)
+  if (!parsed) return true
+  return BLOCKED_FETCH_CIDRS.some((cidr) => inCidr(parsed, cidr))
+}
+
 /**
  * Is this request coming from the local network? Used to pick the session idle
  * window (long on-LAN, short off-LAN). External traffic arrives via Cloudflare,

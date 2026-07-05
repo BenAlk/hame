@@ -120,6 +120,9 @@ async function applyUserUpdate(
   const existing = await prisma.user.findUnique({ where: { id } })
   if (!existing) throw HttpError.notFound('User not found')
 
+  // A password or role change must revoke the user's existing sessions (§11).
+  const revokesSessions = input.password !== undefined || input.role !== undefined
+
   const user = await prisma.user.update({
     where: { id },
     data: {
@@ -130,6 +133,7 @@ async function applyUserUpdate(
       ...(input.dob !== undefined && { dob: input.dob }),
       ...(input.role !== undefined && { role: input.role }),
       ...(input.password !== undefined && { password: await hashPassword(input.password) }),
+      ...(revokesSessions && { tokenVersion: { increment: 1 } }),
     },
   })
   return toPublicUser(user)
