@@ -10,6 +10,7 @@ function toSettings(row: HouseholdSettingsRow): HouseholdSettings {
     enabledMealTypes: row.enabledMealTypes,
     ingredientNormaliser: row.ingredientNormaliser,
     caldavEnabled: row.caldavEnabled,
+    autoConsumableCadence: row.autoConsumableCadence,
     updatedAt: row.updatedAt,
   }
 }
@@ -33,6 +34,9 @@ export async function updateHouseholdSettings(
       ingredientNormaliser: input.ingredientNormaliser,
     }),
     ...(input.caldavEnabled !== undefined && { caldavEnabled: input.caldavEnabled }),
+    ...(input.autoConsumableCadence !== undefined && {
+      autoConsumableCadence: input.autoConsumableCadence,
+    }),
   }
   const row = await prisma.householdSettings.upsert({
     where: { id: SINGLETON_ID },

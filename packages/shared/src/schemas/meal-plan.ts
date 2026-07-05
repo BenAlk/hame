@@ -139,6 +139,8 @@ export const HouseholdSettingsSchema = z.object({
   ingredientNormaliser: NormaliserStrategySchema,
   /** Whether the calendar is served over CalDAV (spec §10 Phase 5.5). */
   caldavEnabled: z.boolean(),
+  /** Labs: estimate consumable re-order cadences from purchase history (§10 Phase 8.5). */
+  autoConsumableCadence: z.boolean(),
   updatedAt: z.coerce.date(),
 })
 export type HouseholdSettings = z.infer<typeof HouseholdSettingsSchema>
@@ -148,6 +150,7 @@ export const UpdateHouseholdSettingsSchema = z
     enabledMealTypes: z.array(MealTypeSchema).min(1, 'Enable at least one meal type'),
     ingredientNormaliser: NormaliserStrategySchema,
     caldavEnabled: z.boolean(),
+    autoConsumableCadence: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided' })

@@ -746,7 +746,7 @@ model IdleModeSettings {
   5. Original list status set to `ARCHIVED`
 - **History preserved** — archived lists viewable for historical reference
 - **Consumables** (household re-order checklist) — non-perishable, non-recipe household goods (loo roll, kitchen roll, foil, washing-up liquid, dishwasher tabs, sugar) that aren't expiry- or recipe-tracked but still fill a shop. Modelled as `Item.isConsumable` (mirrors `isStaple`), **not** a separate list.
-  - **Consumables page** — the curated list is every `Item` with `isConsumable`. A find-or-create input adds an item _and_ auto-sets the flag in one gesture; removing just unsets it (the `Item` and its history survive). An optional per-item `reorderIntervalDays` is captured here for later.
+  - **Consumables page** — the curated list is every `Item` with `isConsumable`. A find-or-create input adds an item _and_ auto-sets the flag in one gesture; removing just unsets it (the `Item` and its history survive). An optional per-item `reorderIntervalDays` (re-order cadence) is captured here; it drives the "probably due" highlight (§10 Phase 8.4) and, behind an opt-in Labs toggle, can be **estimated automatically from purchase history** (§10 Phase 8.5).
   - **"Add consumables" panel** (always available on the Shopping page) — a checklist beside the current list; ticking adds an ordinary `ShoppingListItem` (using the item's `defaultQuantity`/`defaultUnit`, source `CONSUMABLES`). Items already on the list show ticked/greyed. Each row shows **"last bought N days ago"**, derived live from the most recent `boughtAt` across archived lists — no new tracking.
 - **Merge badge** — when the same `Item` reaches a list from more than one channel (manual, meal-plan generate, consumables, rollover) its quantities **sum** into one line (base units, §9.2) and the line's `sources` set unions. A small circle **×N** badge (N = distinct sources, max 4) flags it, so a summed quantity is easy to sanity-check.
 
@@ -1611,7 +1611,7 @@ window-exclusion and the empty-household case), all builds clean.
 "pulling your weight" dashboard — stays a §12 down-the-line nicety, not needed for a two-person
 household.)
 
-### Phase 8.4 — Consumables (household re-order checklist)
+### Phase 8.4 — Consumables (household re-order checklist) ✅ Complete (03-07-2026)
 
 A shopping enhancement (slotted here in build order — not part of Phase 8's notifications theme;
 §8.3 / §8.6): non-perishable, non-recipe household goods — loo roll, kitchen roll, foil, washing-up
@@ -1620,21 +1620,80 @@ shop, instead of falling through the recipe/pantry cracks.
 
 **Goal**: The boring-but-essential household items never get forgotten off a shop.
 
-**Scope (v1)**: One migration adds `Item.isConsumable` (mirrors `isStaple`) and a nullable
-`Item.reorderIntervalDays` (captured now, drives nothing yet), plus `ShoppingListItem.sources` (the
-new `ShoppingItemSource` enum — `MANUAL | MEAL_PLAN | CONSUMABLES | ROLLOVER`) behind the ×N merge
-badge. Shared `@hame/shared` gains the consumable / source schemas. The API adds a **consumables**
-slice (list / flag / unflag via find-or-create, and a "last bought N days ago" read from `boughtAt`
-history) and folds the **merge-and-union** rule into both the shopping add path and
-`generate-shopping-list`, which now **folds the shortfall into a target list** (most-recent active, or
-new) rather than always minting one. Web: a **Consumables** page (curated list, auto-flag add,
-optional cadence field), an always-available **"Add consumables"** checklist on the Shopping page, the
-**×N merge badge** on summed lines, and the **two-panel generate modal** (food list + consumables
-checklist).
+**Delivered**: One migration added `Item.isConsumable` (mirrors `isStaple`) and a nullable
+`Item.reorderIntervalDays` (a re-order cadence — it drives the "probably due" highlight below, and
+the auto-estimate in §10 Phase 8.5), plus `ShoppingListItem.sources` (the new `ShoppingItemSource`
+enum — `MANUAL | MEAL_PLAN | CONSUMABLES | ROLLOVER`) behind the ×N merge badge. Shared
+`@hame/shared` gained the consumable / source schemas. The API added a **consumables** slice (list /
+flag / unflag via find-or-create, and a "last bought N days ago" read from `boughtAt` history) and
+folded the **merge-and-union** rule into both the shopping add path and `generate-shopping-list`,
+which now **folds the shortfall into a target list** (most-recent active, or new) rather than always
+minting one. Web: a **Consumables** page (curated list, auto-flag add, optional cadence field), an
+always-available **"Add consumables"** checklist on the Shopping page, the **×N merge badge** on
+summed lines, and the **two-panel generate modal** (food list + consumables checklist).
 
 **"Probably due" highlight**: a consumable whose cadence (`reorderIntervalDays`) has elapsed since
 its last purchase is flagged with a **Due** chip and pre-ticked in the add-consumables panel and
 the generate modal. A consumable never bought stays neutral (no baseline to nag from).
+
+### Phase 8.5 — Auto-cadence consumables (Labs) ✅ Complete (05-07-2026)
+
+An opt-in refinement to the §8.3 re-order cadence. Today a consumable's
+`reorderIntervalDays` is a static number a household member types in — most never get one, so they
+never surface as "probably due" (§10 Phase 8.4). This phase **infers a cadence from the purchase
+history Hame already records** (`boughtAt`), behind a household **Labs** toggle, so nothing changes
+by default.
+
+**Goal**: Consumables you buy on a rhythm surface as "due" on their own — without anyone typing a number.
+
+**Design** (the shape that shipped):
+
+- **One household setting** — `HouseholdSettings.autoConsumableCadence` (default **off**, admin-only,
+  in a new Settings **"Labs"** card with a plain-English explainer). Off = exactly today's behaviour:
+  manual cadences only, no suggestions, no chips no one typed.
+- **Manual cadence is always definitive** — a typed `reorderIntervalDays` drives the "due" highlight
+  and is **never overwritten** by anything automatic. Everything below sits on top of that, only when
+  the toggle is on:
+  - **Suggest (≥3 purchases, no manual cadence)** — offer the estimate as a one-tap **Use** that
+    writes it as the manual value; drives nothing until accepted.
+  - **Auto-apply (≥4 purchases, no manual cadence)** — the estimate takes effect: the item lights up
+    the **Due** chip and pre-ticks in the add-consumables / generate panels exactly as a typed cadence
+    would (§8.3) — **`Due` + pre-tick only, never silently dropped onto a live list**. Shown as an
+    "auto" cadence with a **Pin** that promotes it to a manual value.
+  - **Divergence nudge (manual cadence set)** — when the observed cadence diverges materially from the
+    typed one (outside ~0.5×–2×), a small tag suggests the change; accepting overwrites the manual
+    value (a user's explicit choice, so overwriting is fine).
+- **The estimate** is the **median** of consecutive-day gaps between purchases (deduped to calendar
+  days, windowed to the most recent ~6), robust to the odd double-buy or long gap. A **regularity
+  guard** keeps an erratic history (wildly varying gaps) at "suggest" rather than auto-applying a
+  meaningless number.
+- **Stays derived, never materialised** — the estimate is computed on read from existing `boughtAt`
+  history and is **never written into `reorderIntervalDays`** unless the user accepts/pins it, so that
+  column remains manual-only forever and turning the toggle off reverts instantly (no data migration,
+  no stale auto-written values). Mirrors the "derive live, track nothing extra" shape of the §8.3
+  "last bought N days ago" hint.
+
+**Delivered**: One migration added `HouseholdSettings.autoConsumableCadence` (default off). Shared
+`@hame/shared` gained three pure, unit-tested helpers — `suggestReorderInterval(purchaseDates)`
+(dedupe → window of the recent ~6 → **median** of consecutive-day gaps → a `confident` flag gated on
+≥4 purchases and a regularity guard, coefficient-of-variation ≤ 0.4; reusing the DST-free day-ordinal
+maths §10 Phase 8.3), `effectiveReorderInterval({ manual, suggestion }, enabled)` (the manual-wins
+precedence — so Option-1 "suggest-only" is the same function with `enabled` false) and
+`consumableCadenceState(...)` (classifying a row as manual / diverged / auto / suggested / none) —
+plus the extended `ConsumableSchema` (`suggestedIntervalDays`, `suggestionConfident`,
+`effectiveIntervalDays`, `cadenceState`). The consumables service swapped its last-bought
+`groupBy(_max)` for a per-item `boughtAt` series (one query covering both `lastBoughtAt` and the
+estimate) and reads the household toggle — off = manual only, so it doesn't even compute an estimate;
+`isConsumableDue` now consumes the **effective** cadence, so the `Due` chip and both pre-tick panels
+light up from auto values with no change at the call sites. Web: an admin **Labs** card in Settings
+(explainer + toggle, invalidating the consumables cache on change) and **Auto / Suggests /
+History-suggests** tags on the Consumables rows — each with a tooltip, so a non-admin member
+understands an auto chip in-context (there is no member-facing Labs menu) — plus the **Use** / **Pin**
+actions that adopt an estimate as the manual value. Verified: typecheck / lint / format green, 393
+tests (350 API + 43 web; incl. the median/outlier, 3-vs-4-purchase, regularity, windowing and dedupe
+cases, the precedence and cadence-state matrix, and the service's toggle-gated computation), all
+builds clean, plus a live integration smoke against the real DB — a consumable with four ~21-day-apart
+purchases reads `none` with the toggle off and `auto · 21 days` (confident, effective 21) with it on.
 
 ### Phase 9 — Polish & Portfolio Prep
 

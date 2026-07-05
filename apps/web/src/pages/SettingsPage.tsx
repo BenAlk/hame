@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import type {
   HaConnectionStatus,
@@ -145,8 +146,53 @@ export function SettingsPage() {
             </button>
           </CardContent>
         </Card>
+
+        <LabsCard />
       </div>
     </main>
+  )
+}
+
+/** Beta/experimental household features (spec §10 Phase 8.5). */
+function LabsCard() {
+  const { data: settings } = useHouseholdSettings()
+  const updateSettings = useUpdateHouseholdSettings()
+  const qc = useQueryClient()
+
+  const enabled = settings?.autoConsumableCadence ?? false
+
+  function toggle() {
+    updateSettings.mutate(
+      { autoConsumableCadence: !enabled },
+      // The consumables list recomputes its cadence states server-side, so refetch it.
+      { onSuccess: () => void qc.invalidateQueries({ queryKey: ['consumables'] }) },
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Labs</CardTitle>
+        <CardDescription>Experimental features, still being tried out.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <ToggleRow
+          label={enabled ? 'Auto consumable cadence on' : 'Auto consumable cadence off'}
+          checked={enabled}
+          disabled={updateSettings.isPending}
+          onChange={toggle}
+        />
+        <p className="text-sm text-muted-foreground">
+          Estimates how often you re-order each consumable from your shopping history — no need to
+          type a cadence. After <strong>three</strong> shops it suggests one you can accept; after{' '}
+          <strong>four</strong> regular shops it applies the estimate automatically, so the item
+          starts showing a <strong>Due</strong> chip when it&apos;s likely running low. It only ever
+          highlights and pre-ticks items — nothing is added to a list without you. A cadence you
+          type yourself always wins and is never overwritten. Off by default; turning it off reverts
+          to typed cadences only.
+        </p>
+      </CardContent>
+    </Card>
   )
 }
 

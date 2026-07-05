@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { RotateCw, X } from 'lucide-react'
 import type { Consumable } from '@hame/shared'
 import { isConsumableDue } from '@hame/shared'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DueChip } from '@/components/features/shopping/due-chip'
@@ -80,7 +81,77 @@ export function ConsumablesPage() {
   )
 }
 
-/** One consumable: name, live last-bought hint, editable re-order cadence, remove. */
+/**
+ * The estimated-cadence tag and its one-tap action, shown only under the Labs
+ * toggle (spec §10 Phase 8.5). `auto` (a confident estimate, already in force)
+ * offers **Pin** to make it a fixed cadence; `suggested` and `diverged` offer
+ * **Use** to adopt the estimate (diverged replaces a typed value that history
+ * disagrees with). `manual` / `none` render nothing.
+ */
+function CadenceControl({
+  consumable,
+  onApply,
+  applying,
+}: {
+  consumable: Consumable
+  onApply: () => void
+  applying: boolean
+}) {
+  const { cadenceState, suggestedIntervalDays } = consumable
+  if (
+    suggestedIntervalDays == null ||
+    (cadenceState !== 'auto' && cadenceState !== 'suggested' && cadenceState !== 'diverged')
+  ) {
+    return null
+  }
+
+  const config = {
+    auto: {
+      label: `Auto · ~${suggestedIntervalDays} days`,
+      action: 'Pin',
+      title:
+        'Estimated from your shopping history and applied automatically. Pin to keep it as a fixed cadence.',
+      pill: 'border-line text-muted-foreground',
+    },
+    suggested: {
+      label: `Suggests ~${suggestedIntervalDays} days`,
+      action: 'Use',
+      title: 'Estimated from your shopping history. Use to set it as this item’s cadence.',
+      pill: 'border-accent/40 bg-accent-soft text-accent',
+    },
+    diverged: {
+      label: `History suggests ~${suggestedIntervalDays} days`,
+      action: 'Use',
+      title:
+        'Your shopping history suggests a different cadence from the one you set. Use to replace it.',
+      pill: 'border-warning text-warning',
+    },
+  }[cadenceState]
+
+  return (
+    <div className="mt-1 flex items-center gap-2">
+      <span
+        title={config.title}
+        className={cn(
+          'inline-flex items-center rounded-pill border px-2 py-0.5 text-[11px] font-medium',
+          config.pill,
+        )}
+      >
+        {config.label}
+      </span>
+      <button
+        type="button"
+        onClick={onApply}
+        disabled={applying}
+        className="text-[11px] font-semibold text-accent underline-offset-2 hover:underline disabled:opacity-50"
+      >
+        {config.action}
+      </button>
+    </div>
+  )
+}
+
+/** One consumable: name, live last-bought hint, cadence estimate/entry, remove. */
 function ConsumableRow({ consumable }: { consumable: Consumable }) {
   const updateConsumable = useUpdateConsumable()
   const removeConsumable = useRemoveConsumable()
@@ -96,6 +167,14 @@ function ConsumableRow({ consumable }: { consumable: Consumable }) {
     void updateConsumable.mutateAsync({ itemId: consumable.id, reorderIntervalDays: next })
   }
 
+  /** Adopt the estimated cadence as this item's manual value (Use / Pin). */
+  function applySuggestion() {
+    const next = consumable.suggestedIntervalDays
+    if (next == null) return
+    setInterval(String(next))
+    void updateConsumable.mutateAsync({ itemId: consumable.id, reorderIntervalDays: next })
+  }
+
   return (
     <li className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
       <div className="min-w-0 flex-1">
@@ -108,6 +187,11 @@ function ConsumableRow({ consumable }: { consumable: Consumable }) {
             ? `Last bought ${relativeDay(consumable.lastBoughtAt).toLowerCase()}`
             : 'Not bought yet'}
         </p>
+        <CadenceControl
+          consumable={consumable}
+          onApply={applySuggestion}
+          applying={updateConsumable.isPending}
+        />
       </div>
 
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">

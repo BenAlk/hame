@@ -307,6 +307,7 @@ model HouseholdSettings {
   enabledMealTypes    MealType[]         @default([DINNER])
   ingredientNormaliser NormaliserStrategy @default(BASIC) // spec §10 Phase 4.5
   caldavEnabled       Boolean            @default(false) // serve the calendar over CalDAV (spec §10 Phase 5.5)
+  autoConsumableCadence Boolean          @default(false) // Labs: estimate consumable re-order cadences from history (spec §10 Phase 8.5)
   updatedAt           DateTime           @updatedAt
 }
 

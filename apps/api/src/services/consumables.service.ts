@@ -1,16 +1,70 @@
 import type { Consumable, SetConsumableInput, UpdateConsumableInput } from '@hame/shared'
+import {
+  consumableCadenceState,
+  effectiveReorderInterval,
+  suggestReorderInterval,
+} from '@hame/shared'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { itemInclude, findOrCreateItemByName, toItem } from './item.service.js'
+import { getHouseholdSettings } from './household-settings.service.js'
 
 /**
- * Consumables (spec §8.3, §10 Phase 8.4) are just `Item`s flagged
+ * Consumables (spec §8.3, §10 Phase 8.4 / 8.5) are just `Item`s flagged
  * `isConsumable` — the curated household re-order checklist. There's no separate
- * table: "last bought N days ago" is derived live from the newest `boughtAt`
- * across archived lists, so nothing extra is tracked.
+ * table: both "last bought N days ago" and the auto-cadence estimate are derived
+ * live from the `boughtAt` history, so nothing extra is tracked. The estimate
+ * only ever surfaces when the household's Labs toggle is on (§10 Phase 8.5).
  */
 
-/** List every consumable with its live last-bought date, newest-purchase first. */
+type ItemWithTags = Prisma.ItemGetPayload<{ include: typeof itemInclude }>
+
+/**
+ * Assemble a consumable's public shape from its item row and its purchase-day
+ * history. Computes the live last-bought date and — from the same history — the
+ * cadence suggestion, the effective (in-force) cadence and its UI state. The
+ * suggestion is only allowed to auto-apply when `autoEnabled` (the Labs toggle).
+ */
+function buildConsumable(
+  item: ItemWithTags,
+  boughtDates: Date[],
+  autoEnabled: boolean,
+): Consumable {
+  const lastBoughtAt =
+    boughtDates.length === 0
+      ? null
+      : boughtDates.reduce((a, b) => (a.getTime() >= b.getTime() ? a : b))
+  // Off = manual only: don't even compute (let alone surface) an estimate.
+  const suggestion = autoEnabled ? suggestReorderInterval(boughtDates) : null
+  const manual = item.reorderIntervalDays
+  return {
+    ...toItem(item),
+    lastBoughtAt,
+    suggestedIntervalDays: suggestion?.days ?? null,
+    suggestionConfident: suggestion?.confident ?? false,
+    effectiveIntervalDays: effectiveReorderInterval({ manual, suggestion }, autoEnabled),
+    cadenceState: consumableCadenceState({ manual, suggestion }, autoEnabled),
+  }
+}
+
+/** Every dated bought line for the given items, grouped into per-item purchase histories. */
+async function boughtHistoryByItem(itemIds: string[]): Promise<Map<string, Date[]>> {
+  const rows = await prisma.shoppingListItem.findMany({
+    where: { itemId: { in: itemIds }, isBought: true, boughtAt: { not: null } },
+    select: { itemId: true, boughtAt: true },
+  })
+  const byItem = new Map<string, Date[]>()
+  for (const row of rows) {
+    if (!row.boughtAt) continue
+    const dates = byItem.get(row.itemId)
+    if (dates) dates.push(row.boughtAt)
+    else byItem.set(row.itemId, [row.boughtAt])
+  }
+  return byItem
+}
+
+/** List every consumable with its live last-bought date and cadence state, name-sorted. */
 export async function listConsumables(): Promise<Consumable[]> {
   const items = await prisma.item.findMany({
     where: { isConsumable: true },
@@ -19,18 +73,10 @@ export async function listConsumables(): Promise<Consumable[]> {
   })
   if (items.length === 0) return []
 
-  // Newest purchase per item across every (archived or active) bought line.
-  const bought = await prisma.shoppingListItem.groupBy({
-    by: ['itemId'],
-    where: { itemId: { in: items.map((i) => i.id) }, isBought: true },
-    _max: { boughtAt: true },
-  })
-  const lastBoughtByItem = new Map(bought.map((b) => [b.itemId, b._max.boughtAt]))
+  const autoEnabled = (await getHouseholdSettings()).autoConsumableCadence
+  const historyByItem = await boughtHistoryByItem(items.map((i) => i.id))
 
-  return items.map((item) => ({
-    ...toItem(item),
-    lastBoughtAt: lastBoughtByItem.get(item.id) ?? null,
-  }))
+  return items.map((item) => buildConsumable(item, historyByItem.get(item.id) ?? [], autoEnabled))
 }
 
 /**
@@ -81,11 +127,9 @@ export async function removeConsumable(itemId: string): Promise<void> {
 async function getConsumable(itemId: string): Promise<Consumable> {
   const item = await prisma.item.findUnique({ where: { id: itemId }, include: itemInclude })
   if (!item) throw HttpError.notFound('Consumable not found')
-  const bought = await prisma.shoppingListItem.aggregate({
-    where: { itemId, isBought: true },
-    _max: { boughtAt: true },
-  })
-  return { ...toItem(item), lastBoughtAt: bought._max.boughtAt ?? null }
+  const autoEnabled = (await getHouseholdSettings()).autoConsumableCadence
+  const history = (await boughtHistoryByItem([itemId])).get(itemId) ?? []
+  return buildConsumable(item, history, autoEnabled)
 }
 
 async function assertConsumable(itemId: string): Promise<void> {

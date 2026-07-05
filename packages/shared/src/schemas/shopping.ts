@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { LIST_STATUSES, SHOPPING_ITEM_SOURCES } from '../constants/index.js'
+import { CONSUMABLE_CADENCE_STATES } from '../consumables.js'
 import { ItemSchema } from './item.js'
 import { MemberSummarySchema } from './user.js'
 
@@ -112,15 +113,26 @@ export interface ArchiveShoppingListResult {
   newList: ShoppingList | null
 }
 
-// ── Consumables (spec §8.3, §10 Phase 8.4) ───────────────────────────────────
+// ── Consumables (spec §8.3, §10 Phase 8.4 / 8.5) ─────────────────────────────
 
 /**
- * A curated consumable — an `Item` flagged `isConsumable`, plus `lastBoughtAt`
- * derived live from the newest `boughtAt` across archived lists (no new
- * tracking). Drives the re-order checklist's "last bought N days ago" hint.
+ * A curated consumable — an `Item` flagged `isConsumable`, plus fields derived
+ * live from `boughtAt` history (no new tracking). `lastBoughtAt` drives the
+ * "last bought N days ago" hint; the cadence fields drive the re-order highlight
+ * and the Labs auto-cadence estimate (§10 Phase 8.5):
+ *
+ * - `reorderIntervalDays` (on `Item`) — the manually typed cadence, always definitive.
+ * - `suggestedIntervalDays` — estimated from history, or null with too little.
+ * - `suggestionConfident` — whether that estimate clears the bar to auto-apply.
+ * - `effectiveIntervalDays` — the cadence actually in force (manual, or auto-applied).
+ * - `cadenceState` — how to label the row (manual / auto / suggested / diverged / none).
  */
 export const ConsumableSchema = ItemSchema.extend({
   lastBoughtAt: z.coerce.date().nullable(),
+  suggestedIntervalDays: z.number().int().nullable(),
+  suggestionConfident: z.boolean(),
+  effectiveIntervalDays: z.number().int().nullable(),
+  cadenceState: z.enum(CONSUMABLE_CADENCE_STATES),
 })
 export type Consumable = z.infer<typeof ConsumableSchema>
 
