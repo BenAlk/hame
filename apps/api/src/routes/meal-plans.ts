@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import {
+  ClearMealPlanSchema,
   CreateMealPlanEntrySchema,
+  GenerateMealPlanSchema,
   GenerateShoppingListSchema,
   PreviewShoppingListSchema,
   UpdateMealPlanEntrySchema,
@@ -9,8 +11,10 @@ import { validateBody } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
 import {
+  clearMealPlanController,
   createMealPlanEntryController,
   deleteMealPlanEntryController,
+  generateMealPlanController,
   generateShoppingListController,
   listMealPlanEntriesController,
   previewShoppingListController,
@@ -33,6 +37,20 @@ mealPlansRouter.post(
   verifyCsrf,
   validateBody(GenerateShoppingListSchema),
   generateShoppingListController,
+)
+mealPlansRouter.post(
+  '/generate',
+  requireAuth,
+  verifyCsrf,
+  validateBody(GenerateMealPlanSchema),
+  generateMealPlanController,
+)
+mealPlansRouter.post(
+  '/clear',
+  requireAuth,
+  verifyCsrf,
+  validateBody(ClearMealPlanSchema),
+  clearMealPlanController,
 )
 mealPlansRouter.post(
   '/',

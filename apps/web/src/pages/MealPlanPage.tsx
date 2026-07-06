@@ -1,17 +1,28 @@
 import { useMemo, useState } from 'react'
 import { addDays, addWeeks, format, isToday, startOfWeek } from 'date-fns'
-import { ChevronLeft, ChevronRight, Plus, Settings2, ShoppingCart } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Dices,
+  Plus,
+  Settings2,
+  ShoppingCart,
+  Trash2,
+} from 'lucide-react'
 import type { CreateMealPlanEntryInput, MealPlanEntry, MealType, PublicUser } from '@hame/shared'
 import { MEAL_TYPES } from '@hame/shared'
 import { MealEntryForm } from '@/components/features/meal-plan/meal-entry-form'
 import { GenerateListDialog } from '@/components/features/meal-plan/generate-list-dialog'
+import { GeneratePlanDialog } from '@/components/features/meal-plan/generate-plan-dialog'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
 import { useRecipes } from '@/api/recipes'
 import { useHouseholdSettings, useUpdateHouseholdSettings } from '@/api/household-settings'
 import {
+  useClearMealPlan,
   useCreateMealPlanEntry,
   useDeleteMealPlanEntry,
   useMealPlan,
@@ -59,6 +70,7 @@ export function MealPlanPage() {
   const createEntry = useCreateMealPlanEntry()
   const updateEntry = useUpdateMealPlanEntry()
   const deleteEntry = useDeleteMealPlanEntry()
+  const clearPlan = useClearMealPlan()
   const updateSettings = useUpdateHouseholdSettings()
 
   const [editing, setEditing] = useState<{
@@ -67,6 +79,8 @@ export function MealPlanPage() {
     mealType: MealType
   } | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [generatingPlan, setGeneratingPlan] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,6 +111,11 @@ export function MealPlanPage() {
     if (!editing?.entry) return
     await deleteEntry.mutateAsync(editing.entry.id)
     setEditing(null)
+  }
+
+  async function handleClear() {
+    await clearPlan.mutateAsync({ startDate: new Date(fromKey), endDate: new Date(toKey) })
+    setClearing(false)
   }
 
   function toggleMealType(type: MealType) {
@@ -147,6 +166,16 @@ export function MealPlanPage() {
               Meal types
             </Button>
           )}
+          {(entries?.length ?? 0) > 0 && (
+            <Button variant="outline" onClick={() => setClearing(true)}>
+              <Trash2 className="size-4" />
+              Clear week
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => setGeneratingPlan(true)}>
+            <Dices className="size-4" />
+            Generate plan
+          </Button>
           <Button onClick={() => setGenerating(true)}>
             <ShoppingCart className="size-4" />
             Generate shopping list
@@ -241,8 +270,46 @@ export function MealPlanPage() {
         )}
       </Modal>
 
+      {/* Clear the viewed week */}
+      <ConfirmDialog
+        open={clearing}
+        title="Clear week"
+        confirmLabel="Clear week"
+        pendingLabel="Clearing…"
+        pending={clearPlan.isPending}
+        onConfirm={() => void handleClear()}
+        onCancel={() => setClearing(false)}
+      >
+        Remove all meals planned for{' '}
+        <strong>
+          {format(weekStart, 'd MMM')} – {format(days[6], 'd MMM')}
+        </strong>
+        ? This clears the whole week — manual and generated — and can&apos;t be undone.
+      </ConfirmDialog>
+
+      {/* Generate meal plan */}
+      <Modal
+        open={generatingPlan}
+        onClose={() => setGeneratingPlan(false)}
+        title="Generate meal plan"
+        className="max-w-3xl"
+      >
+        <GeneratePlanDialog
+          days={days}
+          enabledMealTypes={enabledMealTypes}
+          entries={entries ?? []}
+          recipes={recipes ?? []}
+          onClose={() => setGeneratingPlan(false)}
+        />
+      </Modal>
+
       {/* Generate shopping list */}
-      <Modal open={generating} onClose={() => setGenerating(false)} title="Generate shopping list">
+      <Modal
+        open={generating}
+        onClose={() => setGenerating(false)}
+        title="Generate shopping list"
+        className="max-w-3xl"
+      >
         <GenerateListDialog
           defaultStart={fromKey}
           defaultEnd={toKey}

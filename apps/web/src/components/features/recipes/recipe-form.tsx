@@ -1,10 +1,18 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import type { CreateRecipeInput, Recipe, RecipeIngredientInput, Tag } from '@hame/shared'
+import type { CreateRecipeInput, MealType, Recipe, RecipeIngredientInput, Tag } from '@hame/shared'
+import { MEAL_TYPES } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+
+const MEAL_LABEL: Record<MealType, string> = {
+  BREAKFAST: 'Breakfast',
+  LUNCH: 'Lunch',
+  DINNER: 'Dinner',
+  SNACK: 'Snack',
+}
 
 /** Editable ingredient row in the form (strings for numeric inputs). */
 interface IngredientRow {
@@ -31,6 +39,7 @@ export interface RecipeFormInitial {
   ingredients?: IngredientRow[]
   steps?: string[]
   tagIds?: string[]
+  mealTypes?: MealType[]
 }
 
 interface RecipeFormProps {
@@ -96,6 +105,9 @@ export function RecipeForm({
   const [tagIds, setTagIds] = useState<Set<string>>(
     new Set(recipe ? recipe.tags.map((t) => t.id) : (initial?.tagIds ?? [])),
   )
+  const [mealTypes, setMealTypes] = useState<Set<MealType>>(
+    new Set(recipe ? recipe.mealTypes : (initial?.mealTypes ?? [])),
+  )
   const [localError, setLocalError] = useState<string | null>(null)
 
   function updateIngredient(index: number, patch: Partial<IngredientRow>) {
@@ -138,6 +150,7 @@ export function RecipeForm({
       ingredients: cleanIngredients,
       steps: cleanSteps.map((text) => ({ text })),
       tagIds: [...tagIds],
+      mealTypes: [...mealTypes],
     })
   }
 
@@ -291,6 +304,40 @@ export function RecipeForm({
           <Plus className="size-4" />
           Add step
         </Button>
+      </div>
+
+      {/* Meal slots — which slots the generator may auto-fill with this recipe (§8.6) */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Meal slots</Label>
+        <p className="text-xs text-muted-foreground">
+          Which meals this recipe can fill when you generate a plan. Leave empty to keep it out of
+          auto-generation.
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {MEAL_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() =>
+                setMealTypes((s) => {
+                  const next = new Set(s)
+                  if (next.has(type)) next.delete(type)
+                  else next.add(type)
+                  return next
+                })
+              }
+              aria-pressed={mealTypes.has(type)}
+              className={cn(
+                'rounded-pill border px-3 py-1 text-sm font-medium transition-colors',
+                mealTypes.has(type)
+                  ? 'border-accent bg-accent-soft text-accent'
+                  : 'border-line bg-surface text-muted-foreground hover:border-accent',
+              )}
+            >
+              {MEAL_LABEL[type]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tags */}

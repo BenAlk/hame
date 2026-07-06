@@ -1,6 +1,8 @@
 import type { Prisma } from '@prisma/client'
 import type {
+  ClearMealPlanInput,
   CreateMealPlanEntryInput,
+  GenerateMealPlanInput,
   GenerateShoppingListInput,
   GenerateShoppingListResult,
   MealPlanEntry,
@@ -41,11 +43,13 @@ function toMealPlanEntry(row: EntryRow): MealPlanEntry {
           cookTimeMinutes: row.recipe.cookTimeMinutes,
           servings: row.recipe.servings,
           tags: row.recipe.tags.map(toTag),
+          mealTypes: row.recipe.mealTypes,
         }
       : null,
     customLabel: row.customLabel,
     servings: row.servings,
     notes: row.notes,
+    isGenerated: row.isGenerated,
     createdBy: toMemberSummary(row.createdBy),
     createdAt: row.createdAt,
   }
@@ -117,6 +121,67 @@ export async function deleteMealPlanEntry(id: string): Promise<void> {
   const existing = await prisma.mealPlanEntry.findUnique({ where: { id } })
   if (!existing) throw HttpError.notFound('Meal plan entry not found')
   await prisma.mealPlanEntry.delete({ where: { id } })
+}
+
+/** Wipe every entry in a date range — manual and generated alike ("start from scratch"). */
+export async function clearMealPlan(range: ClearMealPlanInput): Promise<void> {
+  await prisma.mealPlanEntry.deleteMany({
+    where: { date: { gte: range.startDate, lte: range.endDate } },
+  })
+}
+
+/**
+ * Apply a generated plan (spec §8.6). The client rolls the picks (`generateMealPlan`)
+ * and sends the accepted proposal; the server persists it. In one transaction it
+ * clears its own prior **generated** entries in the range for the given meal types,
+ * then writes the new picks as generated — but skips any cell already holding a
+ * **manual** entry, so a hand-picked meal is never overwritten (only a re-generate
+ * on a slot it doesn't occupy replaces the previous auto-pick). Returns the range's
+ * entries so the grid refreshes.
+ */
+export async function applyGeneratedMealPlan(
+  input: GenerateMealPlanInput,
+  userId: string,
+): Promise<MealPlanEntry[]> {
+  const recipeIds = [...new Set(input.entries.map((e) => e.recipeId))]
+  if (recipeIds.length > 0) {
+    const found = await prisma.recipe.count({ where: { id: { in: recipeIds } } })
+    if (found !== recipeIds.length) throw HttpError.badRequest('Unknown recipe')
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Drop the previous generated picks in range for the meal types being rolled.
+    await tx.mealPlanEntry.deleteMany({
+      where: {
+        date: { gte: input.startDate, lte: input.endDate },
+        mealType: { in: input.mealTypes },
+        isGenerated: true,
+      },
+    })
+
+    // Cells still occupied are manual (isGenerated=false) — never write over them.
+    const manual = await tx.mealPlanEntry.findMany({
+      where: {
+        date: { gte: input.startDate, lte: input.endDate },
+        mealType: { in: input.mealTypes },
+      },
+      select: { date: true, mealType: true },
+    })
+    const locked = new Set(manual.map((m) => `${isoDate(m.date)}|${m.mealType}`))
+
+    const rows = input.entries
+      .filter((e) => !locked.has(`${isoDate(e.date)}|${e.mealType}`))
+      .map((e) => ({
+        date: e.date,
+        mealType: e.mealType,
+        recipeId: e.recipeId,
+        isGenerated: true,
+        createdById: userId,
+      }))
+    if (rows.length > 0) await tx.mealPlanEntry.createMany({ data: rows })
+  })
+
+  return listMealPlanEntries({ from: input.startDate, to: input.endDate })
 }
 
 // ── Generate shopping list (spec §8.6) ───────────────────────────────────────

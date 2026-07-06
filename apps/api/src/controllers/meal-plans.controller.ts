@@ -1,11 +1,15 @@
 import type { RequestHandler } from 'express'
 import type {
+  ClearMealPlanInput,
   CreateMealPlanEntryInput,
+  GenerateMealPlanInput,
   GenerateShoppingListInput,
   PreviewShoppingListInput,
   UpdateMealPlanEntryInput,
 } from '@hame/shared'
 import {
+  applyGeneratedMealPlan,
+  clearMealPlan,
   createMealPlanEntry,
   deleteMealPlanEntry,
   generateShoppingList,
@@ -73,6 +77,23 @@ export const generateShoppingListController: RequestHandler = async (req, res, n
     res
       .status(201)
       .json(await generateShoppingList(req.body as GenerateShoppingListInput, req.user!.id))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const generateMealPlanController: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await applyGeneratedMealPlan(req.body as GenerateMealPlanInput, req.user!.id))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const clearMealPlanController: RequestHandler = async (req, res, next) => {
+  try {
+    await clearMealPlan(req.body as ClearMealPlanInput)
+    res.status(204).end()
   } catch (err) {
     next(err)
   }

@@ -417,6 +417,7 @@ model Recipe {
   prepTimeMinutes Int?
   cookTimeMinutes Int?
   servings        Int                 @default(4)
+  mealTypes       MealType[]                                    // slots this recipe can auto-fill when generating a plan (§8.6); empty = never auto-picked
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   ingredients     RecipeIngredient[]
@@ -457,6 +458,7 @@ model MealPlanEntry {
   customLabel String?                                  // "Takeaway"
   servings    Int?                                     // overrides recipe default
   notes       String?
+  isGenerated Boolean    @default(false)               // written by the meal-plan generator (§8.6); manual entries stay false and are never overwritten by a re-generate
   createdById String
   createdBy   User       @relation(fields: [createdById], references: [id])
   createdAt   DateTime   @default(now())
@@ -805,6 +807,7 @@ model IdleModeSettings {
   ```
 
 - **Two-panel generate modal** — left: the generated food list; right: the **consumables checklist** (§8.3, same "last bought N days ago" hints). Ticked consumables fold into the target list alongside the food shortfall (any already on it are pre-ticked); unticking excludes them, with nothing persisted until confirm. This is why generate now **folds into a target list** rather than always minting a new one — one evolving list, with the ×N merge badge (§8.3) flagging anything summed from more than one source.
+- **Generate Meal Plan** (§10 Phase 8.7) — fill a week's slots with random recipes, steered by tags. A recipe is eligible for a slot only when its `Recipe.mealTypes` includes that meal type (breakfast recipes land only in breakfast, etc.), set per recipe on its form. Optional per-meal-type **tag quotas** ("a roast dinner ×2") pin how many days carry a tag; the rest fill at random, preferring non-quota recipes for variety. The roll is a **pure, deterministic engine** (`generateMealPlan` in `@hame/shared`) run client-side for an instant **preview** with per-day and whole-week **reroll**; only on confirm does `POST /api/meal-plans/generate` persist the picks. Generated entries carry `MealPlanEntry.isGenerated = true`; a **manual entry locks its slot** and is never overwritten — a re-generate only replaces prior auto-picks and fills empty slots. A **Clear week** action (`POST /api/meal-plans/clear`) wipes the viewed week (manual and generated alike) to start from scratch.
 
 ### 8.7 Chores & Cleaning
 
@@ -1735,6 +1738,48 @@ otherwise service / middleware / schema changes.
 Verified: typecheck / lint / format green, 399 tests (356 API + 43 web, incl. the
 SSRF guard's scheme / private-range / redirect cases and the token-version
 rejection), all builds clean.
+
+### Phase 8.7 — Meal-plan generation ✅ Complete (06-07-2026)
+
+A meal-plan enhancement (slotted here in build order, like §10 Phase 8.4/8.5 — not part of
+Phase 8's notifications theme; §8.6): a **Generate meal plan** button that fills a week's slots with
+random recipes, so a household can start a week from a roll of the dice rather than a blank grid,
+steer it with tags, reroll what it doesn't like, and clear a week to start over.
+
+**Goal**: A week of meals in one click — steerable and re-rollable, without overwriting what you chose by hand.
+
+**Delivered**: One migration (`meal_plan_generation`) adds `Recipe.mealTypes` (`MealType[]` — the slots
+a recipe may auto-fill; empty = never auto-picked) and `MealPlanEntry.isGenerated` (generator-written
+vs. hand-picked). Shared `@hame/shared` gains a **pure, deterministic generator** (`meal-plan-generate.ts`,
+the same pure/impure split as the recurrence / reminder / chore-stats engines): `generateMealPlan`
+picks a recipe per generatable slot from the recipes eligible for that meal type, honouring optional
+per-meal-type **tag quotas** (a roast dinner ×2) and cycling a shuffled pool so a recipe only repeats
+once the pool is exhausted — with an **injectable RNG** so it's unit-tested without randomness; plus
+`pickForSlot` (a single-slot reroll that excludes the current pick where the pool allows). The
+generate-shopping-list totals are untouched — this is the fuzzy front-end of planning, kept separate
+from the deterministic shopping maths. Recipe / meal-plan schemas carry `mealTypes` / `isGenerated`,
+and a `GenerateMealPlanSchema` / `ClearMealPlanSchema` cover the two new endpoints.
+
+The API plumbs `mealTypes` through recipe create/update/reads and adds `POST /api/meal-plans/generate`
+— which, in one transaction, clears its **own** prior generated entries in the range for the given
+meal types then writes the accepted picks as generated, but **skips any cell holding a manual entry**,
+so a hand-picked meal is never overwritten (only a re-generate on a slot it doesn't occupy replaces the
+previous auto-pick) — and `POST /api/meal-plans/clear`, which wipes every entry in a range (manual and
+generated alike) for the "start from scratch" button. The client rolls the picks locally (instant
+preview + reroll) and the server only persists — random selection is inherently interactive, so unlike
+generate-shopping-list the arithmetic-free roll happens client-side and the server is the source of
+truth for what's saved.
+
+Web: a per-recipe **Meal slots** pill selector on the recipe form; a **Generate meal plan** dialog —
+optional tag-quota rules per meal type, a proposal previewed as a 7-day grid with a **per-day 🎲
+reroll** and a **whole-week "Reroll all"**, manual entries shown locked (🔒) and never rolled, then
+**Apply to week** — and a confirm-gated **Clear week** button (shown only when the week has meals). A
+household with no recipes marked for the enabled slots gets a plain-English nudge to set Meal slots
+first rather than an empty roll. Verified: typecheck / lint / format green, **418 tests** (375 API + 43
+web; incl. the generator's eligibility / no-repeat / quota-cap / quota-skip / variety-fill cases, the
+single-slot reroll exclusion, and the apply service's clear-generated / skip-manual / unknown-recipe
+and clear-range cases), all builds clean, plus the new `/generate` and `/clear` routes confirmed
+mounted behind auth on the live server.
 
 ### Phase 9 — Polish & Portfolio Prep
 

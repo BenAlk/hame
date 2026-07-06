@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { NORMALISER_STRATEGIES } from '../constants/index.js'
+import { MEAL_TYPES, NORMALISER_STRATEGIES } from '../constants/index.js'
 import { httpUrl } from './common.js'
 import { ItemSchema } from './item.js'
 import { TagSchema } from './tag.js'
@@ -52,6 +52,8 @@ const RecipeFields = z.object({
   ingredients: z.array(RecipeIngredientInputSchema),
   steps: z.array(RecipeStepInputSchema),
   tagIds: z.array(z.string().uuid()).optional(),
+  /** Meal slots this recipe may auto-fill when generating a plan (spec §8.6). */
+  mealTypes: z.array(z.enum(MEAL_TYPES)).optional(),
 })
 
 export const CreateRecipeSchema = RecipeFields
@@ -99,6 +101,7 @@ export const RecipeSchema = z.object({
   ingredients: z.array(RecipeIngredientSchema),
   steps: z.array(RecipeStepSchema),
   tags: z.array(TagSchema),
+  mealTypes: z.array(z.enum(MEAL_TYPES)),
   createdById: z.string().uuid(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
@@ -115,6 +118,7 @@ export const RecipeSummarySchema = z.object({
   cookTimeMinutes: z.number().nullable(),
   servings: z.number().int(),
   tags: z.array(TagSchema),
+  mealTypes: z.array(z.enum(MEAL_TYPES)),
 })
 export type RecipeSummary = z.infer<typeof RecipeSummarySchema>
 

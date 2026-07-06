@@ -55,6 +55,7 @@ function toRecipe(row: RecipeRow): Recipe {
     ingredients: row.ingredients.map(toRecipeIngredient),
     steps: row.steps.map((s) => ({ id: s.id, order: s.order, text: s.text })),
     tags: row.tags.map(toTag),
+    mealTypes: row.mealTypes,
     createdById: row.createdById,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -71,6 +72,7 @@ function toRecipeSummary(row: SummaryRow): RecipeSummary {
     cookTimeMinutes: row.cookTimeMinutes,
     servings: row.servings,
     tags: row.tags.map(toTag),
+    mealTypes: row.mealTypes,
   }
 }
 
@@ -106,6 +108,7 @@ export async function createRecipe(input: CreateRecipeInput, userId: string): Pr
       prepTimeMinutes: input.prepTimeMinutes ?? null,
       cookTimeMinutes: input.cookTimeMinutes ?? null,
       servings: input.servings,
+      mealTypes: input.mealTypes ?? [],
       createdById: userId,
       ingredients: { create: ingredients },
       steps: { create: input.steps.map((s, order) => ({ text: s.text, order })) },
@@ -138,6 +141,7 @@ export async function updateRecipe(id: string, input: UpdateRecipeInput): Promis
         ...(input.prepTimeMinutes !== undefined && { prepTimeMinutes: input.prepTimeMinutes }),
         ...(input.cookTimeMinutes !== undefined && { cookTimeMinutes: input.cookTimeMinutes }),
         ...(input.servings !== undefined && { servings: input.servings }),
+        ...(input.mealTypes !== undefined && { mealTypes: { set: input.mealTypes } }),
         ...(input.tagIds && { tags: { set: input.tagIds.map((tid) => ({ id: tid })) } }),
       },
     })

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  ClearMealPlanInput,
   CreateMealPlanEntryInput,
+  GenerateMealPlanInput,
   GenerateShoppingListInput,
   GenerateShoppingListResult,
   MealPlanEntry,
@@ -9,6 +11,7 @@ import type {
   UpdateMealPlanEntryInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
+import { toast } from '@/stores/toast'
 
 const MEAL_PLANS_KEY = ['meal-plans'] as const
 
@@ -61,6 +64,35 @@ export function usePreviewShoppingList() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+  })
+}
+
+/** Wipe every meal in the given date range — "start from scratch". */
+export function useClearMealPlan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ClearMealPlanInput) =>
+      apiFetch<void>('/api/meal-plans/clear', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      invalidate(qc)
+      toast.success('Meal plan cleared.')
+    },
+  })
+}
+
+/** Commit a generated meal plan (spec §8.6): persist the rolled picks. */
+export function useApplyGeneratedMealPlan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: GenerateMealPlanInput) =>
+      apiFetch<MealPlanEntry[]>('/api/meal-plans/generate', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      invalidate(qc)
+      toast.success('Meal plan generated.')
+    },
   })
 }
 

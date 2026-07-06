@@ -62,7 +62,10 @@ export function useDeleteShoppingList() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => apiFetch<void>(`/api/shopping-lists/${id}`, { method: 'DELETE' }),
-    onSuccess: () => invalidateLists(qc),
+    onSuccess: () => {
+      invalidateLists(qc)
+      toast.success('List deleted.')
+    },
   })
 }
 

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { DueChip } from '@/components/features/shopping/due-chip'
 import { ApiError } from '@/api/client'
 import { useGenerateShoppingList, usePreviewShoppingList } from '@/api/meal-plans'
+import { useShoppingLists } from '@/api/shopping'
 import { useConsumables } from '@/api/consumables'
 import { quantityLabel, relativeDay } from '@/lib/format'
 
@@ -37,6 +38,10 @@ export function GenerateListDialog({ defaultStart, defaultEnd, onClose }: Genera
   const preview = usePreviewShoppingList()
   const generate = useGenerateShoppingList()
   const { data: consumables } = useConsumables()
+  // Active lists come back most-recently-updated first — the same list the
+  // server folds into when no name is given (meal-plan.service resolveTargetList).
+  const { data: activeLists } = useShoppingLists('ACTIVE')
+  const currentList = activeLists?.[0]
 
   // Re-run the dry-run whenever the range changes so the preview stays in step.
   const previewMutate = preview.mutate
@@ -221,7 +226,11 @@ export function GenerateListDialog({ defaultStart, defaultEnd, onClose }: Genera
           id="gen-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Leave blank to add to your current list"
+          placeholder={
+            currentList
+              ? `Leave blank to add to “${currentList.name}”`
+              : 'Leave blank to create a new list'
+          }
         />
       </div>
 

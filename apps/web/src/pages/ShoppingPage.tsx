@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { CheckRow } from '@/components/features/shopping/check-row'
 import { ArchiveDialog } from '@/components/features/shopping/archive-dialog'
 import { AddConsumablesPanel } from '@/components/features/shopping/add-consumables-panel'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useItems } from '@/api/items'
 import {
@@ -42,6 +43,8 @@ export function ShoppingPage() {
   const [newListName, setNewListName] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const active = lists?.filter((l) => l.status === 'ACTIVE') ?? []
   const archived = lists?.filter((l) => l.status === 'ARCHIVED') ?? []
@@ -53,6 +56,18 @@ export function ShoppingPage() {
     const list = await createList.mutateAsync({ name: newListName.trim() })
     setNewListName('')
     setSelectedId(list.id)
+  }
+
+  async function onDelete() {
+    if (!selected) return
+    setDeleteError(null)
+    try {
+      await deleteList.mutateAsync(selected.id)
+      setSelectedId(null)
+      setDeleting(false)
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : 'Could not delete the list.')
+    }
   }
 
   return (
@@ -113,8 +128,8 @@ export function ShoppingPage() {
             list={selected}
             onArchive={() => setArchiving(true)}
             onDelete={() => {
-              void deleteList.mutateAsync(selected.id)
-              setSelectedId(null)
+              setDeleteError(null)
+              setDeleting(true)
             }}
           />
         ) : (
@@ -130,6 +145,19 @@ export function ShoppingPage() {
           onArchived={(result) => setSelectedId(result.newList?.id ?? null)}
         />
       )}
+
+      <ConfirmDialog
+        open={deleting}
+        title="Delete list"
+        pending={deleteList.isPending}
+        error={deleteError}
+        onConfirm={() => void onDelete()}
+        onCancel={() => setDeleting(false)}
+      >
+        Delete <strong>{selected?.name}</strong>? This permanently removes the list and its{' '}
+        {selected?.items.length ?? 0} item{selected?.items.length === 1 ? '' : 's'}. This can't be
+        undone.
+      </ConfirmDialog>
     </main>
   )
 }
@@ -203,15 +231,14 @@ function ListDetail({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-2xl font-medium text-ink">{list.name}</h2>
         <div className="flex gap-2">
-          {isActive ? (
+          {isActive && (
             <Button variant="outline" size="sm" onClick={onArchive}>
               Archive list
             </Button>
-          ) : (
-            <Button variant="destructive" size="sm" onClick={onDelete}>
-              Delete
-            </Button>
           )}
+          <Button variant="destructive" size="sm" onClick={onDelete}>
+            Delete
+          </Button>
         </div>
       </div>
 

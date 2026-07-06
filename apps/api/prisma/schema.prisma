@@ -258,6 +258,7 @@ model Recipe {
   prepTimeMinutes Int?
   cookTimeMinutes Int?
   servings        Int                @default(4)
+  mealTypes       MealType[] // slots this recipe can auto-fill when generating a plan (§8.6); empty = never auto-picked
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
   ingredients     RecipeIngredient[]
@@ -300,6 +301,7 @@ model MealPlanEntry {
   customLabel String? // "Takeaway", "Leftovers"
   servings    Int? // overrides recipe default when set
   notes       String?
+  isGenerated Boolean  @default(false) // written by the meal-plan generator (§8.6); manual entries stay false and are never overwritten by a re-generate
   createdById String
   createdBy   User     @relation(fields: [createdById], references: [id])
   createdAt   DateTime @default(now())

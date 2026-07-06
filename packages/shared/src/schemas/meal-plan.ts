@@ -56,6 +56,8 @@ export const MealPlanEntrySchema = z.object({
   customLabel: z.string().nullable(),
   servings: z.number().nullable(),
   notes: z.string().nullable(),
+  /** True when written by the generator (spec §8.6); manual entries are false. */
+  isGenerated: z.boolean(),
   createdBy: MemberSummarySchema,
   createdAt: z.coerce.date(),
 })
@@ -127,6 +129,41 @@ export const GenerateShoppingListResultSchema = z.object({
   warnings: z.array(z.string()),
 })
 export type GenerateShoppingListResult = z.infer<typeof GenerateShoppingListResultSchema>
+
+// ── Generate meal plan (spec §8.6) ───────────────────────────────────────────
+
+/** One picked meal on an apply payload — always a recipe (generation is recipe-only). */
+export const GeneratedMealSchema = z.object({
+  date: z.coerce.date(),
+  mealType: MealTypeSchema,
+  recipeId: z.string().uuid(),
+})
+export type GeneratedMeal = z.infer<typeof GeneratedMealSchema>
+
+/**
+ * Commit a generated plan (spec §8.6). The client rolls the picks locally
+ * (`generateMealPlan`) and sends the accepted proposal. The server, in a
+ * transaction, clears its own prior generated entries in the range for the given
+ * `mealTypes`, then writes these — but never touches a manual entry, so a
+ * hand-picked meal is preserved and only ever replaced by another generate on a
+ * slot it doesn't occupy.
+ */
+export const GenerateMealPlanSchema = z
+  .object({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    mealTypes: z.array(MealTypeSchema).min(1),
+    entries: z.array(GeneratedMealSchema),
+  })
+  .refine((d) => d.endDate >= d.startDate, dateRangeOrdered)
+export type GenerateMealPlanInput = z.infer<typeof GenerateMealPlanSchema>
+
+/** Wipe every meal-plan entry in a date range — the "start from scratch" clear. */
+export const ClearMealPlanSchema = GenerateDateRange.refine(
+  (d) => d.endDate >= d.startDate,
+  dateRangeOrdered,
+)
+export type ClearMealPlanInput = z.infer<typeof ClearMealPlanSchema>
 
 // ── Household settings (spec §7.5) ───────────────────────────────────────────
 

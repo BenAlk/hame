@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const listFindUnique = vi.fn()
+const listDelete = vi.fn()
 const locationCount = vi.fn()
 const transaction = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
-    shoppingList: { findUnique: listFindUnique },
+    shoppingList: { findUnique: listFindUnique, delete: listDelete },
     storageLocation: { count: locationCount },
     $transaction: transaction,
   },
 }))
 
-const { archiveShoppingList, mergeOrCreateLine } = await import('../services/shopping.service.js')
+const { archiveShoppingList, deleteShoppingList, mergeOrCreateLine } =
+  await import('../services/shopping.service.js')
 
 /** A tx stub whose findMany returns the given existing unbought lines. */
 function txWith(candidates: unknown[]) {
@@ -47,7 +49,22 @@ const activeList = {
 }
 
 beforeEach(() => {
-  for (const fn of [listFindUnique, locationCount, transaction]) fn.mockReset()
+  for (const fn of [listFindUnique, listDelete, locationCount, transaction]) fn.mockReset()
+})
+
+describe('deleteShoppingList', () => {
+  it('deletes an active (non-empty) list — no archived-status guard', async () => {
+    listFindUnique.mockResolvedValue(activeList) // ACTIVE, with items
+    listDelete.mockResolvedValue(activeList)
+    await deleteShoppingList('l1')
+    expect(listDelete).toHaveBeenCalledWith({ where: { id: 'l1' } })
+  })
+
+  it('404s when the list is missing, without deleting', async () => {
+    listFindUnique.mockResolvedValue(null)
+    await expect(deleteShoppingList('l1')).rejects.toMatchObject({ status: 404 })
+    expect(listDelete).not.toHaveBeenCalled()
+  })
 })
 
 describe('archiveShoppingList guards', () => {
