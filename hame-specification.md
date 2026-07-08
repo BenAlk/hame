@@ -1006,6 +1006,79 @@ Benefits:
 
 ---
 
+### 8.15 Backup & Restore (Data Integrity)
+
+If the server dies, Hame must not take the household's data with it. A full
+**export/import** lets a household recover onto fresh hardware, migrate servers,
+or keep off-box backups — and, because Hame stores **no on-disk file assets**
+(avatars and recipe images are URLs; Immich photos are proxied live, §8.14), a
+backup is purely the PostgreSQL rows: **one self-contained file, no asset
+bundle**.
+
+Two tiers, two audiences:
+
+- **Logical export/import (the in-app feature).** An admin-only **Settings →
+  Data** panel with an **Export** (download) and **Import** (restore) action.
+  This is the portable, self-service path — no shell, no Postgres tooling — and
+  is what Hame builds.
+- **`pg_dump` / `pg_restore` (documented, not built).** The README carries an
+  ops-grade section: a bit-exact physical dump plus the Compose volume, for when
+  the operator _does_ have shell access. Belt-and-braces disaster recovery
+  alongside the logical feature.
+
+#### The export file — passphrase-encrypted and re-keyable
+
+The file is deliberately **decoupled from the instance's `ENCRYPTION_KEY`** so a
+backup restores onto a new box even if its key differs. On **Export** the admin
+supplies a **passphrase** (entered twice); the server then:
+
+1. Reads every table via Prisma (all rows, original **UUIDs preserved**).
+2. **Decrypts** the three AES-GCM secret fields — `HomeAssistantConfig.accessToken`,
+   `ImmichConfig.apiKey`, `WifiConfig.password` — from their at-rest ciphertext
+   back to plaintext, so they no longer depend on the source key. (User and
+   CalDAV **argon2 hashes are one-way and travel verbatim** — nothing to re-key.)
+3. Assembles the payload: a **manifest** (backup-format version, the applied
+   migration name, timestamp, per-table row counts) plus the `tables` data.
+4. Derives a 32-byte key from the passphrase with **argon2id** (reusing the
+   existing `argon2` dependency — no new lib) and a random salt, then
+   **AES-256-GCM** encrypts the whole payload.
+
+The output is a small JSON **envelope**: a clear header (format version, KDF algo
++ salt + params, IV) plus ciphertext and auth tag. Without the passphrase the
+file is opaque — which also protects the password hashes inside it. GCM's auth
+tag doubles as passphrase verification: a wrong passphrase fails cleanly
+("incorrect passphrase or corrupt file") rather than yielding garbage.
+
+#### The import — wipe-and-replace into a matching version
+
+On **Import** the admin uploads the file and enters the passphrase:
+
+1. Derive the key, AES-GCM **decrypt** (this verifies the passphrase), parse.
+2. **Version gate** — the manifest's migration name must exactly match this
+   instance's latest applied migration (read from `_prisma_migrations`). A
+   mismatch is **refused** with a clear message; cross-version transforms are
+   explicitly out of scope for v1 (restore into a matching build).
+3. **Confirm-gate** — "this erases all current data."
+4. In **one transaction**: wipe every table (reverse FK order), then insert all
+   rows preserving their UUIDs (FK order). Any failure rolls back, leaving the
+   instance untouched.
+5. **Re-encrypt** the three secret fields under _this_ instance's
+   `ENCRYPTION_KEY` before write, so they are correctly at-rest for the new box.
+6. Sanity-check restored row counts against the manifest, then **reconnect live
+   integrations** (bounce the HA WebSocket, reload the config singletons) so
+   restored settings take effect without a process restart.
+
+#### Access & safety
+
+Export and import are **admin-only**, CSRF-protected, and rate-limited (both are
+heavy). Because the export _is_ Hame's own JSON envelope, **import is a plain
+`POST` with the envelope as the body** (a raised body limit scoped to the route)
+— no file-upload middleware, keeping the dependency-light leaning. The file
+carries password hashes and the decrypted integration secrets, so it is
+**always** passphrase-encrypted; the app warns to store it somewhere safe.
+
+---
+
 ## 9. Architecture Patterns
 
 ### 9.1 Shared Zod Schemas
@@ -1074,6 +1147,28 @@ Because each sync **replaces** a bin's cached occurrences wholesale, the schedul
 ### 9.7 Type-Safe End-to-End
 
 Prisma generates DB types → Express returns typed data → Zod validates inputs → React consumes typed responses. No `any` types anywhere in the codebase.
+
+### 9.8 Portable, Re-keyable Logical Backup
+
+Backup is **logical, not physical** (§8.15): a schema-aware export of the rows
+rather than a `pg_dump` binary image, so it is human-inspectable, restores
+through the app with no shell, and survives onto any instance at the same
+migration. Three properties make it robust:
+
+- **Decoupled from `ENCRYPTION_KEY`.** The at-rest AES-GCM secrets are decrypted
+  on export and re-encrypted under the target's key on import, so a backup is not
+  chained to one instance's key. The file is instead protected by an **argon2id
+  KDF + AES-256-GCM** wrapper under a user passphrase — the same authenticated
+  encryption used for secrets at rest (§11), applied to the whole file.
+- **Preserve-UUID, transactional restore.** Every primary key is a UUID, so a
+  restore keeps original ids and every foreign key lines back up with no
+  remapping; the wipe-and-reload runs in a single transaction, so a failed
+  restore leaves the instance intact.
+- **FK order as tested data.** The table insert/delete ordering lives as an
+  explicit list in `@hame/shared`, with a test asserting it **covers every Prisma
+  model** — so adding a model later without adding it to the backup fails a test
+  rather than silently dropping a table from every backup (the same "a change
+  fails a test" ethos as the bin-scraper fixtures and the QR encoder, §10).
 
 ---
 
@@ -1781,6 +1876,42 @@ single-slot reroll exclusion, and the apply service's clear-generated / skip-man
 and clear-range cases), all builds clean, plus the new `/generate` and `/clear` routes confirmed
 mounted behind auth on the live server.
 
+### Phase 8.8 — Data Integrity (Backup & Restore)
+
+A full **export/import** so a household survives a dead server, migrates to new
+hardware, or keeps off-box backups (§8.15, §9.8). Slotted here in build order
+(like §10 Phase 8.4 / 8.5 / 8.7 — not part of Phase 8's notifications theme).
+**No migration and no new model** — it reads and writes the existing tables.
+
+**Goal**: If the server dies, one file brings the whole household back.
+
+**Plan**:
+
+- **Shared `@hame/shared`** — the backup envelope + manifest Zod schemas (format
+  version, migration name, per-table counts), and the **ordered table list** for
+  FK-safe insert/delete, with a test asserting it covers every Prisma model
+  (§9.8).
+- **API** — a `lib/backup` module: `exportBackup` (read all tables → decrypt the
+  three AES-GCM secrets → manifest + data → argon2id-derive a key from the
+  passphrase → AES-256-GCM wrap) and `importBackup` (decrypt → verify passphrase
+  via the GCM tag → version-gate against `_prisma_migrations` → transactional
+  wipe-and-reload preserving UUIDs → re-encrypt secrets under this instance's key
+  → reconnect HA + reload singletons). An admin-only `backup` slice —
+  `POST /api/backup/export` (returns the encrypted file) and
+  `POST /api/backup/import` (envelope in the body; raised, route-scoped body
+  limit; CSRF; rate-limited).
+- **Web** — an admin **Settings → Data** panel: Export (passphrase prompt →
+  download) and Import (file + passphrase → the "this erases all data" confirm →
+  progress + restored-counts summary, or a clear version-mismatch /
+  wrong-passphrase error).
+- **Docs** — a README **Backup & restore** section covering the in-app feature
+  and the `pg_dump` / `pg_restore` + Compose-volume ops path.
+
+**Why this shape**: the logical export is portable and self-service (the right UX
+for a self-hoster), while `pg_dump` stays documented as the bit-exact escape
+hatch; decoupling the file from `ENCRYPTION_KEY` (decrypt-then-re-key) is what
+lets a backup restore onto genuinely new hardware.
+
 ### Phase 9 — Polish & Portfolio Prep
 
 Comprehensive README, demo data seed script, architecture diagrams, tests for critical flows, production Docker setup, blog post draft.
@@ -1805,6 +1936,7 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - **Session revocation**: the session JWT carries a `User.tokenVersion`; a password or role change bumps it and `requireAuth` rejects any stale token, so outstanding sessions are invalidated at once (Phase 8.6).
 - **SSRF guard on outbound fetches**: user-supplied URLs (recipe import, iCal feeds) go through a shared `safeFetch` that refuses non-http(s) schemes and hosts resolving to loopback/private/link-local/reserved addresses, re-checking each redirect hop. Admin-configured integrations (HA/Immich/Ollama), which legitimately target the LAN, are exempt (Phase 8.6).
 - **Content-Security-Policy** and companion headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) on the served HTML; user URL fields are constrained to http(s) at the Zod schema to prevent `javascript:`-scheme stored XSS (Phase 8.6).
+- **Backups**: the logical export (§8.15) is **always** passphrase-encrypted — an argon2id-derived key + AES-256-GCM over the whole file — because it contains argon2 password hashes and the decrypted integration secrets. Import re-encrypts those secrets under the target instance's `ENCRYPTION_KEY`. Export/import are admin-only, CSRF-protected and rate-limited (Phase 8.8).
 - **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
 - **httpOnly cookies** for JWT preferred over localStorage
@@ -1882,6 +2014,7 @@ Choices intentionally left open, to revisit when the need is real:
 - **WebSocket bidirectional integration** — Home Assistant real-time
 - **PostgreSQL relational modelling** — 24 connected models, real joins
 - **Self-hosted deployment** — Docker, runs on user's own hardware
+- **Authenticated, portable backups** — a passphrase-derived (argon2id) AES-256-GCM whole-file export, re-keyable across instances, with a preserve-UUID transactional restore (§8.15)
 - **A genuine problem solved** — not a tutorial clone, an actual household app
 
 ### Talking Points for Interviews

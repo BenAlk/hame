@@ -65,6 +65,34 @@ pnpm dev
 | `pnpm db:seed`    | Seed demo data                              |
 | `pnpm db:studio`  | Open Prisma Studio                          |
 
+## Backup & restore
+
+All of Hame's data lives in PostgreSQL — there are no uploaded files on disk
+(avatars and recipe images are URLs; screensaver photos are proxied live from
+Immich). So a backup is a database dump, and restoring is loading it back.
+
+The reliable, works-today method is `pg_dump` against the running container:
+
+```bash
+# Back up (writes a compressed, timestamped dump)
+docker exec hame-postgres pg_dump -U hame -Fc hame > hame-backup-$(date +%F).dump
+
+# Restore into a fresh, empty database
+docker exec -i hame-postgres pg_restore -U hame -d hame --clean --if-exists < hame-backup-2026-07-08.dump
+```
+
+Substitute your `POSTGRES_USER` / `POSTGRES_DB` if you changed them from the
+`hame` defaults. Keep the dump somewhere off the server, and keep a copy of your
+`.env` alongside it: the Home Assistant token, Immich key and WiFi password are
+encrypted at rest with `ENCRYPTION_KEY`, so a dump restored under a **different**
+key can't decrypt those few secrets (everything else restores fine — you'd just
+re-enter them). Restore into an instance running the **same** Hame version so the
+database schema matches the dump.
+
+> An in-app, admin-only **encrypted export/import** (Settings → Data) — a single
+> passphrase-protected file that restores onto new hardware even under a new
+> `ENCRYPTION_KEY` — is planned, for households without shell access.
+
 ## Optional: LLM ingredient normalisation
 
 Recipe imports clean up free-text ingredients into linkable items. By default this uses a built-in
