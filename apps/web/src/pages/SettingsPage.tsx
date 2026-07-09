@@ -32,6 +32,10 @@ import {
   useUpdateImmichConfig,
 } from '@/api/immich'
 import { useIdleSettings, useUpdateIdleSettings } from '@/api/idle'
+import { useExportBackup, useImportBackup } from '@/api/backup'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { toast } from '@/stores/toast'
+import { BackupEnvelopeSchema } from '@hame/shared'
 
 const STRATEGIES: { value: NormaliserStrategy; label: string; description: string }[] = [
   {
@@ -148,8 +152,163 @@ export function SettingsPage() {
         </Card>
 
         <LabsCard />
+
+        <DataCard />
       </div>
     </main>
+  )
+}
+
+/** Admin-only backup & restore of the whole database (spec §10 Phase 8.8). */
+function DataCard() {
+  const exportBackup = useExportBackup()
+  const importBackup = useImportBackup()
+
+  const [exportPass, setExportPass] = useState('')
+  const [importPass, setImportPass] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleExport() {
+    setError(null)
+    if (exportPass.length < 8) {
+      setError('Use a passphrase of at least 8 characters.')
+      return
+    }
+    try {
+      const envelope = await exportBackup.mutateAsync(exportPass)
+      const blob = new Blob([JSON.stringify(envelope)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `hame-backup-${new Date().toISOString().slice(0, 10)}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setExportPass('')
+      toast.success('Backup downloaded. Store it somewhere safe.')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create the backup.')
+    }
+  }
+
+  function requestImport() {
+    setError(null)
+    if (!file) {
+      setError('Choose a backup file to restore.')
+      return
+    }
+    if (!importPass) {
+      setError('Enter the backup passphrase.')
+      return
+    }
+    setConfirmOpen(true)
+  }
+
+  async function handleImport() {
+    if (!file) return
+    setError(null)
+    try {
+      const parsed = BackupEnvelopeSchema.safeParse(JSON.parse(await file.text()))
+      if (!parsed.success) {
+        setConfirmOpen(false)
+        setError('That file is not a valid Hame backup.')
+        return
+      }
+      const result = await importBackup.mutateAsync({
+        passphrase: importPass,
+        envelope: parsed.data,
+      })
+      setConfirmOpen(false)
+      toast.success(`Restored ${result.totalRows} records. Reloading…`)
+      // The restored data replaces every user (and their session state), so a full
+      // reload re-runs the auth gate — signing you in again, or out if your account
+      // isn't in the backup.
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (err) {
+      setConfirmOpen(false)
+      setError(err instanceof ApiError ? err.message : 'Could not restore the backup.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Data (backup &amp; restore)</CardTitle>
+        <CardDescription>
+          Export the whole household to a single encrypted file, or restore it onto a fresh server.
+          The file is protected by a passphrase you choose — keep both safe, as it can&apos;t be
+          opened without the passphrase.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="backup-export-pass">Backup passphrase</Label>
+          <Input
+            id="backup-export-pass"
+            type="password"
+            value={exportPass}
+            onChange={(e) => setExportPass(e.target.value)}
+            placeholder="At least 8 characters"
+            autoComplete="off"
+          />
+          <Button
+            className="mt-1 self-start"
+            onClick={handleExport}
+            disabled={exportBackup.isPending}
+          >
+            {exportBackup.isPending ? 'Preparing…' : 'Download backup'}
+          </Button>
+        </div>
+
+        <hr className="border-line" />
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="backup-file">Restore from a backup</Label>
+          <input
+            id="backup-file"
+            type="file"
+            accept="application/json,.json"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="text-sm text-muted-foreground file:mr-3 file:rounded-control file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-primary-foreground"
+          />
+          <Input
+            className="mt-1"
+            type="password"
+            value={importPass}
+            onChange={(e) => setImportPass(e.target.value)}
+            placeholder="Backup passphrase"
+            autoComplete="off"
+          />
+          <Button
+            variant="destructive"
+            className="mt-1 self-start"
+            onClick={requestImport}
+            disabled={importBackup.isPending}
+          >
+            {importBackup.isPending ? 'Restoring…' : 'Restore backup'}
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            Restoring replaces everything currently in Hame and signs you out.
+          </p>
+        </div>
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+      </CardContent>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Restore this backup?"
+        confirmLabel="Restore & replace"
+        pendingLabel="Restoring…"
+        pending={importBackup.isPending}
+        onConfirm={handleImport}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        This permanently erases all current data in Hame and replaces it with the contents of the
+        backup file. It can&apos;t be undone.
+      </ConfirmDialog>
+    </Card>
   )
 }
 

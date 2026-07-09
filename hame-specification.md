@@ -1876,41 +1876,52 @@ single-slot reroll exclusion, and the apply service's clear-generated / skip-man
 and clear-range cases), all builds clean, plus the new `/generate` and `/clear` routes confirmed
 mounted behind auth on the live server.
 
-### Phase 8.8 — Data Integrity (Backup & Restore)
+### Phase 8.8 — Data Integrity (Backup & Restore) ✅ Complete (09-07-2026)
 
 A full **export/import** so a household survives a dead server, migrates to new
 hardware, or keeps off-box backups (§8.15, §9.8). Slotted here in build order
 (like §10 Phase 8.4 / 8.5 / 8.7 — not part of Phase 8's notifications theme).
-**No migration and no new model** — it reads and writes the existing tables.
 
 **Goal**: If the server dies, one file brings the whole household back.
 
-**Plan**:
+**Delivered**: No migration and no new model — the backup reads and writes the
+existing tables. Shared `@hame/shared` gains the backup contract: the ordered
+`BACKUP_MODELS` (parents-first, for FK-safe inserts) and `BACKUP_JOIN_TABLES`
+lists, the `BACKUP_SECRET_FIELDS` map, and the envelope / manifest / payload /
+request Zod schemas — with an API coverage test asserting the lists track the
+Prisma schema, so adding a model or an implicit m2m relation without listing it
+fails a test rather than silently dropping a table from every backup (§9.8). The
+API adds `lib/backup-crypto` (an argon2id KDF stretches the passphrase into a key
+that seals the whole file with AES-256-GCM and is stored nowhere; a wrong
+passphrase fails the GCM auth tag as a clean 400) and a `backup` service that
+dumps and reloads every table through Postgres' own `json_agg` /
+`json_populate_recordset` — so arrays, JSON, enums, dates and nulls round-trip
+faithfully and timestamps are preserved exactly — decrypting the three at-rest
+secrets into the file on export and re-encrypting them under the **target**
+instance's `ENCRYPTION_KEY` on import. Import verifies the passphrase,
+**version-gates** against `_prisma_migrations` (refusing a mismatched schema),
+integrity-checks the row counts against the manifest, then in one transaction
+truncates and reloads with UUIDs preserved (every foreign key lines back up) and
+reconnects the Home Assistant socket. An admin-only, CSRF-protected `backup`
+slice exposes `POST /api/backup/export` (the encrypted file) and
+`POST /api/backup/import` (the envelope in the body, parsed by a route-scoped
+100 MB limit). Web: an admin **Settings → Data** card — a passphrase then
+**Download backup** (saved client-side as a blob), and a file + passphrase
+**Restore** behind an erase-and-replace confirm dialog that reloads afterwards so
+the auth gate re-runs (signing you back in, or out if your account isn't in the
+backup). The README documents the in-app feature alongside a `pg_dump` /
+`pg_restore` + Compose-volume ops path.
 
-- **Shared `@hame/shared`** — the backup envelope + manifest Zod schemas (format
-  version, migration name, per-table counts), and the **ordered table list** for
-  FK-safe insert/delete, with a test asserting it covers every Prisma model
-  (§9.8).
-- **API** — a `lib/backup` module: `exportBackup` (read all tables → decrypt the
-  three AES-GCM secrets → manifest + data → argon2id-derive a key from the
-  passphrase → AES-256-GCM wrap) and `importBackup` (decrypt → verify passphrase
-  via the GCM tag → version-gate against `_prisma_migrations` → transactional
-  wipe-and-reload preserving UUIDs → re-encrypt secrets under this instance's key
-  → reconnect HA + reload singletons). An admin-only `backup` slice —
-  `POST /api/backup/export` (returns the encrypted file) and
-  `POST /api/backup/import` (envelope in the body; raised, route-scoped body
-  limit; CSRF; rate-limited).
-- **Web** — an admin **Settings → Data** panel: Export (passphrase prompt →
-  download) and Import (file + passphrase → the "this erases all data" confirm →
-  progress + restored-counts summary, or a clear version-mismatch /
-  wrong-passphrase error).
-- **Docs** — a README **Backup & restore** section covering the in-app feature
-  and the `pg_dump` / `pg_restore` + Compose-volume ops path.
-
-**Why this shape**: the logical export is portable and self-service (the right UX
-for a self-hoster), while `pg_dump` stays documented as the bit-exact escape
-hatch; decoupling the file from `ENCRYPTION_KEY` (decrypt-then-re-key) is what
-lets a backup restore onto genuinely new hardware.
+Verified: typecheck / lint / format green, **442 tests** (384 API + 43 web + 15
+bin-scraper; incl. the table-coverage guard against the live Prisma DMMF, the
+seal/open round-trip + wrong-passphrase + tamper, and the import
+version-gate / integrity / wipe-reload-reconnect cases), all builds clean, plus a
+**live end-to-end smoke**: export → mutate → restore round-tripped 610 rows
+across all 29 tables and 4 join tables; a row added after the export was gone
+afterwards (wipe-and-replace); the WiFi secret decrypted to its original with a
+**different ciphertext blob** (correctly re-keyed under this instance's key); and
+every guard held — wrong passphrase / malformed file 400, unauthenticated 401,
+member 403, missing CSRF 403.
 
 ### Phase 9 — Polish & Portfolio Prep
 

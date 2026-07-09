@@ -28,6 +28,7 @@ import { immichConfigRouter } from './immich-config.js'
 import { idleRouter } from './idle.js'
 import { notificationPreferencesRouter } from './notification-preferences.js'
 import { statsRouter } from './stats.js'
+import { backupRouter } from './backup.js'
 
 export const apiRouter = Router()
 
@@ -60,3 +61,4 @@ apiRouter.use('/immich', immichConfigRouter)
 apiRouter.use('/idle', idleRouter)
 apiRouter.use('/notification-preferences', notificationPreferencesRouter)
 apiRouter.use('/stats', statsRouter)
+apiRouter.use('/backup', backupRouter)

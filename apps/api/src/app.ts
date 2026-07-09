@@ -38,6 +38,11 @@ export function createApp() {
       credentials: true,
     }),
   )
+  // A backup restore carries the whole database as one JSON envelope, so it needs
+  // a much larger body than the rest of the API (spec §8.15). Parse that route
+  // first with a generous limit; body-parser then skips the coarse 1mb global
+  // parser below (it no-ops once a body is already parsed).
+  app.use('/api/backup/import', express.json({ limit: '100mb' }))
   app.use(express.json({ limit: '1mb' }))
   app.use(cookieParser())
   app.use(pinoHttp({ logger }))

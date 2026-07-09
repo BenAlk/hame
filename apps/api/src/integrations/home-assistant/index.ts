@@ -33,3 +33,22 @@ export async function startHomeAssistant(): Promise<void> {
 export function stopHomeAssistant(): void {
   haClient.stop()
 }
+
+/**
+ * Restart the connection against the currently-stored config — used after a
+ * backup restore (spec §8.15) replaces the `HomeAssistantConfig` row. The
+ * per-entity prune handler is registered once at boot, so this only cycles the
+ * socket; never throws (an unreachable HA just stays disconnected).
+ */
+export async function reloadHomeAssistant(): Promise<void> {
+  haClient.stop()
+  try {
+    const settings = await getConnectionSettings()
+    if (settings) {
+      haClient.start(settings)
+      logger.info('Home Assistant client reloaded after restore')
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Could not reload Home Assistant client after restore')
+  }
+}

@@ -89,9 +89,13 @@ key can't decrypt those few secrets (everything else restores fine — you'd jus
 re-enter them). Restore into an instance running the **same** Hame version so the
 database schema matches the dump.
 
-> An in-app, admin-only **encrypted export/import** (Settings → Data) — a single
-> passphrase-protected file that restores onto new hardware even under a new
-> `ENCRYPTION_KEY` — is planned, for households without shell access.
+Prefer not to touch the shell? Hame also has an in-app, admin-only **encrypted
+export/import** under **Settings → Data**: **Download backup** writes a single
+passphrase-protected file, and **Restore** loads one back, replacing all current
+data. Because the file is encrypted with your passphrase (not the server's
+`ENCRYPTION_KEY`), it restores onto a brand-new instance even under a fresh key.
+Restore only into a Hame running the **same version** — it refuses a backup taken
+at a different database schema.
 
 ## Optional: LLM ingredient normalisation
 
