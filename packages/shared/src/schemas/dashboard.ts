@@ -24,6 +24,7 @@ export const WIDGET_TYPES = [
   'smartHome',
   'wifiQr',
   'choreStats',
+  'integrationStatus',
 ] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 export const WidgetTypeSchema = z.enum(WIDGET_TYPES)
@@ -127,6 +128,14 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
     minH: 2,
     requiresHa: false,
   },
+  integrationStatus: {
+    label: 'System status',
+    defaultW: 1,
+    defaultH: 3,
+    minW: 1,
+    minH: 2,
+    requiresHa: false,
+  },
 }
 
 /** The default placement order — clock first, then reading order of the grid. */
@@ -144,6 +153,7 @@ export const DEFAULT_WIDGET_ORDER: WidgetType[] = [
   'smartHome',
   'wifiQr',
   'choreStats',
+  'integrationStatus',
 ]
 
 /** One positioned tile in a react-grid-layout (`i` keys it to a widget id). */

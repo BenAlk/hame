@@ -29,6 +29,7 @@ import { idleRouter } from './idle.js'
 import { notificationPreferencesRouter } from './notification-preferences.js'
 import { statsRouter } from './stats.js'
 import { backupRouter } from './backup.js'
+import { integrationsRouter } from './integrations.js'
 
 export const apiRouter = Router()
 
@@ -62,3 +63,4 @@ apiRouter.use('/idle', idleRouter)
 apiRouter.use('/notification-preferences', notificationPreferencesRouter)
 apiRouter.use('/stats', statsRouter)
 apiRouter.use('/backup', backupRouter)
+apiRouter.use('/integrations', integrationsRouter)

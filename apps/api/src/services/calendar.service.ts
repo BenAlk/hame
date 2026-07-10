@@ -10,7 +10,7 @@ import { prisma } from '../lib/prisma.js'
  * (spec §9.5). Synced events carry their source's colour.
  */
 export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent[]> {
-  const [meals, instances, bins, events, synced] = await Promise.all([
+  const [meals, instances, bins, events, synced, integrationEvents] = await Promise.all([
     prisma.mealPlanEntry.findMany({
       where: { date: { gte: start, lte: end } },
       select: {
@@ -55,6 +55,15 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
         allDay: true,
         source: { select: { colour: true } },
       },
+    }),
+    // Dated events cached from CALENDAR-kind integrations (spec §10 Phase 10).
+    prisma.integrationEvent.findMany({
+      where: {
+        integration: { isActive: true },
+        startTime: { lte: end },
+        OR: [{ endTime: { gte: start } }, { endTime: null, startTime: { gte: start } }],
+      },
+      select: { id: true, title: true, startTime: true, endTime: true, allDay: true },
     }),
   ])
 
@@ -143,6 +152,19 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
       allDay: s.allDay,
       colour: s.source.colour,
       sourceId: s.id,
+    })
+  }
+
+  for (const ie of integrationEvents) {
+    out.push({
+      id: `INTEGRATION:${ie.id}`,
+      type: 'INTEGRATION',
+      title: ie.title,
+      startTime: ie.startTime,
+      endTime: ie.endTime,
+      allDay: ie.allDay,
+      colour: null,
+      sourceId: ie.id,
     })
   }
 

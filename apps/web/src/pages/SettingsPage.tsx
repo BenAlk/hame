@@ -33,6 +33,7 @@ import {
 } from '@/api/immich'
 import { useIdleSettings, useUpdateIdleSettings } from '@/api/idle'
 import { useExportBackup, useImportBackup } from '@/api/backup'
+import { IntegrationsCard } from '@/components/features/integrations/IntegrationsCard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast'
 import { BackupEnvelopeSchema } from '@hame/shared'
@@ -108,6 +109,8 @@ export function SettingsPage() {
         <WifiCard />
 
         <ImmichCard />
+
+        <IntegrationsCard />
 
         <IdleModeCard />
 

@@ -113,9 +113,17 @@ export type BinSourceType = (typeof BIN_SOURCE_TYPES)[number]
 /**
  * Discriminator for the aggregated calendar feed (spec §8.10). One unified event
  * shape is returned for rows pulled from several tables; `type` says which.
- * SYNCED is an event pulled from an external `CalendarSource` (iCal).
+ * SYNCED is an event pulled from an external `CalendarSource` (iCal); INTEGRATION
+ * is a dated event from a CALENDAR-kind integration provider (spec §10 Phase 10).
  */
-export const CALENDAR_EVENT_TYPES = ['MEAL', 'CHORE', 'BIN', 'EVENT', 'SYNCED'] as const
+export const CALENDAR_EVENT_TYPES = [
+  'MEAL',
+  'CHORE',
+  'BIN',
+  'EVENT',
+  'SYNCED',
+  'INTEGRATION',
+] as const
 export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number]
 
 /**
@@ -124,3 +132,29 @@ export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number]
  */
 export const CALENDAR_SOURCE_TYPES = ['ICAL', 'HOME_ASSISTANT'] as const
 export type CalendarSourceType = (typeof CALENDAR_SOURCE_TYPES)[number]
+
+// ── Phase 10: Integrations framework ─────────────────────────────────────────
+
+/**
+ * What kind of data an integration provider emits (spec §9.9, §10 Phase 10) —
+ * the only two output shapes the framework renders. `STATUS` providers return a
+ * point-in-time metric snapshot for a dashboard tile; `CALENDAR` providers return
+ * dated events the aggregated calendar merges in. The `feed`/list kind is deferred
+ * and the write-shaped `action`/control kind is a non-goal (spec §12).
+ */
+export const INTEGRATION_KINDS = ['STATUS', 'CALENDAR'] as const
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number]
+
+/**
+ * Health state of one STATUS metric, colouring its tile. `unknown` is the neutral
+ * default a provider uses when a value has no pass/fail meaning (e.g. a hostname).
+ */
+export const INTEGRATION_METRIC_STATES = ['ok', 'warn', 'crit', 'unknown'] as const
+export type IntegrationMetricState = (typeof INTEGRATION_METRIC_STATES)[number]
+
+/** Poll cadence a new integration takes when none is chosen (15 minutes). */
+export const DEFAULT_INTEGRATION_POLL_SECONDS = 900
+
+/** Guardrails on a configurable poll cadence: 1 minute to 24 hours. */
+export const MIN_INTEGRATION_POLL_SECONDS = 60
+export const MAX_INTEGRATION_POLL_SECONDS = 86_400

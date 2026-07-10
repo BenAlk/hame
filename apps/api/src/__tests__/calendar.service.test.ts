@@ -5,6 +5,7 @@ const instanceFindMany = vi.fn()
 const binFindMany = vi.fn()
 const eventFindMany = vi.fn()
 const syncedFindMany = vi.fn()
+const integrationEventFindMany = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
@@ -13,6 +14,7 @@ vi.mock('../lib/prisma.js', () => ({
     binCollection: { findMany: binFindMany },
     calendarObject: { findMany: eventFindMany },
     syncedEvent: { findMany: syncedFindMany },
+    integrationEvent: { findMany: integrationEventFindMany },
   },
 }))
 
@@ -21,7 +23,14 @@ const { getCalendar } = await import('../services/calendar.service.js')
 const day = (y: number, m: number, d: number) => new Date(y, m, d)
 
 beforeEach(() => {
-  for (const fn of [mealFindMany, instanceFindMany, binFindMany, eventFindMany, syncedFindMany]) {
+  for (const fn of [
+    mealFindMany,
+    instanceFindMany,
+    binFindMany,
+    eventFindMany,
+    syncedFindMany,
+    integrationEventFindMany,
+  ]) {
     fn.mockReset()
     fn.mockResolvedValue([])
   }
@@ -168,5 +177,21 @@ describe('getCalendar', () => {
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: 'BIN', title: 'Council bin', colour: '#2f6fb0' })
     expect(events[0].id).toBe('BIN:b9:2026-06-25')
+  })
+
+  it('merges cached events from CALENDAR-kind integrations', async () => {
+    integrationEventFindMany.mockResolvedValue([
+      {
+        id: 'ie1',
+        title: 'hame: v1.0',
+        startTime: day(2026, 5, 26),
+        endTime: null,
+        allDay: true,
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'INTEGRATION', title: 'hame: v1.0', colour: null })
+    expect(events[0].id).toBe('INTEGRATION:ie1')
   })
 })

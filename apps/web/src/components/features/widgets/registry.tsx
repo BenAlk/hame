@@ -8,6 +8,7 @@ import {
 } from '@hame/shared'
 import { useHaEntities } from '@/api/home-assistant'
 import { useWifiConfig } from '@/api/wifi'
+import { useIntegrationStatus } from '@/api/integrations'
 import { ActiveShoppingWidget } from './active-shopping-widget'
 import { TodaysMealsWidget } from './todays-meals-widget'
 import { TodaysChoresWidget } from './todays-chores-widget'
@@ -21,6 +22,7 @@ import { ClockGreetingWidget } from './clock-greeting-widget'
 import { UpcomingEventsWidget } from './upcoming-events-widget'
 import { WifiQrWidget } from './wifi-qr-widget'
 import { ChoreStatsWidget } from './chore-stats-widget'
+import { IntegrationStatusWidget } from './integration-status-widget'
 
 /** The component rendered for each placeable widget type (spec §10 Phase 7.1). */
 export const WIDGET_COMPONENTS: Record<WidgetType, ComponentType> = {
@@ -37,6 +39,7 @@ export const WIDGET_COMPONENTS: Record<WidgetType, ComponentType> = {
   smartHome: SmartHomeWidget,
   wifiQr: WifiQrWidget,
   choreStats: ChoreStatsWidget,
+  integrationStatus: IntegrationStatusWidget,
 }
 
 const CONTROLLABLE = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as readonly string[]
@@ -51,15 +54,19 @@ const CONTROLLABLE = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as readonly 
 export function useWidgetAvailability(): Record<WidgetType, boolean> {
   const { data: entities } = useHaEntities()
   const { data: wifi } = useWifiConfig()
+  const { data: statuses } = useIntegrationStatus()
   const list = entities ?? []
   const hasWeather = list.some((e) => e.domain === 'weather')
   const hasControllable = list.some((e) => CONTROLLABLE.includes(e.domain))
   // The WiFi QR is also gated on the viewer being local (spec §11).
   const hasWifi = Boolean(wifi?.configured && wifi.isActive && wifi.isLocalClient)
+  // The status widget only shows once there's an active STATUS integration to render.
+  const hasStatus = (statuses ?? []).length > 0
 
   const availability = {} as Record<WidgetType, boolean>
   for (const type of WIDGET_TYPES) {
     if (type === 'wifiQr') availability[type] = hasWifi
+    else if (type === 'integrationStatus') availability[type] = hasStatus
     else if (!DASHBOARD_WIDGETS[type].requiresHa) availability[type] = true
     else if (type === 'weather') availability[type] = hasWeather
     else if (type === 'smartHome') availability[type] = hasControllable

@@ -624,3 +624,55 @@ model NotificationPreference {
 
   updatedAt DateTime @updatedAt
 }
+
+// ── Phase 10: Integrations framework ─────────────────────────────────────────
+
+/// A configured instance of an integration provider (spec §9.9, §10 Phase 10) —
+/// the pluggable-provider seam (bin/calendar sources) generalised. A first-party
+/// provider module, registry-keyed by `providerId`, pulls data from an external
+/// self-hosted service and returns it normalised. `secret` holds the AES-256-GCM
+/// ciphertext of the provider's credential (see lib/crypto.ts), null when a
+/// provider needs none, and is never returned to the client. A STATUS provider's
+/// latest reading caches on `snapshot`; a CALENDAR provider's dated events cache
+/// as `IntegrationEvent` rows (the SyncedEvent/BinOccurrence mould) and merge into
+/// the aggregated calendar. A poller (INTEGRATION_SYNC_CRON) refreshes each active
+/// integration and self-corrects like the other external sources.
+model Integration {
+  id                  String             @id @default(uuid())
+  providerId          String // registry key: "gitea", "truenas"
+  kind                IntegrationKind // matches the provider's declared kind
+  name                String // user label: "Homelab NAS", "Gitea"
+  config              Json // non-secret provider config (url, owner/repo, …)
+  secret              String? // AES-256-GCM ciphertext (see lib/crypto.ts); never returned
+  isActive            Boolean            @default(true)
+  pollIntervalSeconds Int                @default(900)
+  snapshot            Json? // last successful STATUS reading (normalised metrics)
+  lastSyncedAt        DateTime?
+  lastError           String?
+  events              IntegrationEvent[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+/// A dated event cached from a CALENDAR-kind integration — the SyncedEvent /
+/// BinOccurrence mould (spec §7.7). Each poll replaces a source's rows wholesale,
+/// so this is a derived cache, never edited in Hame; the aggregated calendar
+/// (§9.5) merges these alongside every other source.
+model IntegrationEvent {
+  id            String      @id @default(uuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  externalId    String // dedupe key within the source
+  title         String
+  startTime     DateTime
+  endTime       DateTime?
+  allDay        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@unique([integrationId, externalId])
+}
+
+enum IntegrationKind {
+  STATUS
+  CALENDAR
+}

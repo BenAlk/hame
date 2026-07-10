@@ -33,6 +33,7 @@ const TYPE_META: Record<CalendarEventType, { label: string; colour: string }> = 
   BIN: { label: 'Bins', colour: '#9aa0a6' },
   EVENT: { label: 'Events', colour: '#d16a6a' },
   SYNCED: { label: 'External', colour: '#2f6fb0' },
+  INTEGRATION: { label: 'Integrations', colour: '#7a6ca8' },
 }
 const WEEKDAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 

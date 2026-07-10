@@ -160,6 +160,30 @@ a **Sync now** button per bin. A failed fetch keeps the last good dates and just
 councils only publish "this week" plus a frequency, so a 4-weekly bin can take a sync or two before
 every future date is known — see the package README for why.
 
+## Optional: dashboard & calendar integrations
+
+Hame can pull data from your other self-hosted services onto its dashboard and
+calendar, set up per-service under **Settings → Integrations** (admin only). Each
+integration is either a **status** source (a metric tile on the dashboard's
+**System status** widget) or a **calendar** source (dated events on the shared
+calendar). Any secret you enter is AES-256-GCM encrypted at rest and never leaves
+the server; a background poll refreshes each one (`INTEGRATION_SYNC_CRON`, every
+15 min by default), and a failed fetch keeps the last good data and just records
+the error. Two providers ship today:
+
+- **TrueNAS Scale** (status) — pool health, capacity and system info from a
+  TrueNAS Scale server over its JSON-RPC WebSocket API. Needs the server URL
+  (**https** — TrueNAS rejects API keys over plain http) and a user-linked **API
+  key** (Credentials → Local Users → API keys; a read-only service account is
+  ideal). Targets 25.04+ (the REST API is removed in TrueNAS 26).
+- **Gitea / Forgejo** (calendar) — a repository's **milestone due-dates** on your
+  calendar. Needs the server URL, the owner/repo, and a read-only **access token**
+  (Settings → Applications). Built against Gitea's `/api/v1`; Forgejo ≥ 12 has
+  diverged its API, so verify against your instance.
+
+Adding a new provider is a small first-party module — see
+[`apps/api/src/integrations/providers`](./apps/api/src/integrations/providers/README.md).
+
 ## Optional: photo screensaver (Immich) + idle mode
 
 Left idle, the wall tablet turns into a digital photo frame — cycling photos from your self-hosted

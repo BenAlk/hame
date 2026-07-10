@@ -5,6 +5,7 @@ import { prisma } from './lib/prisma.js'
 import { startCalendarSyncJob, stopCalendarSyncJob } from './jobs/calendar-sync.job.js'
 import { startBinSyncJob, stopBinSyncJob } from './jobs/bin-sync.job.js'
 import { startNotificationJob, stopNotificationJob } from './jobs/notification.job.js'
+import { startIntegrationSyncJob, stopIntegrationSyncJob } from './jobs/integration-sync.job.js'
 import { startHomeAssistant, stopHomeAssistant } from './integrations/home-assistant/index.js'
 
 const app = createApp()
@@ -16,6 +17,7 @@ const server = app.listen(env.API_PORT, () => {
 startCalendarSyncJob()
 startBinSyncJob()
 startNotificationJob()
+startIntegrationSyncJob()
 void startHomeAssistant()
 
 async function shutdown(signal: string) {
@@ -23,6 +25,7 @@ async function shutdown(signal: string) {
   stopCalendarSyncJob()
   stopBinSyncJob()
   stopNotificationJob()
+  stopIntegrationSyncJob()
   stopHomeAssistant()
   server.close()
   await prisma.$disconnect()

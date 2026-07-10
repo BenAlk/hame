@@ -50,6 +50,10 @@ const EnvSchema = z.object({
   // Runs hourly; the engine acts only at its morning/evening slot hours, so each
   // reminder fires once a day (single-instance caveat as above). Default: hourly.
   NOTIFICATION_CRON: z.string().default('0 * * * *'),
+  // Cron expression for refreshing external integrations (spec §10 Phase 10). Each
+  // active integration's cached snapshot/events self-correct on this schedule; the
+  // same single-instance caveat applies. Default: every 15 minutes.
+  INTEGRATION_SYNC_CRON: z.string().default('*/15 * * * *'),
   // Public base URL CalDAV clients should use (spec §10 Phase 5.5), e.g.
   // https://calendar.example.com. Shown in the app's CalDAV setup. Leave unset to
   // fall back to the server's detected LAN address (handy for local testing).

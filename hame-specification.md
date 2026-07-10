@@ -248,7 +248,7 @@ hame/
 
 ## 7. Data Models
 
-All models defined in `apps/api/prisma/schema.prisma`. The full design below spans 26 models; those through Phase 5.6 are built, with the §7.8 integration singletons (Home Assistant, Immich, dashboard, notifications, idle mode) landing in Phases 6–8.
+All models defined in `apps/api/prisma/schema.prisma`. The full design below spans 28 models; those through Phase 5.6 are built, with the §7.8 integration singletons (Home Assistant, Immich, dashboard, notifications, idle mode) landing in Phases 6–8 and the `Integration` / `IntegrationEvent` pair in Phase 10.
 
 ### 7.1 Auth & Users
 
@@ -704,6 +704,48 @@ model IdleModeSettings {
   showBinsInIdle         Boolean  @default(true)          // rotate in a "bin due today/tomorrow" screen
   showMealsInIdle        Boolean  @default(true)          // rotate in today's meal for the current slot
   updatedAt              DateTime @updatedAt
+}
+
+model Integration {
+  // A configured instance of an IntegrationProvider (§9.9, §10 Phase 10).
+  id                  String             @id @default(uuid())
+  providerId          String                                  // registry key: "gitea", "truenas"
+  kind                IntegrationKind                          // matches the provider's declared kind
+  name                String                                   // user label: "Homelab NAS", "Gitea"
+  config              Json                                     // non-secret provider config (url, owner/repo, poll interval…)
+  secret              String?                                  // provider secret, AES-256-GCM ENCRYPTED AT REST (§11); null if none needed
+  isActive            Boolean            @default(true)
+  pollIntervalSeconds Int                @default(900)         // per-instance refresh cadence
+  snapshot            Json?                                    // last successful STATUS payload (normalised metrics) — rendered by the generic status widget
+  events              IntegrationEvent[]                       // cached CALENDAR events (empty for STATUS)
+  lastSyncedAt        DateTime?                                // last successful poll (null until first)
+  lastError           String?                                  // last failure; cleared on next success (graceful-degrade, §9.6)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model IntegrationEvent {
+  // A dated event cached from a CALENDAR-kind integration — the BinOccurrence
+  // mould (§7.7). Each poll replaces a source's rows wholesale, so the cache
+  // always reflects the source, and the aggregated calendar (§9.5) unions these
+  // in alongside every other source.
+  id            String      @id @default(uuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  externalId    String                                        // dedupe key within the source
+  title         String
+  startTime     DateTime
+  endTime       DateTime?
+  allDay        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@unique([integrationId, externalId])
+}
+
+enum IntegrationKind {
+  STATUS                                                       // point-in-time metrics → dashboard tile
+  CALENDAR                                                     // dated events → aggregated calendar
+  // FEED (ordered list) is deferred; ACTION/control is a non-goal — see §12
 }
 ```
 
@@ -1169,6 +1211,24 @@ migration. Three properties make it robust:
   model** — so adding a model later without adding it to the backup fails a test
   rather than silently dropping a table from every backup (the same "a change
   fails a test" ethos as the bin-scraper fixtures and the QR encoder, §10).
+
+### 9.9 Pluggable Integration Providers
+
+The bin-source seam (§9.6) generalised. An external self-hosted service reaches
+Hame through a first-party **`IntegrationProvider`** module registered in a
+registry — the same "drop in a module" contribution model as a bin-scraper
+council. Each provider declares its `config` / `secret` fields (which drive a
+generic settings form + test-connection, so a new provider ships **zero bespoke
+UI**) and its output **kind**, and **owns its transport** — the core only ever
+sees normalised data, which is what lets one abstraction span a plain HTTP `GET`
+and a stateful WebSocket handshake. `STATUS` providers return a metric snapshot
+for a generic dashboard tile; `CALENDAR` providers return `IntegrationEvent`s the
+aggregated calendar (§9.5) unions in. Instances are `Integration` rows with an
+encrypted secret (§11), refreshed by a poller on the `BIN_SYNC_CRON`
+graceful-degrade contract (a failed poll keeps the last good data, §9.6).
+**Read-only by design**: the `feed` (list) kind is deferred and `action` / control
+is a non-goal (§12), keeping the abstraction inside the Phase 8.6 security
+envelope. Built Phase 10.
 
 ---
 
@@ -1929,6 +1989,99 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 
 **Goal**: CV-ready, link-able from portfolio.
 
+### Phase 10 — Integrations Framework
+
+Generalise the two existing provider seams (pluggable bin sources §9.6, calendar
+sources §8.10) into one first-class **integration provider** abstraction (§9.9),
+so external self-hosted services surface on Hame's dashboard and calendar through
+a single, transport-agnostic interface. A new integration becomes **one module +
+a registry entry** — the same contribution model as adding a council to
+`packages/bin-scraper`.
+
+**Goal**: A household — or a contributor via PR — can wire a self-hosted service
+into Hame's dashboard/calendar without touching the core: config-driven,
+read-only, inside the Phase 8.6 security envelope.
+
+**Design**:
+
+- **`IntegrationProvider` interface** — first-party modules under
+  `apps/api/src/integrations/<id>/`, registered in a registry map (the PR seam).
+  A provider declares its `id`, its `kind` (`STATUS` | `CALENDAR`), and the
+  `configFields` / `secretFields` it needs (driving a generic settings form +
+  test-connection), and owns its transport — the framework only sees normalised
+  output.
+- **`Integration` + `IntegrationEvent` models** (§7.8) — a configured instance:
+  provider id, kind, label, non-secret `config`, an AES-256-GCM-encrypted
+  `secret` (§11, never returned — the `hasToken` pattern from HA/Immich), poll
+  interval, the last `snapshot` (STATUS) or cached `events` (CALENDAR), and
+  `lastSyncedAt` / `lastError`. A Phase 10 migration adds them; both join
+  `BACKUP_MODELS` and `Integration.secret` joins `BACKUP_SECRET_FIELDS`, so
+  backups round-trip and re-key it (§9.8).
+- **Poller** in the `BIN_SYNC_CRON` mould — each active integration refreshes on
+  its interval; a failed poll keeps the last good snapshot/events and records
+  `lastError` (graceful-degrade, §9.6). CALENDAR replaces its `IntegrationEvent`
+  rows wholesale, which the aggregated calendar (§9.5) unions in.
+- **Two output kinds only.** STATUS → a **generic status widget** rendering any
+  provider's `{ label, value, state }` metrics uniformly (no bespoke React per
+  provider — the line that keeps this a framework, not a code-store). CALENDAR →
+  the existing aggregated calendar. The `feed` / list kind and the write-shaped
+  `action` / control kind are out of scope (§12).
+- **Security.** Admin-only, CSRF-protected, secrets encrypted at rest. Because
+  integrations are admin-configured LAN services, their outbound HTTP is **exempt
+  from the `safeFetch` private-IP block** (like HA/Immich/Ollama, §8.6) — which
+  is exactly why a first-party provider beats pasting a LAN URL into a generic
+  iCal/URL field.
+
+Split into sub-phases, each landing green (mirroring 6.x / 7.x):
+
+#### Phase 10.1 — Provider framework + Gitea (reference) ✅ Complete (10-07-2026)
+
+The abstraction end-to-end on the **simplest** transport: the
+`IntegrationProvider` interface + registry, the `Integration` / `IntegrationEvent`
+models + migration + backup wiring, the poller, the shared `@hame/shared` Zod
+contracts, and an admin **Settings → Integrations** slice (list / add / edit /
+delete / test). The reference provider is **Gitea/Forgejo milestones** — a plain
+HTTP `GET /api/v1/repos/{owner}/{repo}/milestones` (or the cross-repo issue
+search) with `Authorization: token` header auth, projecting `due_on` into
+`IntegrationEvent`s on the calendar. Built against Gitea's `/api/v1`; Forgejo ≥ 12
+has diverged its API, so compatibility is verified and noted rather than assumed.
+Proves the framework — config form, encrypted secret, LAN-exempt fetch, poller,
+calendar bridge — against a real provider before a second transport or kind
+exists.
+
+#### Phase 10.2 — TrueNAS status provider + status widget ✅ Complete (10-07-2026)
+
+The second axis: a **STATUS** provider over a **WebSocket JSON-RPC** transport.
+TrueNAS Scale (25.04+; the REST API is removed in TrueNAS 26) connects over
+JSON-RPC 2.0, authenticates with a **service-account API key**, and calls
+read-only methods (`system.info`, `pool.query`, `disk.query`, `reporting.*`) —
+connect → auth → call → close per poll, reusing the `ws` patterns from the HA
+client (§10 Phase 6.1). Its normalised snapshot renders through a new **generic
+status dashboard widget**. With 10.1 this exercises the framework across both
+transports (HTTP ↔ WebSocket) and both kinds (calendar ↔ status) — proving the
+abstraction against real spread, not one happy path.
+
+#### Phase 10.3 — Settings UX + contributor docs ✅ Complete (10-07-2026)
+
+Polish Settings → Integrations (dynamic provider-driven forms, test-connection
+feedback, per-instance active / last-synced / last-error state, a pause/resume
+toggle) and write a **"how to add a provider"** guide
+(`apps/api/src/integrations/providers/README.md`) mirroring the
+`packages/bin-scraper` README, plus an end-user Integrations section in the root
+README, so both the PR seam and the feature are documented.
+
+**Verified**: typecheck / lint / format green across all packages, **412 API + 43
+web + 15 bin-scraper tests** — incl. the Gitea milestone mapping / registry /
+mocked-fetch, the integration service's secret-at-rest / kind-derivation /
+graceful-poll / wholesale-event-replace, the aggregated-calendar merge, the
+TrueNAS status mapping / ws-URL derivation / formatters, and the backup +
+dashboard-widget coverage guards accepting the two new models and the widget type
+— all builds clean. Live smoke: the API boots with the integration poller
+scheduled and both `/api/integrations` (admin) and `/api/integrations/status`
+(member) mount behind their auth gates. Verified live end-to-end (10-07-2026)
+against real servers: a Gitea repo's milestone due-dates on the calendar, and a
+TrueNAS Scale's pools/system on the System status widget.
+
 ---
 
 ## 11. Security & Conventions
@@ -1992,6 +2145,21 @@ Comprehensive README, demo data seed script, architecture diagrams, tests for cr
 - Key design note: councils rarely publish concrete future dates, only "this week" + weekday/frequency, so the model is **observe-then-project** with a `priorAnchor` carried across syncs to pin 4-weekly cycles (see §10 Phase 5.6).
 - First council adapter shipped; further councils are added one module at a time. An LLM is used only as a dev aid for reverse-engineering a new council's page, never at runtime.
 - Blog post: _"How I Scraped My Council's Website to Automate Bin Reminders"_
+
+### Integration Providers — Further Kinds
+
+The Phase 10 integration framework (§9.9, §10) ships two read-only output kinds,
+`STATUS` and `CALENDAR`. Two more are consciously left out:
+
+- **`feed` (ordered list)** — the third read-only shape: a list of non-dated
+  items (recent documents, unread articles, recently-added media) rendered as a
+  list widget. Rounds out the taxonomy (metrics / events / feeds); a natural
+  later 10.x. A good example would be a LAN service behind a token (e.g.
+  Paperless-ngx, FreshRSS) so it justifies the framework over a plain RSS URL.
+- **`action` / control (non-goal)** — an integration that _does_ things (restart
+  a container, run a job) means write access to LAN services. It breaks the
+  read-only security envelope (§8.6) and overlaps Home Assistant's control lane,
+  so it is deliberately excluded, not merely unbuilt.
 
 ### Other Down-the-Line Features
 

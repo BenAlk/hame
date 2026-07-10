@@ -37,6 +37,7 @@ export const BACKUP_MODELS = [
   'DashboardLayout',
   'SmartHomeSettings',
   'NotificationPreference',
+  'Integration',
   // Reference the layer above.
   'ShoppingListItem',
   'PantryEntry',
@@ -44,6 +45,7 @@ export const BACKUP_MODELS = [
   'RecipeIngredient',
   'RecipeStep',
   'MealPlanEntry',
+  'IntegrationEvent',
   // Config singletons — no foreign keys, grouped last.
   'HouseholdSettings',
   'OllamaConfig',
@@ -73,6 +75,7 @@ export const BACKUP_SECRET_FIELDS: Partial<Record<BackupModelName, readonly stri
   HomeAssistantConfig: ['accessToken'],
   ImmichConfig: ['apiKey'],
   WifiConfig: ['password'],
+  Integration: ['secret'],
 }
 
 /** Metadata describing an export, checked on import before anything is written. */
