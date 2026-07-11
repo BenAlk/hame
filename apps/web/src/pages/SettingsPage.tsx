@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import type {
+  BackupFrequency,
   HaConnectionStatus,
   HomeAssistantTestResult,
   IdleModeSettings,
@@ -10,7 +11,7 @@ import type {
   OllamaTestResult,
   WifiSecurity,
 } from '@hame/shared'
-import { DEFAULT_OLLAMA_MODEL } from '@hame/shared'
+import { BACKUP_RETENTION_MAX, BACKUP_RETENTION_MIN, DEFAULT_OLLAMA_MODEL } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,7 +33,13 @@ import {
   useUpdateImmichConfig,
 } from '@/api/immich'
 import { useIdleSettings, useUpdateIdleSettings } from '@/api/idle'
-import { useExportBackup, useImportBackup } from '@/api/backup'
+import {
+  useBackupSettings,
+  useExportBackup,
+  useImportBackup,
+  useRunBackup,
+  useUpdateBackupSettings,
+} from '@/api/backup'
 import { IntegrationsCard } from '@/components/features/integrations/IntegrationsCard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast'
@@ -157,6 +164,8 @@ export function SettingsPage() {
         <LabsCard />
 
         <DataCard />
+
+        <AutoBackupCard />
       </div>
     </main>
   )
@@ -311,6 +320,263 @@ function DataCard() {
         This permanently erases all current data in Hame and replaces it with the contents of the
         backup file. It can&apos;t be undone.
       </ConfirmDialog>
+    </Card>
+  )
+}
+
+const WEEKDAY_NAMES = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+/**
+ * Admin-only automated on-disk backups (spec §10 Phase 8.9). Schedules the same
+ * encrypted export written to the server's BACKUP_DIR with rolling retention.
+ */
+function AutoBackupCard() {
+  const { data: settings } = useBackupSettings()
+  const update = useUpdateBackupSettings()
+  const runBackup = useRunBackup()
+
+  const [enabled, setEnabled] = useState(false)
+  const [frequency, setFrequency] = useState<BackupFrequency>('DAILY')
+  const [hour, setHour] = useState(3)
+  const [weekday, setWeekday] = useState(0)
+  const [retentionCount, setRetentionCount] = useState(7)
+  const [passphrase, setPassphrase] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (settings && !seeded.current) {
+      seeded.current = true
+      setEnabled(settings.enabled)
+      setFrequency(settings.frequency)
+      setHour(settings.hour)
+      setWeekday(settings.weekday)
+      setRetentionCount(settings.retentionCount)
+    }
+  }, [settings])
+
+  if (!settings) return null
+  const hasPassphrase = settings.hasPassphrase
+
+  async function handleSave() {
+    setError(null)
+    setSaved(false)
+    if (enabled && !hasPassphrase && passphrase.length < 8) {
+      setError('Set a passphrase of at least 8 characters before enabling automated backups.')
+      return
+    }
+    if (passphrase && passphrase.length < 8) {
+      setError('Use a passphrase of at least 8 characters.')
+      return
+    }
+    try {
+      await update.mutateAsync({
+        enabled,
+        frequency,
+        hour,
+        weekday,
+        retentionCount,
+        ...(passphrase ? { passphrase } : {}),
+      })
+      setPassphrase('')
+      setSaved(true)
+      toast.success('Backup schedule saved.')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the backup schedule.')
+    }
+  }
+
+  async function handleRunNow() {
+    setError(null)
+    setSaved(false)
+    try {
+      const result = await runBackup.mutateAsync()
+      toast.success(`Backup written: ${result.filename} (${result.retained} kept).`)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not create the backup.')
+    }
+  }
+
+  const canRunNow = hasPassphrase || passphrase.length >= 8
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Automated backups</CardTitle>
+        <CardDescription>
+          Have Hame write an encrypted backup to the server on a schedule, keeping a rolling set of
+          the most recent files. They&apos;re saved to the backup directory on the host (outside the
+          database and app container), so they survive even if those are lost. Restore one from the{' '}
+          <strong>Data</strong> card above. Keep the passphrase safe — the files can&apos;t be
+          opened without it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <ToggleRow
+          label={enabled ? 'Automated backups on' : 'Automated backups off'}
+          checked={enabled}
+          disabled={update.isPending}
+          onChange={setEnabled}
+        />
+
+        <div className={cn('flex flex-col gap-4', !enabled && 'opacity-60')}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="backup-frequency">How often</Label>
+            <select
+              id="backup-frequency"
+              value={frequency}
+              disabled={!enabled}
+              onChange={(e) => {
+                setFrequency(e.target.value as BackupFrequency)
+                setSaved(false)
+              }}
+              className="w-40 rounded-control border border-input bg-surface px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value="DAILY">Daily</option>
+              <option value="WEEKLY">Weekly</option>
+            </select>
+          </div>
+
+          {frequency === 'WEEKLY' && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="backup-weekday">Day of the week</Label>
+              <select
+                id="backup-weekday"
+                value={weekday}
+                disabled={!enabled}
+                onChange={(e) => {
+                  setWeekday(Number(e.target.value))
+                  setSaved(false)
+                }}
+                className="w-40 rounded-control border border-input bg-surface px-3 py-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {WEEKDAY_NAMES.map((name, i) => (
+                  <option key={name} value={i}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="backup-hour">Time of day (hour, UTC)</Label>
+            <Input
+              id="backup-hour"
+              type="number"
+              min={0}
+              max={23}
+              value={hour}
+              disabled={!enabled}
+              onChange={(e) => {
+                setHour(Math.min(23, Math.max(0, Number(e.target.value) || 0)))
+                setSaved(false)
+              }}
+              className="w-32"
+            />
+            <p className="text-xs text-muted-foreground">
+              The hour (0–23) the backup runs, in the server&apos;s time (UTC by default).
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="backup-retention">Backups to keep</Label>
+            <Input
+              id="backup-retention"
+              type="number"
+              min={BACKUP_RETENTION_MIN}
+              max={BACKUP_RETENTION_MAX}
+              value={retentionCount}
+              disabled={!enabled}
+              onChange={(e) => {
+                const n = Number(e.target.value) || BACKUP_RETENTION_MIN
+                setRetentionCount(Math.min(BACKUP_RETENTION_MAX, Math.max(BACKUP_RETENTION_MIN, n)))
+                setSaved(false)
+              }}
+              className="w-32"
+            />
+            <p className="text-xs text-muted-foreground">
+              Older files past this many are deleted automatically ({BACKUP_RETENTION_MIN}–
+              {BACKUP_RETENTION_MAX}).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="backup-auto-pass">
+            {hasPassphrase ? 'Change the backup passphrase' : 'Backup passphrase'}
+          </Label>
+          <Input
+            id="backup-auto-pass"
+            type="password"
+            value={passphrase}
+            onChange={(e) => {
+              setPassphrase(e.target.value)
+              setSaved(false)
+            }}
+            placeholder={
+              hasPassphrase ? 'Leave blank to keep the current one' : 'At least 8 characters'
+            }
+            autoComplete="off"
+          />
+          <p className="text-xs text-muted-foreground">
+            {hasPassphrase
+              ? 'A passphrase is set. You need it to restore any of these backups — store it somewhere safe, off this server.'
+              : 'Used to encrypt every automated backup. Store it somewhere safe, off this server — the files can only be restored with it.'}
+          </p>
+        </div>
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+        {saved && !error && (
+          <p className="flex items-center gap-2 text-sm text-sage">
+            <CheckCircle2 className="size-4 shrink-0" />
+            Saved.
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" onClick={() => void handleSave()} disabled={update.isPending}>
+            {update.isPending ? 'Saving…' : 'Save schedule'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handleRunNow()}
+            disabled={runBackup.isPending || !canRunNow}
+            title={canRunNow ? undefined : 'Set a passphrase first'}
+          >
+            {runBackup.isPending ? 'Backing up…' : 'Back up now'}
+          </Button>
+        </div>
+
+        <div className="rounded-control border border-line bg-surface/50 p-3 text-xs text-muted-foreground">
+          <p>
+            Last backup: {formatDateTime(settings.lastRunAt)}
+            {settings.lastStatus === 'FAILURE' && (
+              <span className="ml-1 text-warning">
+                (failed{settings.lastError ? `: ${settings.lastError}` : ''})
+              </span>
+            )}
+            {settings.lastStatus === 'SUCCESS' && <span className="ml-1 text-sage">(ok)</span>}
+          </p>
+          {enabled && <p>Next scheduled: {formatDateTime(settings.nextRunAt)}</p>}
+        </div>
+      </CardContent>
     </Card>
   )
 }

@@ -5,7 +5,8 @@ import { z } from 'zod'
 
 // Load the repo-root .env (apps/api/src/lib -> repo root is four levels up).
 const here = dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: resolve(here, '../../../../.env') })
+const repoRoot = resolve(here, '../../../..')
+dotenv.config({ path: resolve(repoRoot, '.env') })
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -58,6 +59,11 @@ const EnvSchema = z.object({
   // https://calendar.example.com. Shown in the app's CalDAV setup. Leave unset to
   // fall back to the server's detected LAN address (handy for local testing).
   CALDAV_PUBLIC_URL: z.string().url().optional().or(z.literal('')),
+  // Directory the automated backup job writes rolling backup files to (spec §10
+  // Phase 8.9). In production this is a host bind-mount (e.g. /data/backups →
+  // a directory on the host) so backups survive a dead container or database.
+  // Defaults to <repo>/backups for local development.
+  BACKUP_DIR: z.string().min(1).default(resolve(repoRoot, 'backups')),
 })
 
 const parsed = EnvSchema.safeParse(process.env)

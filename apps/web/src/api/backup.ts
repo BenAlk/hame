@@ -1,6 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { BackupEnvelope, ImportBackupResult } from '@hame/shared'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type {
+  BackupEnvelope,
+  BackupSettings,
+  ImportBackupResult,
+  RunBackupResult,
+  UpdateBackupSettingsInput,
+} from '@hame/shared'
 import { apiFetch } from './client'
+
+const BACKUP_SETTINGS_KEY = ['backup-settings'] as const
 
 /**
  * Backup export/import (spec §8.15). Export returns the encrypted envelope (the
@@ -29,5 +37,35 @@ export function useImportBackup() {
     onSuccess: () => {
       void qc.invalidateQueries()
     },
+  })
+}
+
+/** Admin-only: the automated on-disk backup schedule (spec §10 Phase 8.9). */
+export function useBackupSettings() {
+  return useQuery<BackupSettings>({
+    queryKey: BACKUP_SETTINGS_KEY,
+    queryFn: () => apiFetch<BackupSettings>('/api/backup/settings'),
+  })
+}
+
+/** Admin-only: save the automated-backup schedule (and optionally its passphrase). */
+export function useUpdateBackupSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: UpdateBackupSettingsInput) =>
+      apiFetch<BackupSettings>('/api/backup/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (data) => qc.setQueryData(BACKUP_SETTINGS_KEY, data),
+  })
+}
+
+/** Admin-only: write a backup to disk immediately ("Back up now"). */
+export function useRunBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiFetch<RunBackupResult>('/api/backup/run', { method: 'POST' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: BACKUP_SETTINGS_KEY }),
   })
 }

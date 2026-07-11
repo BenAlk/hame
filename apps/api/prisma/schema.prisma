@@ -676,3 +676,39 @@ enum IntegrationKind {
   STATUS
   CALENDAR
 }
+
+// ── Phase 8.9: Automated on-disk backups ─────────────────────────────────────
+
+/// Automated backup schedule (spec §8.15, §10 Phase 8.9). Singleton extending the
+/// manual export/import (§8.8): a scheduled job seals the same passphrase-encrypted
+/// envelope and writes it to the host-mounted `BACKUP_DIR` with rolling retention,
+/// so backups survive a dead container or database. `passphrase` holds the
+/// AES-256-GCM ciphertext (see lib/crypto.ts) of the seal passphrase — never
+/// returned to the client — because a scheduled run has no human to type one; the
+/// files still decrypt with the passphrase *alone* (not this instance's
+/// `ENCRYPTION_KEY`), which is what lets them restore onto fresh hardware. The
+/// schedule lives here (not in a cron env) so an hourly tick reads it and a pure
+/// `isBackupDue` decides — catching up a run missed while the container was down.
+model BackupSettings {
+  id             String           @id @default("singleton") // enforce single row
+  enabled        Boolean          @default(false)
+  frequency      BackupFrequency  @default(DAILY)
+  hour           Int              @default(3) // hour-of-day (UTC / container time)
+  weekday        Int              @default(0) // 0=Sun … 6=Sat, for WEEKLY
+  retentionCount Int              @default(7) // rolling max; oldest pruned past this
+  passphrase     String? // AES-256-GCM ciphertext (see lib/crypto.ts); never returned
+  lastRunAt      DateTime?
+  lastStatus     BackupRunStatus?
+  lastError      String?
+  updatedAt      DateTime         @updatedAt
+}
+
+enum BackupFrequency {
+  DAILY
+  WEEKLY
+}
+
+enum BackupRunStatus {
+  SUCCESS
+  FAILURE
+}

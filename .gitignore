@@ -32,6 +32,9 @@ coverage/
 # Uploads (runtime user content)
 uploads/
 
+# Automated backup files (encrypted, but contain password hashes + secrets)
+backups/
+
 # Vite
 apps/web/dev-dist/
 

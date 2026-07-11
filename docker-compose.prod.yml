@@ -50,6 +50,16 @@ services:
       INTEGRATION_SYNC_CRON: ${INTEGRATION_SYNC_CRON:-*/15 * * * *}
       # Public CalDAV base URL shown to phone clients; leave unset for LAN use.
       CALDAV_PUBLIC_URL: ${CALDAV_PUBLIC_URL:-}
+      # Where automated backups are written (spec §10 Phase 8.9). This is the path
+      # *inside* the container; the volume below bind-mounts a host directory here
+      # so backups survive a dead container or database and are reachable directly
+      # on the host (browsable, copyable off-box).
+      BACKUP_DIR: /data/backups
+    volumes:
+      # Host directory ← automated backup files. Set BACKUP_DIR_HOST to an
+      # absolute host path (e.g. /mnt/pool/hame-backups); defaults to ./backups
+      # next to this compose file.
+      - ${BACKUP_DIR_HOST:-./backups}:/data/backups
     expose:
       - '4000'
     healthcheck:

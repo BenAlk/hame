@@ -53,6 +53,7 @@ export const BACKUP_MODELS = [
   'ImmichConfig',
   'IdleModeSettings',
   'WifiConfig',
+  'BackupSettings',
 ] as const
 export type BackupModelName = (typeof BACKUP_MODELS)[number]
 
@@ -76,6 +77,7 @@ export const BACKUP_SECRET_FIELDS: Partial<Record<BackupModelName, readonly stri
   ImmichConfig: ['apiKey'],
   WifiConfig: ['password'],
   Integration: ['secret'],
+  BackupSettings: ['passphrase'],
 }
 
 /** Metadata describing an export, checked on import before anything is written. */

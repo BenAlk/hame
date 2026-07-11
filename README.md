@@ -228,6 +228,26 @@ data. Because the file is encrypted with your passphrase (not the server's
 Restore only into a Hame running the **same version** — it refuses a backup taken
 at a different database schema.
 
+### Automated backups
+
+Rather than remembering to click **Download**, an admin can have Hame back itself
+up on a schedule under **Settings → Automated backups**: turn it on, pick a
+frequency (daily or weekly) and time, set how many to keep (a rolling window,
+default 7), and set a passphrase once. Hame then writes the same encrypted file
+on schedule and deletes the oldest beyond your retention count. **Back up now**
+runs one immediately.
+
+The files land in the server's **`BACKUP_DIR`**. In production this is a
+**host directory bind-mounted into the container** — set `BACKUP_DIR_HOST` in your
+environment (see `.env.example` and `docker-compose.prod.yml`), e.g.
+`BACKUP_DIR_HOST=/mnt/pool/hame-backups`. That's the point: the backups sit on the
+host, outside the database and the app container, so they're still there — and
+still restorable onto fresh hardware — even if the container or database is lost.
+Because a scheduled run can't prompt you, the passphrase is stored (encrypted at
+rest) and used to seal each file; **record it somewhere off the server**, since
+the files can only be restored with it. To restore one, copy it off the host and
+use **Restore** under **Settings → Data**.
+
 ## Configuration & optional features
 
 Everything below is optional — Hame runs fully without any of it. Each is configured in-app under

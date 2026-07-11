@@ -747,6 +747,36 @@ enum IntegrationKind {
   CALENDAR                                                     // dated events → aggregated calendar
   // FEED (ordered list) is deferred; ACTION/control is a non-goal — see §12
 }
+
+model BackupSettings {
+  // Automated on-disk backup schedule (§8.15, §10 Phase 8.9). Singleton extending
+  // the manual export/import (§8.8): a scheduled job seals the same passphrase-
+  // encrypted envelope and writes it to the host-mounted BACKUP_DIR with rolling
+  // retention, so backups survive a dead container or database. The schedule lives
+  // here (not a cron env) so an hourly tick reads it and a pure `isBackupDue`
+  // decides — catching up a run missed while the container was down.
+  id             String           @id @default("singleton")
+  enabled        Boolean          @default(false)
+  frequency      BackupFrequency  @default(DAILY)
+  hour           Int              @default(3)                  // hour-of-day (UTC / container time)
+  weekday        Int              @default(0)                  // 0=Sun … 6=Sat, for WEEKLY
+  retentionCount Int              @default(7)                  // rolling max; oldest pruned past this
+  passphrase     String?                                       // AES-256-GCM ENCRYPTED AT REST (§11); never returned — a scheduled run has no human to type one
+  lastRunAt      DateTime?
+  lastStatus     BackupRunStatus?
+  lastError      String?
+  updatedAt      DateTime         @updatedAt
+}
+
+enum BackupFrequency {
+  DAILY
+  WEEKLY
+}
+
+enum BackupRunStatus {
+  SUCCESS
+  FAILURE
+}
 ```
 
 ---
@@ -1126,6 +1156,46 @@ heavy). Because the export _is_ Hame's own JSON envelope, **import is a plain
 — no file-upload middleware, keeping the dependency-light leaning. The file
 carries password hashes and the decrypted integration secrets, so it is
 **always** passphrase-encrypted; the app warns to store it somewhere safe.
+
+#### Automated on-disk backups (§10 Phase 8.9)
+
+The manual export above is pull-only — a human clicks **Download**. Phase 8.9 adds
+a **scheduled producer of the same envelope**, written server-side so a household
+that never remembers to click still has recent backups, and so those backups
+**survive a dead container or database**. It's an extension, not a rewrite:
+`exportBackup` is reused verbatim; only the sink and the trigger are new.
+
+- **Where — a host bind-mount.** Files are written to `BACKUP_DIR`, which in
+  production is a **directory on the host** bind-mounted into the API container
+  (`${BACKUP_DIR_HOST}:/data/backups`). This is the crux of "accessible even if
+  the container or DB corrupts": the files sit in the host filesystem, outside the
+  Postgres volume and the app container — browsable, copyable off-box, restorable
+  onto fresh hardware. (Storing backups _in_ the DB would die with it; inside the
+  container they'd vanish on rebuild.)
+- **Rolling retention.** Each run writes `hame-auto-<ISO timestamp>.json` and then
+  prunes the oldest beyond a configurable `retentionCount` (default 7). ISO
+  timestamps sort lexicographically, so "newest N" is a sort-and-slice.
+- **A stored seal passphrase.** A scheduled run has no human to type a passphrase,
+  so one is set once by the admin and **AES-256-GCM encrypted at rest** (the
+  Immich/WiFi pattern), decrypted at backup time to seal each file. Crucially the
+  files still decrypt with the **passphrase alone** (not the instance
+  `ENCRYPTION_KEY`), preserving the restore-onto-a-fresh-box property — which is
+  exactly what makes them useful when the original instance is gone. The admin is
+  warned to record the passphrase off-box, since a destroyed DB takes the stored
+  (encrypted) copy with it.
+- **Schedule in the DB, a coarse tick, catch-up.** `BackupSettings` (§7.8) holds
+  the toggle, `frequency` (daily/weekly) + `hour`/`weekday`, and `retentionCount`.
+  A fixed **hourly** `node-cron` tick reads the row and a **pure `isBackupDue`**
+  (in `@hame/shared`, UTC/DST-free, the recurrence/reminder-engine split) decides —
+  so the schedule is runtime-adjustable without rescheduling cron, and a slot
+  **missed while the container was down is caught up** on the next tick (and shortly
+  after boot). A failed run records `lastError` and keeps going (graceful-degrade,
+  §9.6); the manual **Back up now** button runs one immediately.
+- **Access & safety.** Admin-only, CSRF-protected endpoints
+  (`GET`/`PATCH /api/backup/settings`, `POST /api/backup/run`); the settings read
+  returns only `hasPassphrase`, never the passphrase. Files are written `0o600` in
+  a `0o700` directory and git-ignored. Restore reuses the existing upload flow
+  (download a file off the host, restore it under the Data card).
 
 ---
 
@@ -1998,6 +2068,56 @@ afterwards (wipe-and-replace); the WiFi secret decrypted to its original with a
 **different ciphertext blob** (correctly re-keyed under this instance's key); and
 every guard held — wrong passphrase / malformed file 400, unauthenticated 401,
 member 403, missing CSRF 403.
+
+### Phase 8.9 — Automated on-disk backups ✅ Complete (11-07-2026)
+
+Extends the manual backup/restore (§8.8, §8.15) with **scheduled, rolling,
+on-disk** backups, so a household that never clicks "Download" still has recent
+backups — and, critically, backups that **survive a dead container or database**
+because they live on a host-mounted directory, not in the DB or the container.
+Slotted here in build order (like §10 Phase 8.4 / 8.5 / 8.7 / 8.8).
+
+**Goal**: Backups happen on their own, roll over automatically, and sit somewhere
+that outlives the container and the database.
+
+**Delivered**: One migration (`phase_8_9_backup_settings`) adds the
+`BackupSettings` singleton (§7.8) — `enabled`, `frequency` (`DAILY`/`WEEKLY`) +
+`hour`/`weekday`, `retentionCount` (default 7), a `passphrase` **AES-256-GCM
+encrypted at rest** (never returned — the `hasPassphrase` shape), and
+`lastRunAt`/`lastStatus`/`lastError` — added to `BACKUP_MODELS` +
+`BACKUP_SECRET_FIELDS` so it round-trips through a backup (the coverage guard
+enforces this). Shared `@hame/shared` gains the settings/update/run Zod schemas
+and a **pure, UTC/DST-free scheduling engine** (`backup-settings.ts`:
+`isBackupDue` / `mostRecentScheduledSlot` / `nextScheduledSlot`), the same
+pure/impure split as the recurrence / reminder / chore-stats engines. The API
+reuses `exportBackup` **verbatim** and adds only the sink + trigger: a
+`writeScheduledBackup` seals the envelope to `BACKUP_DIR` and prunes the oldest
+past `retentionCount` (ISO-timestamped filenames sort lexicographically, so
+"newest N" is a sort-and-slice), a `runBackupNow` (records the outcome, rethrows)
+and a never-throwing `runBackupTick` (graceful-degrade, §9.6). A fixed **hourly**
+`node-cron` job reads the DB-held schedule and acts only when `isBackupDue` — so
+the schedule is runtime-adjustable without rescheduling cron, and a slot **missed
+while the container was down is caught up** on the next tick and shortly after
+boot (the notification-job "coarse tick, act at the slot" shape). Admin-only,
+CSRF-protected `GET`/`PATCH /api/backup/settings` + `POST /api/backup/run`; files
+written `0o600` in a `0o700` dir. Deployment: a new `BACKUP_DIR` env, a host
+bind-mount in `docker-compose.prod.yml` (`${BACKUP_DIR_HOST:-./backups}:/data/backups`),
+`.env.example` docs, and `backups/` git-ignored (the files carry hashes +
+secrets, even sealed). Web: an admin **Settings → Automated backups** card —
+toggle, frequency/hour/weekday, retention, the seal passphrase ("leave blank to
+keep"), **Back up now**, and a last-run / next-run status line — alongside the
+existing Data (backup & restore) card, which still handles restore.
+
+Verified: typecheck / lint / format green, **498 tests** (440 API + 43 web + 15
+bin-scraper; incl. the `isBackupDue` / slot / catch-up cases, `pruneBackups`
+retention + non-backup-file safety + missing-dir, and the settings service's
+encrypt-at-rest / never-return / omit-preserves / enable-requires-passphrase),
+all builds clean, plus a **live end-to-end smoke against the real dev DB + disk**:
+enabling without a passphrase refused; a backup written, decrypted with the
+passphrase (real seeded rows inside), a wrong passphrase rejected; rolling
+retention keeping exactly the configured count while writing more; and the run
+recorded as `SUCCESS`. The one remaining battle-test is a live prod boot with the
+host bind-mount on the homelab (like the HA / Immich / TrueNAS smokes).
 
 ### Phase 9 — Polish & Portfolio Prep ✅ Presentable core (11-07-2026)
 

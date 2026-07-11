@@ -1,20 +1,26 @@
-import type { Prisma } from '@prisma/client'
+import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { BackupSettings as BackupSettingsRow, Prisma } from '@prisma/client'
 import {
   BACKUP_FORMAT_VERSION,
   BACKUP_JOIN_TABLES,
   BACKUP_MODELS,
   BACKUP_SECRET_FIELDS,
   BackupPayloadSchema,
+  isBackupDue,
   type BackupEnvelope,
   type BackupPayload,
   type ImportBackupResult,
+  type RunBackupResult,
 } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { openBackup, sealBackup } from '../lib/backup-crypto.js'
+import { env } from '../lib/env.js'
 import { HttpError } from '../lib/http-error.js'
 import { logger } from '../lib/logger.js'
 import { reloadHomeAssistant } from '../integrations/home-assistant/index.js'
+import { getBackupSettingsRow, recordBackupRun, toSchedule } from './backup-settings.service.js'
 
 /**
  * Backup export/import (spec §8.15, §9.8). The row dump uses Postgres' own
@@ -189,4 +195,101 @@ export async function importBackup(
   const totalRows = Object.values(restored).reduce((sum, n) => sum + n, 0)
   logger.info({ totalRows }, 'Backup restored')
   return { restored, totalRows }
+}
+
+// ── Automated on-disk backups (spec §10 Phase 8.9) ───────────────────────────
+
+/**
+ * Scheduled backups reuse {@link exportBackup} — the identical passphrase-encrypted
+ * envelope — but write it to the host-mounted `BACKUP_DIR` with rolling retention,
+ * so a household survives a dead container or database without touching the shell.
+ * The schedule and seal passphrase live on the `BackupSettings` singleton; a coarse
+ * hourly tick reads them and the pure `isBackupDue` decides (catching up a slot
+ * missed while the container was down).
+ */
+
+/** Filename prefix marking a file as an automated backup (so pruning is scoped). */
+const AUTO_PREFIX = 'hame-auto-'
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** A sortable, colon-free filename — ISO timestamps sort lexicographically. */
+function backupFilename(now = new Date()): string {
+  return `${AUTO_PREFIX}${now.toISOString().replace(/[:.]/g, '-')}.json`
+}
+
+/**
+ * Delete automated backups beyond the newest `retentionCount`. Filenames carry an
+ * ISO timestamp, so a descending lexicographic sort is newest-first. Returns how
+ * many files remain. A missing directory is treated as empty (no error).
+ */
+export async function pruneBackups(dir: string, retentionCount: number): Promise<number> {
+  let entries: string[]
+  try {
+    entries = await readdir(dir)
+  } catch {
+    return 0
+  }
+  const files = entries
+    .filter((f) => f.startsWith(AUTO_PREFIX) && f.endsWith('.json'))
+    .sort()
+    .reverse()
+  const remove = files.slice(retentionCount)
+  await Promise.all(remove.map((f) => unlink(join(dir, f)).catch(() => undefined)))
+  return files.length - remove.length
+}
+
+/** Seal a fresh backup to `BACKUP_DIR` and prune, using the stored passphrase. */
+async function writeScheduledBackup(row: BackupSettingsRow): Promise<RunBackupResult> {
+  const passphrase = row.passphrase ? decryptSecret(row.passphrase) : null
+  if (!passphrase) throw HttpError.badRequest('Set a backup passphrase before running a backup')
+
+  const envelope = await exportBackup(passphrase)
+  const dir = env.BACKUP_DIR
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  const filename = backupFilename()
+  // 0o600 — the file carries password hashes and decrypted secrets (sealed, but
+  // keep it owner-only on disk regardless).
+  await writeFile(join(dir, filename), JSON.stringify(envelope), { mode: 0o600 })
+  const retained = await pruneBackups(dir, row.retentionCount)
+  return { filename, retained }
+}
+
+/**
+ * Run a backup immediately (the admin "Back up now" button), recording the
+ * outcome. Rethrows so the caller sees the error; the outcome is still recorded.
+ */
+export async function runBackupNow(): Promise<RunBackupResult> {
+  const row = await getBackupSettingsRow()
+  try {
+    const result = await writeScheduledBackup(row)
+    await recordBackupRun('SUCCESS', null)
+    logger.info({ filename: result.filename, retained: result.retained }, 'Manual backup written')
+    return result
+  } catch (err) {
+    await recordBackupRun('FAILURE', errorMessage(err))
+    throw err
+  }
+}
+
+/**
+ * The scheduled tick (hourly): back up only if due, and never throw — a failure
+ * is recorded and logged so the cron loop stays alive (graceful-degrade, §9.6).
+ */
+export async function runBackupTick(now = new Date()): Promise<void> {
+  const row = await getBackupSettingsRow()
+  if (!isBackupDue(toSchedule(row), row.lastRunAt, now)) return
+  try {
+    const result = await writeScheduledBackup(row)
+    await recordBackupRun('SUCCESS', null)
+    logger.info(
+      { filename: result.filename, retained: result.retained },
+      'Scheduled backup written',
+    )
+  } catch (err) {
+    await recordBackupRun('FAILURE', errorMessage(err))
+    logger.error({ err }, 'Scheduled backup failed')
+  }
 }

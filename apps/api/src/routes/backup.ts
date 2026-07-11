@@ -1,9 +1,15 @@
 import { Router } from 'express'
-import { ExportBackupSchema, ImportBackupSchema } from '@hame/shared'
+import { ExportBackupSchema, ImportBackupSchema, UpdateBackupSettingsSchema } from '@hame/shared'
 import { validateBody } from '../middleware/validate.js'
 import { requireAuth, requireAdmin } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
-import { exportBackupController, importBackupController } from '../controllers/backup.controller.js'
+import {
+  exportBackupController,
+  importBackupController,
+  getBackupSettingsController,
+  updateBackupSettingsController,
+  runBackupController,
+} from '../controllers/backup.controller.js'
 
 export const backupRouter = Router()
 
@@ -26,3 +32,17 @@ backupRouter.post(
   validateBody(ImportBackupSchema),
   importBackupController,
 )
+
+// Automated on-disk backup schedule (spec §10 Phase 8.9) — admin-only. The
+// schedule/passphrase read (never returns the passphrase), its update, and a
+// manual "back up now" that writes an envelope straight to BACKUP_DIR.
+backupRouter.get('/settings', requireAuth, requireAdmin, getBackupSettingsController)
+backupRouter.patch(
+  '/settings',
+  requireAuth,
+  requireAdmin,
+  verifyCsrf,
+  validateBody(UpdateBackupSettingsSchema),
+  updateBackupSettingsController,
+)
+backupRouter.post('/run', requireAuth, requireAdmin, verifyCsrf, runBackupController)
