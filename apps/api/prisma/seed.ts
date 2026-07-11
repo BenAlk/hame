@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import argon2 from 'argon2'
 import { PrismaClient } from '@prisma/client'
 import { firstDueDate, DEFAULT_DASHBOARD } from '@hame/shared'
+import { buildEventICal, icalEtag } from '../src/lib/icalendar.js'
 
 // Load the repo-root .env so DATABASE_URL is available when run via tsx.
 const here = dirname(fileURLToPath(import.meta.url))
@@ -517,6 +519,123 @@ async function main() {
       })
     }
     console.log("✅ Seeded starter recipes + tonight's meal")
+  }
+
+  // ── Bins (Phase 5) ───────────────────────────────────────────────────────—
+  // Manual schedules so "Next bin day" (§8.9) and the calendar populate out of
+  // the box. Colours follow the Hearth bin tokens (design-specification.md §3);
+  // a MANUAL bin computes its next collection live from the recurrence engine,
+  // so nothing is cached and there are no occurrences to seed.
+  if ((await prisma.binCollection.count()) === 0) {
+    // Anchor the fortnightly bins to the most recent Thursday so the next
+    // collection lands within the coming fortnight; grey trails blue by a week
+    // so the two alternate, as kerbside collections usually do.
+    const blueAnchor = new Date()
+    blueAnchor.setUTCHours(0, 0, 0, 0)
+    blueAnchor.setUTCDate(blueAnchor.getUTCDate() - ((blueAnchor.getUTCDay() + 3) % 7))
+    const greyAnchor = new Date(blueAnchor)
+    greyAnchor.setUTCDate(greyAnchor.getUTCDate() + 7)
+
+    await prisma.binCollection.createMany({
+      data: [
+        {
+          name: 'Burgundy bin',
+          colour: '#7d2b3e', // food & garden
+          recurrenceType: 'WEEKLY',
+          weekdays: ['WEDNESDAY'],
+        },
+        {
+          name: 'Blue bin',
+          colour: '#2f6fb0', // paper & card
+          recurrenceType: 'INTERVAL',
+          intervalDays: 14,
+          startDate: blueAnchor,
+        },
+        {
+          name: 'Grey bin',
+          colour: '#9aa0a6', // general waste
+          recurrenceType: 'INTERVAL',
+          intervalDays: 14,
+          startDate: greyAnchor,
+        },
+      ],
+    })
+    console.log('✅ Seeded bin collections')
+  }
+
+  // ── Calendar events (Phase 5) ────────────────────────────────────────────—
+  // A couple of household events so the month grid and "Upcoming events" widget
+  // aren't empty on a fresh install. Stored exactly the way the app writes them:
+  // a verbatim VEVENT (§8.10, §10 Phase 5.5) via the shared iCalendar builder.
+  if ((await prisma.calendarObject.count()) === 0) {
+    const atHour = (daysFromNow: number, hour: number): Date => {
+      const d = new Date()
+      d.setDate(d.getDate() + daysFromNow)
+      d.setHours(hour, 0, 0, 0)
+      return d
+    }
+    const allDayOn = (daysFromNow: number): Date => {
+      const d = new Date()
+      d.setUTCHours(0, 0, 0, 0)
+      d.setUTCDate(d.getUTCDate() + daysFromNow)
+      return d
+    }
+    interface EventSeed {
+      title: string
+      description?: string
+      start: Date
+      end?: Date
+      allDay?: boolean
+      colour?: string
+    }
+    const eventSeeds: EventSeed[] = [
+      {
+        title: 'Rex — vet checkup',
+        description: 'Annual booster and weigh-in.',
+        start: atHour(3, 10),
+        end: atHour(3, 11),
+        colour: '#6f8169',
+      },
+      {
+        title: 'Dinner with the neighbours',
+        start: atHour(5, 19),
+        end: atHour(5, 22),
+        colour: '#d16a6a',
+      },
+      {
+        title: 'Weekend away',
+        start: allDayOn(9),
+        end: allDayOn(11),
+        allDay: true,
+        colour: '#2f6fb0',
+      },
+    ]
+    for (const e of eventSeeds) {
+      const uid = `${randomUUID()}@hame`
+      const icalRaw = buildEventICal({
+        uid,
+        title: e.title,
+        description: e.description ?? null,
+        startTime: e.start,
+        endTime: e.end ?? null,
+        allDay: e.allDay ?? false,
+      })
+      await prisma.calendarObject.create({
+        data: {
+          uid,
+          etag: icalEtag(icalRaw),
+          icalRaw,
+          title: e.title,
+          description: e.description ?? null,
+          startTime: e.start,
+          endTime: e.end ?? null,
+          allDay: e.allDay ?? false,
+          colour: e.colour ?? null,
+          createdById: admin.id,
+        },
+      })
+    }
+    console.log('✅ Seeded calendar events')
   }
 }
 

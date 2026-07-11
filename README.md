@@ -7,7 +7,115 @@ Shopping lists, recipes, meal planning, pantry tracking, chores, pet care, bin
 reminders, a shared calendar, and smart-home controls via Home Assistant — in
 one self-hosted app, designed for a wall-mounted tablet dashboard.
 
-See [`hame-specification.md`](./hame-specification.md) for the full design document.
+Hame replaces juggling Grocy + Mealie + Vikunja with one app whose features join
+up: a week's meal plan checks the pantry and generates the shopping list for only
+what's short. It runs on your own hardware, stores everything in one Postgres
+database, and installs to the tablet or phone as a PWA.
+
+## Screenshots
+
+|                                                                                    |                                                                                  |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| ![Wall-tablet dashboard, light theme](docs/screenshots/dashboard-tablet-light.png) | ![Wall-tablet dashboard, dark theme](docs/screenshots/dashboard-tablet-dark.png) |
+
+_The wall-tablet dashboard — light and dark. The design direction is **Hearth**: warm cream "paper"
+surfaces, a dusty-rose accent, a reading serif for human moments._
+
+## Features
+
+- **Shopping & pantry** — multi-list shopping with quick-add, tag-grouped aisles and an archive flow
+  that rolls unbought items over and stocks the pantry; unit-aware low-stock and expiry tracking; a
+  household re-order checklist for consumables with an auto-cadence "probably due" hint.
+- **Recipes & meal planning** — manual recipes or one-paste URL import (schema.org), a weekly plan
+  with serving scaling, and the keystone: **generate a shopping list for the week** that scales each
+  recipe, subtracts what's already in the pantry, and lists only the shortfall.
+
+  ![Meal plan with the generate-shopping-list dialog](docs/screenshots/meal-plan-generate.png)
+
+- **Chores & pets** — recurring chores with rotation across the household, event-driven instance
+  generation, and per-pet care reminders (worming, flea, food defrost) with treatment history.
+- **Bins & calendar** — coloured bin schedules (typed, or pulled automatically from your council or
+  Home Assistant) and one aggregated calendar merging meals, chores, bin days, events and external
+  feeds. Two-way phone sync over **CalDAV** (DAVx5) is opt-in and fully self-hosted.
+
+  ![Aggregated month calendar](docs/screenshots/calendar-month.png)
+
+- **Home Assistant** — live sensor data and device controls on the dashboard over a WebSocket, plus
+  HA as a calendar and bin-schedule source.
+- **Dashboard & idle mode** — per-user and shared wall-tablet layouts with drag-and-drop widgets;
+  left idle, the tablet becomes a photo frame cycling your **Immich** library with a large clock.
+
+  |                                                                 |                                                                |
+  | --------------------------------------------------------------- | -------------------------------------------------------------- |
+  | ![Idle-mode screensaver](docs/screenshots/idle-screensaver.png) | ![Hame on a phone (PWA)](docs/screenshots/phone-dashboard.png) |
+
+- **Integrations** — surface other self-hosted services on the dashboard/calendar through one
+  provider framework (TrueNAS status, Gitea milestones ship today).
+- **Portable backups** — a passphrase-encrypted, re-keyable whole-database export/import.
+
+Full design and roadmap: [`hame-specification.md`](./hame-specification.md).
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph clients["Clients"]
+      tablet["Wall tablet · PWA"]
+      phone["Phone / browser · PWA"]
+      davx5["DAVx5 · CalDAV client"]
+    end
+
+    subgraph edge["Edge"]
+      cf["Cloudflare proxy"]
+      nginx["nginx — static web + reverse proxy"]
+    end
+
+    subgraph app["Hame — pnpm monorepo"]
+      web["apps/web — React SPA (Vite)"]
+      shared["packages/shared — Zod schemas<br/>(single source of truth)"]
+      api["apps/api — Express + Prisma"]
+    end
+
+    db[("PostgreSQL")]
+
+    subgraph ext["Self-hosted services · LAN"]
+      ha["Home Assistant"]
+      immich["Immich"]
+      ollama["Ollama · optional LLM"]
+      feeds["Council / iCal feeds"]
+      providers["Gitea · TrueNAS<br/>integration providers"]
+    end
+
+    tablet --> cf
+    phone --> cf
+    davx5 --> cf
+    cf --> nginx
+    nginx -->|static assets| web
+    nginx -->|/api · /caldav| api
+    web -.->|shared types| shared
+    api -.->|shared schemas| shared
+    api --> db
+    api <-->|live WebSocket| ha
+    api --> immich
+    api --> ollama
+    api --> feeds
+    api --> providers
+```
+
+The load-bearing decisions:
+
+- **Monorepo with shared Zod schemas.** `@hame/shared` holds the Zod schemas used for form validation
+  in the web app _and_ request validation in the API — one source of truth, no drift, type-safe
+  end-to-end from Prisma through Express to React.
+- **Thin controllers, thick services.** The API keeps HTTP concerns in controllers and business logic
+  in independently testable services.
+- **Live smart home over WebSocket.** A single outbound WebSocket to Home Assistant streams entity
+  state; the browser gets deltas over SSE and sends commands over REST.
+- **Pluggable provider seams.** Bin schedules, calendar sources and dashboard integrations each sit
+  behind a small interface + registry, so a new source is a module and a registry entry, not a
+  refactor.
+- **Encrypted at rest, portable backups.** Integration secrets are AES-256-GCM encrypted; the logical
+  backup is a passphrase-derived (argon2id) whole-file export that re-keys onto a fresh instance.
 
 ## Tech stack
 
@@ -97,7 +205,12 @@ data. Because the file is encrypted with your passphrase (not the server's
 Restore only into a Hame running the **same version** — it refuses a backup taken
 at a different database schema.
 
-## Optional: LLM ingredient normalisation
+## Configuration & optional features
+
+Everything below is optional — Hame runs fully without any of it. Each is configured in-app under
+**Settings** (admin) unless noted.
+
+### Ingredient normalisation (LLM)
 
 Recipe imports clean up free-text ingredients into linkable items. By default this uses a built-in
 parser (and an optional bundled dictionary) — no setup required. For best results you can point Hame
@@ -106,7 +219,7 @@ normalisation**, choose **Language model**, enter the server URL (its installed 
 dropdown), and save. If Ollama is unreachable, imports fall back to the dictionary/parser
 automatically — it's never required.
 
-### Suggested model
+#### Suggested model
 
 Normalisation is structured JSON extraction (messy text → clean fields), so a small
 instruction-tuned model is plenty — raw size matters far less than reliable JSON output. On a
@@ -124,7 +237,7 @@ variants here: at `temperature: 0` they add latency without improving a constrai
 Opening the recipe-import dialog preloads the selected model in the background, so the first import
 of a session isn't slowed by Ollama's cold-start.
 
-## Optional: phone calendar sync (CalDAV)
+### Phone calendar sync (CalDAV)
 
 Hame can serve its calendar over **CalDAV** so household members read **and write** it from their
 phone's native calendar app — two-way, self-hosted, no third-party cloud. It's **off by default**.
@@ -142,7 +255,7 @@ Your reverse proxy must route `/caldav` and `/.well-known/caldav` to the API —
 `docker/nginx.conf` already does. App passwords are argon2-hashed; your account password is never
 shared with the device.
 
-## Optional: automatic bin collection schedules
+### Automatic bin collection schedules
 
 By default you type each bin's schedule in (e.g. "Tuesday, fortnightly"). Hame can also pull the
 dates from your council so they stay correct on their own — bank-holiday shifts included — chosen
@@ -160,7 +273,7 @@ a **Sync now** button per bin. A failed fetch keeps the last good dates and just
 councils only publish "this week" plus a frequency, so a 4-weekly bin can take a sync or two before
 every future date is known — see the package README for why.
 
-## Optional: dashboard & calendar integrations
+### Dashboard & calendar integrations
 
 Hame can pull data from your other self-hosted services onto its dashboard and
 calendar, set up per-service under **Settings → Integrations** (admin only). Each
@@ -184,7 +297,9 @@ the error. Two providers ship today:
 Adding a new provider is a small first-party module — see
 [`apps/api/src/integrations/providers`](./apps/api/src/integrations/providers/README.md).
 
-## Optional: photo screensaver (Immich) + idle mode
+![System status widget fed by a TrueNAS integration](docs/screenshots/integrations-status.png)
+
+### Photo screensaver (Immich) & idle mode
 
 Left idle, the wall tablet turns into a digital photo frame — cycling photos from your self-hosted
 [Immich](https://immich.app) library and a large clock, until you touch it. It runs only on the home
@@ -198,3 +313,24 @@ key** (Immich → Account Settings → API Keys), then optionally pick which alb
 selected = all photos). The API key is **AES-256-GCM encrypted at rest** and never leaves the server —
 the screensaver pulls each photo **through Hame's backend proxy**, so your Immich credentials are never
 exposed to the browser and it works even when Hame is reached remotely.
+
+## Security
+
+Hame is single-household and self-hosted, but built to sit safely behind a Cloudflare-proxied domain:
+
+- **Passwords** argon2-hashed; logins are timing-equalised and rate-limited on the credential surface.
+- **Sessions** are a signed httpOnly cookie with a network-aware idle window (the wall tablet stays
+  signed in on the LAN; off-LAN clients re-auth sooner), CSRF double-submit protection on
+  state-changing routes, and instant revocation via a per-user token version on password/role change.
+- **Secrets at rest** — every integration credential (Home Assistant, Immich, Ollama, WiFi password,
+  provider tokens) is **AES-256-GCM encrypted** with a key from the environment, never returned to the
+  client.
+- **SSRF guard** — user-supplied URLs (recipe import, iCal feeds) go through a shared `safeFetch` that
+  refuses non-http(s) schemes and hosts resolving to loopback/private/reserved ranges, re-checked on
+  each redirect. Admin-configured LAN services are the deliberate, scoped exception.
+- **Hardening** — `helmet` security headers + a Content-Security-Policy, locked-down CORS, real
+  client-IP derived from `CF-Connecting-IP` for correct rate-limiting, and Zod-validated env at
+  startup (fail-fast on a weak `JWT_SECRET` or malformed `ENCRYPTION_KEY`).
+- **Backups** are always passphrase-encrypted (argon2id-derived key + AES-256-GCM over the whole
+  file), because the export carries password hashes and decrypted secrets; import re-encrypts them
+  under the target instance's key.

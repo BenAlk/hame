@@ -1983,11 +1983,19 @@ afterwards (wipe-and-replace); the WiFi secret decrypted to its original with a
 every guard held — wrong passphrase / malformed file 400, unauthenticated 401,
 member 403, missing CSRF 403.
 
-### Phase 9 — Polish & Portfolio Prep
+### Phase 9 — Polish & Portfolio Prep ✅ Presentable core (11-07-2026)
 
 Comprehensive README, demo data seed script, architecture diagrams, tests for critical flows, production Docker setup, blog post draft.
 
 **Goal**: CV-ready, link-able from portfolio.
+
+**Delivered (the presentable core).** The portfolio-facing surface, so the engineering is visible to a reviewer who never runs `pnpm dev`. The **README** is restructured to lead with the product — hero screenshots (wall-tablet dashboard light/dark), a grouped feature tour, and an **architecture** section: a Mermaid system diagram (clients → Cloudflare/nginx → web · API · shared → Postgres, with the API's outbound Home Assistant WebSocket / Immich / Ollama / iCal / integration providers and inbound CalDAV) plus the load-bearing decisions (monorepo + shared-Zod single-source-of-truth, thin-controllers/thick-services, the live HA WebSocket, the pluggable provider seams, encrypted re-keyable backups). All the existing getting-started / optional-features / backup content is retained lower down under one **Configuration & optional features** heading, and a new **Security** section surfaces the real strengths (argon2, AES-256-GCM at rest, CSRF + token-version session revocation, the `safeFetch` SSRF guard, CSP, passphrase-encrypted backups). A new `docs/screenshots/` directory carries a capture **shot-list** with the exact filenames the README embeds, so screenshots drop into place with no README edits — captured from a live instance for the richest result (real HA weather/smart-home, Immich screensaver, real data).
+
+The **demo seed** (`apps/api/prisma/seed.ts`) is extended so a fresh `pnpm db:seed` photographs well: three colour-token manual **bins** (a weekly bin plus two alternating fortnightly bins anchored so the next collection lands within the coming fortnight) so "Next bin day" and the calendar populate, and a few household **calendar events** (a timed appointment, a dinner, an all-day weekend) built through the same shared `buildEventICal` / `icalEtag` the event service uses — both idempotently guarded like the rest of the seed, no schema change. The production **`docker-compose.prod.yml`** (which predated Phases 5–10) is brought in line with the current env surface — `LOCAL_NETWORK_CIDRS`, the four `*_SYNC_CRON` / `NOTIFICATION_CRON` schedules and `CALDAV_PUBLIC_URL` passed through with `${VAR:-default}` fallbacks — with an API `/api/health` healthcheck and `web` gated on api-healthy; nginx already routes `/api`, `/caldav` and `/.well-known/caldav` (verified, unchanged).
+
+Verified: the extended seed run against a fresh throwaway database (three bins + three events created with sensible near-future dates, then dropped, leaving the working DB untouched thanks to the count guards), typecheck / lint / format / tests green, and `docker compose -f docker-compose.prod.yml config` validates the merged env. A full prod `up -d --build` boot remains a live deployment check.
+
+**Deferred / flagged, not done this pass.** The **blog-post draft** is a separate focused writing session (§13 deliverables). Two items are left as open decisions: compiling the API to JS to run under `node` rather than `tsx` at runtime (removes the interpreted-TS-in-prod smell, but needs a build-config + live-boot verification), and adding a **LICENSE** ahead of open-sourcing. Web test coverage was not expanded — the API suite is strong and the frontend is thin, a later focused add if wanted.
 
 ### Phase 10 — Integrations Framework
 

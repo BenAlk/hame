@@ -35,8 +35,24 @@ services:
       JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
       JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-7d}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      # Network boundary for the session idle-window choice (see .env.example).
+      LOCAL_NETWORK_CIDRS: ${LOCAL_NETWORK_CIDRS:-127.0.0.1/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # In-process node-cron schedules; the API runs single-instance (no replicas)
+      # or these double-fire. Defaults mirror .env.example.
+      CALENDAR_SYNC_CRON: ${CALENDAR_SYNC_CRON:-*/30 * * * *}
+      BIN_SYNC_CRON: ${BIN_SYNC_CRON:-0 3 * * *}
+      NOTIFICATION_CRON: ${NOTIFICATION_CRON:-0 * * * *}
+      INTEGRATION_SYNC_CRON: ${INTEGRATION_SYNC_CRON:-*/15 * * * *}
+      # Public CalDAV base URL shown to phone clients; leave unset for LAN use.
+      CALDAV_PUBLIC_URL: ${CALDAV_PUBLIC_URL:-}
     expose:
       - '4000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:4000/api/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   web:
     build:
@@ -45,7 +61,8 @@ services:
     container_name: hame-web
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - '8080:80'
 
