@@ -80,7 +80,14 @@ function toRecipeSummary(row: SummaryRow): RecipeSummary {
 
 export async function listRecipes(opts: { search?: string } = {}): Promise<RecipeSummary[]> {
   const recipes = await prisma.recipe.findMany({
-    where: opts.search ? { title: { contains: opts.search, mode: 'insensitive' } } : undefined,
+    where: opts.search
+      ? {
+          OR: [
+            { title: { contains: opts.search, mode: 'insensitive' } },
+            { tags: { some: { name: { contains: opts.search, mode: 'insensitive' } } } },
+          ],
+        }
+      : undefined,
     include: summaryInclude,
     orderBy: { title: 'asc' },
   })

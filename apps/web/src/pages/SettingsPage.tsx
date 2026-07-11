@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import type {
@@ -14,6 +15,7 @@ import type {
 import { BACKUP_RETENTION_MAX, BACKUP_RETENTION_MIN, DEFAULT_OLLAMA_MODEL } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, type TabItem } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -41,6 +43,8 @@ import {
   useUpdateBackupSettings,
 } from '@/api/backup'
 import { IntegrationsCard } from '@/components/features/integrations/IntegrationsCard'
+import { useCalDavConnection } from '@/api/caldav'
+import { caldavCollectionUrl, caldavUrl } from '@/lib/caldav'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast'
 import { BackupEnvelopeSchema } from '@hame/shared'
@@ -63,111 +67,197 @@ const STRATEGIES: { value: NormaliserStrategy; label: string; description: strin
   },
 ]
 
-/** Admin-only household settings: ingredient normalisation + Ollama (spec §10 Phase 4.5). */
+const SETTINGS_TABS: TabItem[] = [
+  { value: 'recipes', label: 'Recipes' },
+  { value: 'smart-home', label: 'Smart home' },
+  { value: 'screensaver', label: 'Screensaver' },
+  { value: 'integrations', label: 'Integrations' },
+  { value: 'calendar', label: 'Calendar' },
+  { value: 'data', label: 'Data' },
+  { value: 'labs', label: 'Labs' },
+]
+
+/** A single row of one or two related setting cards within a tab panel. */
+function TabPanel({ children }: { children: ReactNode }) {
+  return <div className="grid gap-6 lg:grid-cols-2">{children}</div>
+}
+
+/** Admin-only household settings, grouped into tabs (spec §10). */
 export function SettingsPage() {
-  const { data: settings } = useHouseholdSettings()
-  const updateSettings = useUpdateHouseholdSettings()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('tab')
+  const activeTab = SETTINGS_TABS.some((t) => t.value === requested)
+    ? (requested as string)
+    : SETTINGS_TABS[0].value
 
-  const strategy = settings?.ingredientNormaliser ?? 'BASIC'
-  const caldavEnabled = settings?.caldavEnabled ?? false
-
-  function chooseStrategy(value: NormaliserStrategy) {
-    if (value !== strategy) updateSettings.mutate({ ingredientNormaliser: value })
+  function setTab(value: string) {
+    setSearchParams(
+      (prev) => {
+        prev.set('tab', value)
+        return prev
+      },
+      { replace: true },
+    )
   }
 
   return (
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <h1 className="font-serif text-3xl font-medium text-ink">Settings</h1>
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Ingredient normalisation</CardTitle>
-            <CardDescription>
-              How recipe ingredients are cleaned into shopping-list items on import.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {STRATEGIES.map((s) => (
-              <button
-                key={s.value}
-                type="button"
-                onClick={() => chooseStrategy(s.value)}
-                aria-pressed={strategy === s.value}
-                disabled={updateSettings.isPending}
-                className={cn(
-                  'flex flex-col gap-0.5 rounded-card border px-4 py-3 text-left transition-colors',
-                  strategy === s.value
-                    ? 'border-accent bg-accent-soft'
-                    : 'border-line bg-surface hover:border-accent',
-                )}
-              >
-                <span className="text-sm font-medium text-ink">{s.label}</span>
-                <span className="text-sm text-muted-foreground">{s.description}</span>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto border-b border-line px-3 pt-2">
+          <Tabs tabs={SETTINGS_TABS} value={activeTab} onValueChange={setTab} />
+        </div>
 
-        <OllamaCard active={strategy === 'LLM'} />
+        <div className="p-5 [&_.bg-card]:border-2">
+          {activeTab === 'recipes' && (
+            <TabPanel>
+              <NormalisationCard />
+            </TabPanel>
+          )}
+          {activeTab === 'smart-home' && (
+            <TabPanel>
+              <HomeAssistantCard />
+              <WifiCard />
+            </TabPanel>
+          )}
+          {activeTab === 'screensaver' && (
+            <TabPanel>
+              <ImmichCard />
+              <IdleModeCard />
+            </TabPanel>
+          )}
+          {activeTab === 'integrations' && <IntegrationsCard />}
+          {activeTab === 'calendar' && <CalDavServerCard />}
+          {activeTab === 'data' && (
+            <TabPanel>
+              <DataCard />
+              <AutoBackupCard />
+            </TabPanel>
+          )}
+          {activeTab === 'labs' && <LabsCard />}
+        </div>
+      </Card>
+    </main>
+  )
+}
 
-        <HomeAssistantCard />
+/** Ingredient normalisation strategy + its Ollama connection (spec §10 Phase 4.5). */
+function NormalisationCard() {
+  const { data: settings } = useHouseholdSettings()
+  const updateSettings = useUpdateHouseholdSettings()
+  const strategy = settings?.ingredientNormaliser ?? 'BASIC'
 
-        <WifiCard />
+  function chooseStrategy(value: NormaliserStrategy) {
+    if (value !== strategy) updateSettings.mutate({ ingredientNormaliser: value })
+  }
 
-        <ImmichCard />
-
-        <IntegrationsCard />
-
-        <IdleModeCard />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Phone calendar (CalDAV)</CardTitle>
-            <CardDescription>
-              Serve the household calendar over CalDAV so members can read and write it from their
-              phone&apos;s calendar app. Each member generates an app password under their profile.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Ingredient normalisation</CardTitle>
+          <CardDescription>
+            How recipe ingredients are cleaned into shopping-list items on import.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {STRATEGIES.map((s) => (
             <button
+              key={s.value}
               type="button"
-              role="switch"
-              aria-checked={caldavEnabled}
+              onClick={() => chooseStrategy(s.value)}
+              aria-pressed={strategy === s.value}
               disabled={updateSettings.isPending}
-              onClick={() => updateSettings.mutate({ caldavEnabled: !caldavEnabled })}
               className={cn(
-                'flex items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors',
-                caldavEnabled ? 'border-accent bg-accent-soft' : 'border-line bg-surface',
+                'flex flex-col gap-0.5 rounded-card border px-4 py-3 text-left transition-colors',
+                strategy === s.value
+                  ? 'border-accent bg-accent-soft'
+                  : 'border-line bg-surface hover:border-accent',
               )}
             >
-              <span
-                className={cn(
-                  'flex h-6 w-11 shrink-0 items-center rounded-pill p-0.5 transition-colors',
-                  caldavEnabled ? 'bg-accent' : 'bg-line',
-                )}
-              >
-                <span
-                  className={cn(
-                    'size-5 rounded-pill bg-surface transition-transform',
-                    caldavEnabled && 'translate-x-5',
-                  )}
-                />
-              </span>
-              <span className="text-sm font-medium text-ink">
-                {caldavEnabled ? 'CalDAV server enabled' : 'CalDAV server off'}
-              </span>
+              <span className="text-sm font-medium text-ink">{s.label}</span>
+              <span className="text-sm text-muted-foreground">{s.description}</span>
             </button>
-          </CardContent>
-        </Card>
+          ))}
+        </CardContent>
+      </Card>
 
-        <LabsCard />
+      <OllamaCard active={strategy === 'LLM'} />
+    </>
+  )
+}
 
-        <DataCard />
+/** Admin toggle for the household CalDAV server (spec §10 Phase 9). */
+function CalDavServerCard() {
+  const { data: settings } = useHouseholdSettings()
+  const updateSettings = useUpdateHouseholdSettings()
+  const { data: connection } = useCalDavConnection()
+  const caldavEnabled = settings?.caldavEnabled ?? false
 
-        <AutoBackupCard />
-      </div>
-    </main>
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Phone calendar (CalDAV)</CardTitle>
+        <CardDescription>
+          Serve the household calendar over CalDAV so members can read and write it from their
+          phone&apos;s calendar app. Each member generates an app password under their profile.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={caldavEnabled}
+          disabled={updateSettings.isPending}
+          onClick={() => updateSettings.mutate({ caldavEnabled: !caldavEnabled })}
+          className={cn(
+            'flex items-center gap-3 rounded-card border px-4 py-3 text-left transition-colors',
+            caldavEnabled ? 'border-accent bg-accent-soft' : 'border-line bg-surface',
+          )}
+        >
+          <span
+            className={cn(
+              'flex h-6 w-11 shrink-0 items-center rounded-pill p-0.5 transition-colors',
+              caldavEnabled ? 'bg-accent' : 'bg-line',
+            )}
+          >
+            <span
+              className={cn(
+                'size-5 rounded-pill bg-surface transition-transform',
+                caldavEnabled && 'translate-x-5',
+              )}
+            />
+          </span>
+          <span className="text-sm font-medium text-ink">
+            {caldavEnabled ? 'CalDAV server enabled' : 'CalDAV server off'}
+          </span>
+        </button>
+
+        {caldavEnabled && (
+          <div className="flex flex-col gap-1 rounded-control border border-line bg-bg p-3 text-sm">
+            <span className="text-muted-foreground">Members connect their phones to</span>
+            <code className="break-all font-mono text-ink">
+              {caldavCollectionUrl(caldavUrl(connection))}
+            </code>
+            {connection?.publicUrl ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pinned by <code className="font-mono">CALDAV_PUBLIC_URL</code> in the server
+                environment.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                This follows however you&apos;re currently reaching Hame. To always advertise a
+                fixed public address (e.g.{' '}
+                <code className="font-mono">https://hame.example.com</code>
+                ), set <code className="font-mono">CALDAV_PUBLIC_URL</code> in the server
+                environment and restart.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -1376,53 +1466,57 @@ function IdleModeCard() {
           onChange={(v) => set('enabled', v)}
         />
 
-        <div className={cn('flex flex-col gap-4', !form.enabled && 'opacity-60')}>
-          {IDLE_NUMBERS.map(({ key, label, hint }) => (
-            <div key={key} className="flex flex-col gap-1.5">
-              <Label htmlFor={`idle-${key}`}>{label}</Label>
-              <Input
-                id={`idle-${key}`}
-                type="number"
-                min={1}
-                value={form[key]}
-                disabled={!form.enabled}
-                onChange={(e) => set(key, Math.max(1, Number(e.target.value) || 0))}
-                className="w-32"
-              />
-              <p className="text-xs text-muted-foreground">{hint}</p>
-            </div>
-          ))}
+        <div className={cn('grid gap-x-8 gap-y-6 sm:grid-cols-2', !form.enabled && 'opacity-60')}>
+          <div className="flex flex-col gap-4">
+            {IDLE_NUMBERS.map(({ key, label, hint }) => (
+              <div key={key} className="flex flex-col gap-1.5">
+                <Label htmlFor={`idle-${key}`}>{label}</Label>
+                <Input
+                  id={`idle-${key}`}
+                  type="number"
+                  min={1}
+                  value={form[key]}
+                  disabled={!form.enabled}
+                  onChange={(e) => set(key, Math.max(1, Number(e.target.value) || 0))}
+                  className="w-32"
+                />
+                <p className="text-xs text-muted-foreground">{hint}</p>
+              </div>
+            ))}
+          </div>
 
-          <ToggleRow
-            label="Show photos (off = clock only)"
-            checked={form.immichEnabled}
-            disabled={!form.enabled || update.isPending}
-            onChange={(v) => set('immichEnabled', v)}
-          />
-          <ToggleRow
-            label="Shuffle photos"
-            checked={form.shufflePhotos}
-            disabled={!form.enabled || update.isPending}
-            onChange={(v) => set('shufflePhotos', v)}
-          />
-          <ToggleRow
-            label="Show weather on the clock screen"
-            checked={form.showWeatherInClockMode}
-            disabled={!form.enabled || update.isPending}
-            onChange={(v) => set('showWeatherInClockMode', v)}
-          />
-          <ToggleRow
-            label="Show bin reminders (a bin due today or tomorrow)"
-            checked={form.showBinsInIdle}
-            disabled={!form.enabled || update.isPending}
-            onChange={(v) => set('showBinsInIdle', v)}
-          />
-          <ToggleRow
-            label="Show today's meal (for the current time of day)"
-            checked={form.showMealsInIdle}
-            disabled={!form.enabled || update.isPending}
-            onChange={(v) => set('showMealsInIdle', v)}
-          />
+          <div className="flex flex-col gap-4">
+            <ToggleRow
+              label="Show photos (off = clock only)"
+              checked={form.immichEnabled}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('immichEnabled', v)}
+            />
+            <ToggleRow
+              label="Shuffle photos"
+              checked={form.shufflePhotos}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('shufflePhotos', v)}
+            />
+            <ToggleRow
+              label="Show weather on the clock screen"
+              checked={form.showWeatherInClockMode}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('showWeatherInClockMode', v)}
+            />
+            <ToggleRow
+              label="Show bin reminders (a bin due today or tomorrow)"
+              checked={form.showBinsInIdle}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('showBinsInIdle', v)}
+            />
+            <ToggleRow
+              label="Show today's meal (for the current time of day)"
+              checked={form.showMealsInIdle}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('showMealsInIdle', v)}
+            />
+          </div>
         </div>
 
         {error && <p className="text-sm text-warning">{error}</p>}

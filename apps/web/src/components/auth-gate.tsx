@@ -3,6 +3,7 @@ import type { PublicUser } from '@hame/shared'
 import { AppShell } from '@/components/app-shell'
 import { SetupPage } from '@/pages/SetupPage'
 import { LoginPage } from '@/pages/LoginPage'
+import { CalDavSetupPage } from '@/pages/CalDavSetupPage'
 import { HomePage } from '@/pages/HomePage'
 import { ShoppingPage } from '@/pages/ShoppingPage'
 import { ConsumablesPage } from '@/pages/ConsumablesPage'
@@ -35,6 +36,7 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
   if (requiresSetup) {
     return (
       <Routes>
+        <Route path="/dav-setup" element={<CalDavSetupPage />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="*" element={<Navigate to="/setup" replace />} />
       </Routes>
@@ -44,6 +46,7 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
   if (!user) {
     return (
       <Routes>
+        <Route path="/dav-setup" element={<CalDavSetupPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
@@ -77,6 +80,7 @@ export function AuthGate({ requiresSetup, user }: AuthGateProps) {
           element={user.role === 'ADMIN' ? <SettingsPage /> : <Navigate to="/" replace />}
         />
       </Route>
+      <Route path="/dav-setup" element={<CalDavSetupPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

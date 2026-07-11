@@ -83,7 +83,7 @@ export function RecipesPage() {
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search recipes…"
+          placeholder="Search by name or tag…"
           className="max-w-xs"
         />
       </div>
