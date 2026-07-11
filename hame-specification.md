@@ -759,6 +759,14 @@ enum IntegrationKind {
   - Backend exposes `GET /api/setup/status` → `{ requiresSetup: boolean }`
   - If `true`, frontend routes to `/setup`, otherwise `/login`
   - One-time admin creation form, then redirects to login
+  - **Setup token** (§10 Phase 1.1) — the wizard is open until it's completed, so a
+    publicly-reachable instance could be claimed by whoever loads `/setup` first. To
+    close that land-grab, the server mints a **one-time token at first-run boot**
+    (when the DB has no users), prints it to the logs, and `POST /api/setup` requires
+    it back (constant-time check). The token is **in-memory only** (no DB row, no
+    migration); a restart mid-setup mints a fresh one, and it's cleared once the admin
+    exists. The operator reads it from the container logs (`docker logs hame-api`),
+    proving they control the box.
 - **Login**: username + password (argon2)
 - **JWT**: signed with `jose`, returned via httpOnly cookie OR `Authorization: Bearer <token>`
 - **Roles**: `ADMIN` (manage users, settings) vs `MEMBER` (use all features)
@@ -1249,6 +1257,14 @@ Setup wizard for first-run admin creation, login/logout, JWT middleware, protect
 **Goal**: You can log in to Hame.
 
 **Delivered**: First-run setup wizard (`POST /api/setup`, guarded so it only ever creates the first admin) and `/api/auth/{login,logout,me}`; argon2 password hashing with timing-equalised login failures; a single httpOnly **session cookie** signed with `jose`. The session **slides** on every authenticated request, with a **network-aware idle window** — on-LAN clients (private-range IP, no Cloudflare headers) get the long `JWT_REFRESH_EXPIRY` window so the wall tablet effectively never logs out, while off-LAN clients get the short `JWT_ACCESS_EXPIRY` window and re-authenticate sooner (`LOCAL_NETWORK_CIDRS` is the configurable boundary). Double-submit **CSRF** protection (readable token cookie + `x-csrf-token` header) on authenticated state-changing routes; `requireAuth`/`requireAdmin` middleware; user CRUD with self-delete and last-admin guards. Frontend: a bootstrap auth gate (setup → login → app, with an admin-only route guard), Setup/Login/Profile and admin Users pages built on shared Zod schemas, and a CSRF-aware API client. Verified end-to-end: typecheck/lint/format/tests/builds green (30 tests incl. the network-aware session and CSRF logic), plus a live API smoke test of the full setup → login → profile-edit → logout flow.
+
+### Phase 1.1 — First-run setup token ✅ Complete (11-07-2026)
+
+Close the first-run land-grab (§8.1): on a publicly-reachable instance the open setup wizard could be claimed by whoever loads `/setup` first. **No migration** — the guard is an in-memory secret, not a schema change.
+
+**Goal**: Only whoever controls the server (its logs) can create the first admin.
+
+**Delivered**: A dependency-free `lib/setup-token.ts` (`node:crypto` `randomBytes` + `timingSafeEqual`) holding a one-time token in memory. On first-run boot — when `prisma.user.count() === 0` — `index.ts` mints it and prints it prominently to the logs; `SetupSchema` in `@hame/shared` gains a required `setupToken`, so the wizard form gets the field for free (single source of truth); `createInitialAdmin` verifies it (constant-time) **after** the existing user-count guard, throwing a `403` on a bad/absent token and clearing the token on success (single-use). A brute-force limiter (10/15 min per client IP, POST-only so the polled `GET /status` is never throttled) sits on `/api/setup`; the setup route was already CSRF-exempt. Frontend: a "Setup token" field at the top of the wizard with a "find it in `docker logs hame-api`" hint (a new optional `hint` on the shared `FormField`). Docs: README **First-run setup** section, a `docker-compose.prod.yml` comment, and §8.1. Verified: typecheck / lint / format green, **420 API** (+8: the token module's generate/rotate/verify/clear and the service's 403/409/success/single-use paths) **+ 43 web** tests, web build clean, and a **live end-to-end smoke** against a throwaway database — boot printed the token, `GET /status` → `requiresSetup:true`, a wrong token → 403, a missing token → 400 (Zod), the correct token → 201 (admin created), a replay → 409, and `/status` → `requiresSetup:false`.
 
 ### Phase 2 — Daily-Use Foundation (MVP) ✅ Complete (18-06-2026)
 

@@ -2,6 +2,7 @@ import type { PublicUser, SetupInput } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
 import { HttpError } from '../lib/http-error.js'
+import { clearSetupToken, verifySetupToken } from '../lib/setup-token.js'
 import { toPublicUser } from './user.service.js'
 
 // A real argon2 hash of a throwaway value, computed once. Verifying against it
@@ -33,6 +34,12 @@ export async function createInitialAdmin(input: SetupInput): Promise<PublicUser>
   const userCount = await prisma.user.count()
   if (userCount > 0) throw HttpError.conflict('Setup has already been completed')
 
+  // Prove the caller controls the server: the token was printed to its logs on
+  // first-run boot (spec §8.1, setup-token.ts).
+  if (!verifySetupToken(input.setupToken)) {
+    throw HttpError.forbidden('Invalid or missing setup token')
+  }
+
   const user = await prisma.user.create({
     data: {
       username: input.username,
@@ -44,5 +51,6 @@ export async function createInitialAdmin(input: SetupInput): Promise<PublicUser>
       role: 'ADMIN',
     },
   })
+  clearSetupToken()
   return toPublicUser(user)
 }

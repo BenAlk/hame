@@ -32,6 +32,7 @@ export function SetupPage() {
   } = useForm<SetupFormValues>({
     resolver: zodResolver(SetupFormSchema),
     defaultValues: {
+      setupToken: '',
       username: '',
       password: '',
       confirmPassword: '',
@@ -57,6 +58,20 @@ export function SetupPage() {
       subtitle="First run — let's set up the household."
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <FormField
+          label="Setup token"
+          htmlFor="setupToken"
+          error={errors.setupToken?.message}
+          hint="Printed in your server logs on first run (e.g. docker logs hame-api)."
+        >
+          <Input
+            id="setupToken"
+            autoComplete="off"
+            autoFocus
+            spellCheck={false}
+            {...register('setupToken')}
+          />
+        </FormField>
         <FormField label="First name" htmlFor="firstName" error={errors.firstName?.message}>
           <Input id="firstName" autoComplete="given-name" {...register('firstName')} />
         </FormField>

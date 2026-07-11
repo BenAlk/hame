@@ -91,6 +91,22 @@ export function createApp() {
     }),
   )
 
+  // Guard the first-run setup token against brute force (the token is 144-bit
+  // random, so this is defence-in-depth). POST /api/setup only — the frequently
+  // polled GET /api/setup/status must never be throttled.
+  app.use(
+    '/api/setup',
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 10,
+      skip: (req) => req.method !== 'POST',
+      standardHeaders: 'draft-7',
+      legacyHeaders: false,
+      keyGenerator: clientIpKey,
+      validate: { ip: false },
+    }),
+  )
+
   app.use('/api', apiRouter)
 
   // CalDAV server (spec §10 Phase 5.5) — lives outside /api; clients discover it

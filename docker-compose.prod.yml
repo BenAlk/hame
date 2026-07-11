@@ -1,5 +1,10 @@
 # Production: full stack in containers.
 # Usage: docker compose -f docker-compose.prod.yml up -d --build
+#
+# First run (empty database): the API prints a one-time setup token to its logs
+# for the first-admin wizard — grab it with
+#   docker compose -f docker-compose.prod.yml logs api | grep 'setup token' | grep -oE '[A-Za-z0-9_-]{24}'
+# (see README → "First-run setup").
 services:
   postgres:
     image: postgres:17-alpine

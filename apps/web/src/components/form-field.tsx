@@ -6,15 +6,17 @@ interface FormFieldProps {
   label: string
   htmlFor: string
   error?: string
+  hint?: string
   className?: string
   children: React.ReactNode
 }
 
-/** Label + control + inline error message, stacked. */
-export function FormField({ label, htmlFor, error, className, children }: FormFieldProps) {
+/** Label + optional hint + control + inline error message, stacked. */
+export function FormField({ label, htmlFor, error, hint, className, children }: FormFieldProps) {
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
       <Label htmlFor={htmlFor}>{label}</Label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {children}
       {error && <p className="text-xs text-warning">{error}</p>}
     </div>

@@ -158,6 +158,29 @@ pnpm dev
 > only — if you deploy Hame, either skip the seed and use the first-run setup
 > wizard to create your admin, or change every seeded password immediately.
 
+### First-run setup (a fresh, unseeded deployment)
+
+On a brand-new database with no users, Hame shows a **setup wizard** to create the
+first admin. Because that window is open until it's completed, the wizard asks for
+a **one-time setup token** the server prints to its logs on first boot — so a
+publicly-reachable instance can't be claimed by whoever loads `/setup` first. The
+server logs a banner with the token on first boot; pull just the token out of the
+container's (JSON) logs with:
+
+```bash
+docker compose -f docker-compose.prod.yml logs api | grep 'setup token' | grep -oE '[A-Za-z0-9_-]{24}'
+# → ApOzbLT5entlz_44JtlBWl_A
+```
+
+Or read the whole banner with `docker compose -f docker-compose.prod.yml logs api`
+— the token is the 24-character value after "setup token:". (Running locally via
+`pnpm dev` the same banner is pretty-printed straight to the console.)
+
+Enter that token along with your admin details, and you're in. The token is held
+in memory only (no database row): a restart before setup completes simply prints a
+fresh one, and once the admin exists the wizard — and the token — are gone. A
+seeded instance already has users, so it skips straight to the login screen.
+
 ## Workspace scripts
 
 | Command           | Description                                 |
