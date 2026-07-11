@@ -248,6 +248,31 @@ rest) and used to seal each file; **record it somewhere off the server**, since
 the files can only be restored with it. To restore one, copy it off the host and
 use **Restore** under **Settings → Data**.
 
+#### Storage layout (TrueNAS / host-path deployments)
+
+Hame writes to disk in exactly two places — the **Postgres data dir** and the
+**backup directory** — and nothing else (avatars and recipe images are URLs,
+Immich photos are proxied live, logs go to stdout, sessions are stateless). So
+`docker-compose.prod.yml` bind-mounts both to host paths you control:
+
+| Variable          | Mounted at                     | Make it…                                                               |
+| ----------------- | ------------------------------ | ---------------------------------------------------------------------- |
+| `PGDATA_HOST`     | `/var/lib/postgresql/data`     | its own dataset — `recordsize=16K`, `atime=off` suit Postgres          |
+| `BACKUP_DIR_HOST` | `/data/backups` (`BACKUP_DIR`) | a **separate** dataset, ideally a different pool or replicated off-box |
+
+Keeping backups on a **different dataset** (better, a different pool or a
+ZFS-replicated one) is the whole point: the backups then survive loss of the
+database's storage, not just the container. On TrueNAS, create a dataset per path,
+point `PGDATA_HOST` / `BACKUP_DIR_HOST` at their mountpoints
+(`/mnt/<pool>/<dataset>`), and — for real disaster recovery — add a snapshot +
+replication task on the backup dataset. Use a **fresh, empty** directory for
+`PGDATA_HOST` on first run; the Postgres container runs as root and sets its
+ownership automatically.
+
+Keep a copy of your `.env` off-box too: it holds `ENCRYPTION_KEY`, which a raw
+`pg_dump` restore needs to decrypt the few at-rest secrets (the in-app encrypted
+backup re-keys them for you, so it's resilient either way).
+
 ## Configuration & optional features
 
 Everything below is optional — Hame runs fully without any of it. Each is configured in-app under

@@ -15,7 +15,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - hame-pgdata:/var/lib/postgresql/data
+      # Host directory ← the Postgres data dir. Set PGDATA_HOST to an absolute host
+      # path; on TrueNAS make this its own dataset (ideally recordsize=16K,
+      # atime=off) so it has its own snapshot/replication policy. Defaults to
+      # ./pgdata next to this compose file. Use a FRESH, EMPTY directory on first
+      # run — the postgres entrypoint (running as root) chowns it to uid 999.
+      - ${PGDATA_HOST:-./pgdata}:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER}']
       interval: 5s
@@ -58,7 +63,9 @@ services:
     volumes:
       # Host directory ← automated backup files. Set BACKUP_DIR_HOST to an
       # absolute host path (e.g. /mnt/pool/hame-backups); defaults to ./backups
-      # next to this compose file.
+      # next to this compose file. On TrueNAS make this a SEPARATE dataset from
+      # PGDATA_HOST — ideally on a different pool, or replicated off-box — so the
+      # backups survive loss of the database's storage.
       - ${BACKUP_DIR_HOST:-./backups}:/data/backups
     expose:
       - '4000'
@@ -81,5 +88,8 @@ services:
     ports:
       - '8080:80'
 
-volumes:
-  hame-pgdata:
+# No named volumes: both persistent stores (the Postgres data dir and the backup
+# directory) are host-path bind mounts — PGDATA_HOST and BACKUP_DIR_HOST above —
+# so on TrueNAS each maps to its own dataset with its own snapshot/replication.
+# Nothing else persists to disk (avatars/recipe images are URLs, Immich photos are
+# proxied live, logs go to stdout, sessions are stateless JWTs).
