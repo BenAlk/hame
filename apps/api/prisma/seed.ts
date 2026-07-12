@@ -46,6 +46,25 @@ async function main() {
     },
   })
 
+  // The shared wall-tablet account (spec §8.1) — a first-class non-person login
+  // the tablet uses to page through everyone's dashboards read-only, with no admin
+  // access. A real deployment gets one auto-created at first-run setup with a
+  // generated password; the seed uses the same dev password as the demo people.
+  const tablet = await prisma.user.upsert({
+    where: { username: 'tablet' },
+    update: {},
+    create: {
+      username: 'tablet',
+      password,
+      firstName: 'Wall',
+      surname: 'Tablet',
+      colour: '#857a6c',
+      dob: new Date('2000-01-01'),
+      role: 'TABLET',
+    },
+  })
+  console.log(`✅ Seeded wall-tablet account: ${tablet.username} (password: changeme123)`)
+
   // ── Tags ───────────────────────────────────────────────────────────────────
   // A curated starter palette grouped by purpose. Colours follow the Hearth
   // tokens (design-specification.md §3) and are assigned per *group*, not per

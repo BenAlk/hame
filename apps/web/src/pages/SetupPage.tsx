@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
-import { SetupSchema, DEFAULT_USER_COLOUR } from '@hame/shared'
+import { SetupSchema, DEFAULT_USER_COLOUR, type TabletCredentials } from '@hame/shared'
 import { AuthLayout } from '@/components/auth-layout'
 import { FormField } from '@/components/form-field'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,8 @@ export function SetupPage() {
   const navigate = useNavigate()
   const setup = useSetup()
   const [formError, setFormError] = useState<string | null>(null)
+  // Once setup succeeds we hold the auto-created tablet login to show it once.
+  const [tablet, setTablet] = useState<TabletCredentials | null>(null)
   const {
     register,
     handleSubmit,
@@ -45,12 +47,48 @@ export function SetupPage() {
   const onSubmit = handleSubmit(async ({ confirmPassword: _confirm, ...payload }) => {
     setFormError(null)
     try {
-      await setup.mutateAsync(payload)
-      navigate('/login', { replace: true })
+      const { tablet } = await setup.mutateAsync(payload)
+      // Show the wall-tablet login once before moving on — it's not recoverable.
+      setTablet(tablet)
     } catch (err) {
       setFormError(applyApiErrors(err, setError))
     }
   })
+
+  if (tablet) {
+    return (
+      <AuthLayout
+        title="Admin account created"
+        subtitle="One thing to note down before you sign in."
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">
+            Hame also created a shared <strong className="text-ink">wall-tablet account</strong> —
+            sign your wall tablet in with it to page through everyone’s dashboards without giving it
+            access to settings. Save this password now; it isn’t shown again (you can re-issue it
+            later under Settings → Users).
+          </p>
+          <dl className="rounded-card border border-line bg-surface p-4 text-sm">
+            <div className="flex items-center justify-between gap-4 py-1">
+              <dt className="text-muted-foreground">Username</dt>
+              <dd className="font-mono text-ink">{tablet.username}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4 py-1">
+              <dt className="text-muted-foreground">Password</dt>
+              <dd className="font-mono text-ink">{tablet.password}</dd>
+            </div>
+          </dl>
+          <Button
+            type="button"
+            className="mt-2 w-full"
+            onClick={() => navigate('/login', { replace: true })}
+          >
+            I’ve saved it — continue to login
+          </Button>
+        </div>
+      </AuthLayout>
+    )
+  }
 
   return (
     <AuthLayout

@@ -89,7 +89,8 @@ export const getHomeAssistantNotifyTargetsController: RequestHandler = async (_r
 /** The owner's curated smart-home control list (spec §10 Phase 6.3, 7.1b). */
 export const getSmartHomeSettingsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await getSmartHomeSettings(resolveOwner(req)))
+    // Read any owner's list so the tablet can render another member's widget.
+    res.json(await getSmartHomeSettings(resolveOwner(req, { allowOtherUser: true })))
   } catch (err) {
     next(err)
   }
@@ -109,7 +110,7 @@ export const updateSmartHomeSettingsController: RequestHandler = async (req, res
 /** New controllable devices to offer the owner on the dashboard prompt (spec §10 Phase 6.3). */
 export const getSmartHomeSuggestionsController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await getSmartHomeSuggestions(resolveOwner(req)))
+    res.json(await getSmartHomeSuggestions(resolveOwner(req, { allowOtherUser: true })))
   } catch (err) {
     next(err)
   }

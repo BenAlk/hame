@@ -799,7 +799,8 @@ enum BackupRunStatus {
     proving they control the box.
 - **Login**: username + password (argon2)
 - **JWT**: signed with `jose`, returned via httpOnly cookie OR `Authorization: Bearer <token>`
-- **Roles**: `ADMIN` (manage users, settings) vs `MEMBER` (use all features)
+- **Roles**: `ADMIN` (manage users, settings) vs `MEMBER` (use all features) vs `TABLET` (shared wall-tablet login — member-level, non-person; §10 Phase 7.5)
+- **Wall-tablet account** (§10 Phase 7.5) — a first-class `TABLET` role: a shared, non-admin login for the wall tablet. Member-level permissions (so it can't reach settings/admin surfaces), but **not a household person** — excluded from assignment rosters, notifications and chore stats, and with no personal dashboard. It exists so the tablet can page through **every** member's dashboard read-only (the dashboard switcher, §8.12) without borrowing a real member's login. One is auto-provisioned alongside the admin at first-run setup (its generated password shown once), and re-issuable under Settings → Users.
 - **Admin dashboard**: create/edit/delete users
   - Members can edit their own profile (avatar, colour, password)
   - Members cannot change their own role
@@ -973,6 +974,7 @@ enum BackupRunStatus {
 
 - **Drag-and-drop layout** with `react-grid-layout`
 - **Per-user layouts** stored in `DashboardLayout`
+- **Dashboard switcher** (§10 Phase 7.5) — from any device you can view Household or any member's dashboard; **editing is limited to your own and the household layout** (others are read-only). The shared wall tablet uses this via the `TABLET` account (§8.1) to page through everyone's dashboards.
 - **Widgets** (all in v1):
   - 🕐 Clock & greeting
   - 🌤️ Weather (via HA)
@@ -1763,6 +1765,48 @@ Installing on a phone/tablet for the real add-to-home-screen + offline check is 
 battle-test, like the Immich / HA live smokes.
 
 **Phase 7 is complete.**
+
+### Phase 7.5 — Shared wall-tablet account & dashboard switcher ✅ Complete (12-07-2026)
+
+A first-class **wall-tablet account** and a **dashboard switcher**, so the shared wall
+tablet can page through every household member's dashboard read-only without handing it a
+real member's login or any settings access (§8.1, §8.12). Slotted here in build order (a
+dashboard concern, extending the Phase 7.1 owner model).
+
+**Goal**: Walk up to the wall tablet, flip to your dashboard — and nobody can reach settings from it.
+
+**Delivered**: One migration (`phase_7_5_tablet_role`) adds a **`TABLET`** value to the `Role`
+enum — a shared, non-admin account for the wall tablet. It has member-level permissions (so the
+existing `requireAdmin` gate already keeps it out of settings, users, integrations and backups) but
+is **not a household person**: `@hame/shared` gains `PERSON_ROLES`, and the members roster, the
+notification run and the chore-stats leaderboard all filter to it — so the tablet never appears as an
+assignee, a rotation member, a push recipient or a stats row (a chore ticked at the tablet is
+attributed to it and simply left off the leaderboard). The generic person update/delete refuse a
+`TABLET` target, so its lifecycle is the dedicated endpoints alone and it can't be promoted to admin.
+It's **auto-provisioned at first-run setup** alongside the admin (setup now returns `{ admin, tablet }`,
+the generated password shown once), seeded for `pnpm db:seed`, and managed from **Settings → Users**
+(`GET`/`POST /api/users/tablet`, `POST /api/users/tablet/reset` — the password a readable grouped
+token, returned once and only ever stored argon2-hashed, a reset bumping `tokenVersion` to revoke the
+tablet's sessions).
+
+The **read-any-dashboard** capability is a single asymmetry in the shared `resolveOwner` (§10 Phase
+7.1b): `?owner=` now also accepts a **member id**, but only on **reads** (`allowOtherUser`), while
+writes stay restricted to `me` / the caller's own id and `household`. So any client can *view* another
+member's dashboard (and their smart-home widget), but only ever *save* its own or the household layout
+— the whole "view everyone, edit only your own" gate, enforced server-side for both the dashboard and
+smart-home slices. Web: the dashboard's My⇄Household toggle becomes a **roster switcher** (Household +
+each member, the signed-in person shown as "My dashboard"); a board other than your own is **read-only**
+(no Edit button, a "Viewing … · read-only" chip) and the smart-home **new-device prompt** is suppressed
+there; the tablet account — not a person, so absent from the roster — defaults to Household. The setup
+wizard and an admin **Wall-tablet account** card surface the login once.
+
+Verified: typecheck / lint / format green, **496 tests** (453 API + 43 web; incl. the resolver's
+read-allows-member-id / write-rejects-403 / malformed-400 cases, the tablet provisioning
+create/reset/409/404 and the generic-endpoint guard, and the roster/stats exclusion), all builds clean,
+plus a **live end-to-end smoke**: the tablet absent from `/members`, an admin reading another member's
+dashboard (200) but refused a cross-user write (403), and the tablet account logging in (role TABLET),
+viewing a member's dashboard (200) yet refused `/api/users` and `/api/backup/settings` (403) and any
+cross-user dashboard write (403).
 
 ### Phase 8 — Notifications
 

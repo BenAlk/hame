@@ -1,7 +1,20 @@
 export const APP_NAME = 'Hame'
 
-export const ROLES = ['ADMIN', 'MEMBER'] as const
+// TABLET is a first-class non-person account for the shared wall tablet (spec
+// §8.1): member-level permissions (no admin surfaces), but excluded from every
+// "people" list — assignment rosters, notifications, chore stats — and with no
+// personal dashboard of its own. It exists so the wall tablet logs in as a
+// dedicated account that can page through everyone's dashboards read-only,
+// rather than borrowing a real member's login.
+export const ROLES = ['ADMIN', 'MEMBER', 'TABLET'] as const
 export type Role = (typeof ROLES)[number]
+
+/** Roles that represent an actual household member — everything a TABLET is not.
+ *  Used to filter the tablet out of assignment/notification/stats rosters. */
+export const PERSON_ROLES = ['ADMIN', 'MEMBER'] as const
+
+/** Fixed username of the single shared wall-tablet account (spec §8.1). */
+export const TABLET_USERNAME = 'tablet'
 
 /** Default hex colour assigned to a new user if none chosen. */
 export const DEFAULT_USER_COLOUR = '#3B82F6'

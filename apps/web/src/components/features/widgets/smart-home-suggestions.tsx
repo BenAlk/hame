@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Lightbulb, Play, Power, Sparkles, ToyBrick, type LucideIcon } from 'lucide-react'
 import type { HaEntityState } from '@hame/shared'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
+import { isEditableOwner } from '@/api/dashboard'
 import {
   useAddSmartHomeControls,
   useDismissSmartHomeSuggestions,
@@ -30,11 +31,14 @@ function label(entity: HaEntityState): string {
  */
 export function SmartHomeSuggestions({ enabled = true }: { enabled?: boolean }) {
   const { owner } = useDashboardOwner()
-  const { data: suggestions } = useSmartHomeSuggestions(owner, enabled)
+  // Add/Dismiss write to the owner's list, so only offer the prompt on a board you
+  // can edit — viewing another member's dashboard is read-only (spec §8.1).
+  const editable = isEditableOwner(owner)
+  const { data: suggestions } = useSmartHomeSuggestions(owner, enabled && editable)
   const add = useAddSmartHomeControls(owner)
   const dismiss = useDismissSmartHomeSuggestions(owner)
 
-  if (!suggestions || suggestions.length === 0) return null
+  if (!editable || !suggestions || suggestions.length === 0) return null
 
   const allIds = suggestions.map((e) => e.entityId)
   const busy = add.isPending || dismiss.isPending

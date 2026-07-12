@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CreateUserSchema } from './user.js'
+import { CreateUserSchema, PublicUserSchema, TabletCredentialsSchema } from './user.js'
 
 export const LoginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -23,3 +23,15 @@ export const SetupStatusSchema = z.object({
   requiresSetup: z.boolean(),
 })
 export type SetupStatus = z.infer<typeof SetupStatusSchema>
+
+/**
+ * The result of first-run setup: the created admin, plus the shared wall-tablet
+ * account's login (spec §8.1) — auto-provisioned alongside the admin and shown
+ * once here so the operator can sign the tablet in. Its password is never
+ * returned again; re-issue it later from Settings → Users if lost.
+ */
+export const SetupResultSchema = z.object({
+  admin: PublicUserSchema,
+  tablet: TabletCredentialsSchema,
+})
+export type SetupResult = z.infer<typeof SetupResultSchema>

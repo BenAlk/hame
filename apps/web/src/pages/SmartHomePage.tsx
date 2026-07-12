@@ -57,6 +57,13 @@ export function SmartHomePage() {
     setError(null)
   }, [owner])
 
+  // This page curates *your* (or the household's) controls — both editable. If the
+  // shared owner is a member id (set by viewing their dashboard), fall back to `me`
+  // so the page never tries to save another member's list (spec §8.1).
+  useEffect(() => {
+    if (owner !== 'me' && owner !== 'household') setOwner('me')
+  }, [owner, setOwner])
+
   // Controllable entities, grouped by domain and sorted by name within a group.
   const grouped = useMemo(() => {
     const list = (entities ?? [])

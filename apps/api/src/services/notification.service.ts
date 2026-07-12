@@ -38,7 +38,11 @@ export async function runNotifications(now: Date = new Date()): Promise<void> {
 
   const ctx = await buildContext(now, slot)
 
-  const users = await prisma.user.findMany({ include: { notificationPrefs: true } })
+  // Real people only — the tablet account has no phone and isn't a recipient.
+  const users = await prisma.user.findMany({
+    where: { role: { not: 'TABLET' } },
+    include: { notificationPrefs: true },
+  })
   for (const user of users) {
     const prefs = user.notificationPrefs
     // Skip anyone who hasn't enabled push or picked a phone target.

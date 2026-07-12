@@ -54,11 +54,17 @@ export async function getChoreStats(
   ])
 
   // `completedAt`/`completedById` are non-null here (filtered above); narrow once.
-  const rows = completions.map((c) => ({
-    userId: c.completedById as string,
-    completedAt: c.completedAt as Date,
-    dueDate: c.dueDate,
-  }))
+  // Keep only completions by actual people — a chore ticked at the wall tablet is
+  // attributed to the tablet account, which isn't on the leaderboard, so it must
+  // not inflate the household total (the share-% denominator) either.
+  const memberIds = new Set(members.map((m) => m.id))
+  const rows = completions
+    .map((c) => ({
+      userId: c.completedById as string,
+      completedAt: c.completedAt as Date,
+      dueDate: c.dueDate,
+    }))
+    .filter((r) => memberIds.has(r.userId))
   const inWindow = rows.filter((r) => r.completedAt >= windowStart)
   const totalCompleted = inWindow.length
 

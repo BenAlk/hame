@@ -3,11 +3,14 @@ import type {
   CreateUserInput,
   MemberSummary,
   PublicUser,
+  TabletCredentials,
   UpdateProfileInput,
   UpdateUserInput,
 } from '@hame/shared'
+import { PERSON_ROLES, TABLET_USERNAME } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { hashPassword } from '../lib/password.js'
+import { generateReadablePassword } from '../lib/generate-password.js'
 import { HttpError } from '../lib/http-error.js'
 
 /** Strip the password hash — the only safe shape to ever return to a client. */
@@ -21,21 +24,82 @@ export function toMemberSummary(user: Pick<User, 'id' | 'firstName' | 'colour'>)
   return { id: user.id, firstName: user.firstName, colour: user.colour }
 }
 
+/** Admin user list — actual people only; the tablet account is managed separately. */
 export async function listUsers(): Promise<PublicUser[]> {
-  const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } })
+  const users = await prisma.user.findMany({
+    where: { role: { in: [...PERSON_ROLES] } },
+    orderBy: { createdAt: 'asc' },
+  })
   return users.map(toPublicUser)
 }
 
 /**
  * Non-sensitive household roster (id + first name + colour) for assignment
- * pickers — available to any member, unlike the admin-only {@link listUsers}.
+ * pickers and the dashboard switcher — available to any member, unlike the
+ * admin-only {@link listUsers}. Excludes the tablet account: it is not a person,
+ * so it never appears as an assignee, a rotation member, or a switchable dashboard.
  */
 export async function listMembers(): Promise<MemberSummary[]> {
   const users = await prisma.user.findMany({
+    where: { role: { in: [...PERSON_ROLES] } },
     orderBy: { createdAt: 'asc' },
     select: { id: true, firstName: true, colour: true },
   })
   return users.map(toMemberSummary)
+}
+
+// ── Wall-tablet account (spec §8.1) ──────────────────────────────────────────
+
+/** Placeholder profile fields for the tablet — it's furniture, not a person. */
+const TABLET_DEFAULTS = {
+  firstName: 'Wall',
+  surname: 'Tablet',
+  colour: '#857a6c', // the Hearth "muted" token — visibly not a member colour
+  dob: new Date('2000-01-01T00:00:00.000Z'),
+} as const
+
+/** The single tablet account, or null if one hasn't been provisioned yet. */
+export async function getTabletAccount(): Promise<PublicUser | null> {
+  const user = await prisma.user.findFirst({ where: { role: 'TABLET' } })
+  return user ? toPublicUser(user) : null
+}
+
+/**
+ * Provision the shared wall-tablet account (spec §8.1). Returns its login once —
+ * a generated password the admin copies to the tablet; only the hash is stored.
+ * At most one tablet account exists, so this 409s if one is already provisioned
+ * (use {@link resetTabletPassword} to re-issue its password instead).
+ */
+export async function createTabletAccount(): Promise<TabletCredentials> {
+  if (await prisma.user.findFirst({ where: { role: 'TABLET' } })) {
+    throw HttpError.conflict('A tablet account already exists')
+  }
+  await assertUsernameAvailable(TABLET_USERNAME)
+  const password = generateReadablePassword()
+  await prisma.user.create({
+    data: {
+      username: TABLET_USERNAME,
+      password: await hashPassword(password),
+      role: 'TABLET',
+      ...TABLET_DEFAULTS,
+    },
+  })
+  return { username: TABLET_USERNAME, password }
+}
+
+/**
+ * Re-issue the tablet account's password (returned once), revoking any existing
+ * tablet sessions via the token-version bump (§11). 404 if no tablet exists.
+ */
+export async function resetTabletPassword(): Promise<TabletCredentials> {
+  const tablet = await prisma.user.findFirst({ where: { role: 'TABLET' } })
+  if (!tablet) throw HttpError.notFound('No tablet account exists')
+  const password = generateReadablePassword()
+  await prisma.user.update({
+    where: { id: tablet.id },
+    data: { password: await hashPassword(password), tokenVersion: { increment: 1 } },
+  })
+  return { username: tablet.username, password }
 }
 
 export async function getUserById(id: string): Promise<PublicUser> {
@@ -68,6 +132,7 @@ export function updateProfile(userId: string, input: UpdateProfileInput): Promis
 
 /** Admin updating any user, including a role change (guards the last admin). */
 export async function adminUpdateUser(id: string, input: UpdateUserInput): Promise<PublicUser> {
+  await assertNotTablet(id)
   if (input.role === 'MEMBER') {
     await assertNotLastAdmin(id, 'demote the last admin')
   }
@@ -78,6 +143,7 @@ export async function deleteUser(actingUserId: string, id: string): Promise<void
   if (actingUserId === id) {
     throw HttpError.badRequest('You cannot delete your own account')
   }
+  await assertNotTablet(id)
   await assertNotLastAdmin(id, 'delete the last admin')
   const existing = await prisma.user.findUnique({ where: { id } })
   if (!existing) throw HttpError.notFound('User not found')
@@ -137,6 +203,16 @@ async function applyUserUpdate(
     },
   })
   return toPublicUser(user)
+}
+
+/** The tablet account is not a person — its lifecycle is the dedicated tablet
+ *  endpoints, so the generic person update/delete must refuse it (a role change
+ *  could otherwise hand it admin, breaking the "no settings access" guarantee). */
+async function assertNotTablet(id: string): Promise<void> {
+  const target = await prisma.user.findUnique({ where: { id }, select: { role: true } })
+  if (target?.role === 'TABLET') {
+    throw HttpError.badRequest('Manage the tablet account from the Tablet card')
+  }
 }
 
 async function assertUsernameAvailable(username: string): Promise<void> {

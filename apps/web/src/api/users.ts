@@ -3,6 +3,8 @@ import type {
   CreateUserInput,
   MemberSummary,
   PublicUser,
+  TabletAccount,
+  TabletCredentials,
   UpdateProfileInput,
   UpdateUserInput,
 } from '@hame/shared'
@@ -10,6 +12,7 @@ import { apiFetch } from './client'
 import { toast } from '@/stores/toast'
 
 const USERS_KEY = ['users'] as const
+const TABLET_KEY = ['tablet-account'] as const
 
 /** Non-sensitive household roster (any member) for assignment pickers. */
 export function useMembers() {
@@ -54,6 +57,35 @@ export function useDeleteUser() {
       void qc.invalidateQueries({ queryKey: USERS_KEY })
       toast.success('User deleted.')
     },
+  })
+}
+
+// ── Wall-tablet account (spec §8.1) ──────────────────────────────────────────
+
+/** Admin: the shared wall-tablet account (or null if not yet provisioned). */
+export function useTabletAccount(enabled = true) {
+  return useQuery<TabletAccount>({
+    queryKey: TABLET_KEY,
+    queryFn: () => apiFetch<TabletAccount>('/api/users/tablet'),
+    enabled,
+  })
+}
+
+/** Admin: provision the tablet account, returning its login once. */
+export function useCreateTablet() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiFetch<TabletCredentials>('/api/users/tablet', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TABLET_KEY }),
+  })
+}
+
+/** Admin: re-issue the tablet account's password, returned once. */
+export function useResetTablet() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiFetch<TabletCredentials>('/api/users/tablet/reset', { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: TABLET_KEY }),
   })
 }
 

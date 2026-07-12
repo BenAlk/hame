@@ -1,12 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Responsive, WidthProvider, type Layouts } from 'react-grid-layout'
-import { Pencil, Plus, X } from 'lucide-react'
+import { Eye, Pencil, Plus, X } from 'lucide-react'
 import type { DashboardLayout, GridItem, WidgetType } from '@hame/shared'
 import { DASHBOARD_WIDGETS, GRID_BREAKPOINTS, GRID_COLS, WIDGET_TYPES } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { WIDGET_COMPONENTS, useWidgetAvailability } from '@/components/features/widgets/registry'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
-import { useDashboardLayout, useSaveDashboardLayout, type DashboardOwner } from '@/api/dashboard'
+import {
+  isEditableOwner,
+  useDashboardLayout,
+  useSaveDashboardLayout,
+  type DashboardOwner,
+} from '@/api/dashboard'
+import { useCurrentUser } from '@/api/auth'
+import { useMembers } from '@/api/users'
 import { cn } from '@/lib/utils'
 // react-grid-layout's stylesheet bundles the react-resizable handle styles too,
 // so this one import covers both drag and resize.
@@ -54,6 +61,8 @@ function removeTiles(layout: DashboardLayout['layout'], id: string): DashboardLa
  */
 export function DashboardGrid() {
   const { owner, setOwner } = useDashboardOwner()
+  const { data: members } = useMembers()
+  const { data: currentUser } = useCurrentUser()
 
   const { data, isPending } = useDashboardLayout(owner)
   const save = useSaveDashboardLayout(owner)
@@ -64,6 +73,19 @@ export function DashboardGrid() {
   const editing = draft !== null
   const view = draft ?? data
 
+  // The signed-in person's own chip is represented as `me`; the wall-tablet
+  // account isn't a person (not in the roster), so it has no personal board —
+  // fall it back to the shared Household view instead of an empty "me" one.
+  const isPerson = !!currentUser && !!members?.some((m) => m.id === currentUser.id)
+  useEffect(() => {
+    if (owner === 'me' && currentUser && members && !isPerson) setOwner('household')
+  }, [owner, currentUser, members, isPerson, setOwner])
+
+  // You can only edit your own board (`me`) or the shared household one; every
+  // other member's dashboard is a read-only view from the switcher (spec §8.1).
+  const canEdit = isEditableOwner(owner)
+  const viewingName = members?.find((m) => m.id === owner)?.firstName
+
   // Leaving an owner while editing would orphan the draft — discard it on switch.
   function switchOwner(next: DashboardOwner) {
     setDraft(null)
@@ -71,7 +93,7 @@ export function DashboardGrid() {
   }
 
   if (isPending || !view) {
-    return <p className="text-muted-foreground">Loading your dashboard…</p>
+    return <p className="text-muted-foreground">Loading dashboard…</p>
   }
 
   const placed = new Set(view.widgets.map((w) => w.id))
@@ -80,23 +102,33 @@ export function DashboardGrid() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-pill border border-line p-0.5 text-sm">
-          {(['me', 'household'] as const).map((o) => (
-            <button
-              key={o}
-              type="button"
-              onClick={() => switchOwner(o)}
-              className={cn(
-                'rounded-pill px-3 py-1 transition-colors',
-                owner === o ? 'bg-accent text-white' : 'text-muted-foreground hover:text-ink',
-              )}
-            >
-              {o === 'me' ? 'My dashboard' : 'Household'}
-            </button>
-          ))}
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-pill border border-line p-0.5 text-sm">
+          <SwitcherChip
+            label="Household"
+            active={owner === 'household'}
+            onClick={() => switchOwner('household')}
+          />
+          {members?.map((m) => {
+            const self = m.id === currentUser?.id
+            const chipOwner: DashboardOwner = self ? 'me' : m.id
+            return (
+              <SwitcherChip
+                key={m.id}
+                label={self ? 'My dashboard' : m.firstName}
+                colour={m.colour}
+                active={owner === chipOwner}
+                onClick={() => switchOwner(chipOwner)}
+              />
+            )
+          })}
         </div>
 
-        {editing ? (
+        {!canEdit ? (
+          <span className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-sm text-muted-foreground">
+            <Eye className="size-4" aria-hidden />
+            Viewing {viewingName ? `${viewingName}’s dashboard` : 'dashboard'} · read-only
+          </span>
+        ) : editing ? (
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -198,6 +230,39 @@ export function DashboardGrid() {
         ))}
       </ResponsiveGridLayout>
     </div>
+  )
+}
+
+/** One pill in the dashboard owner switcher — Household or a household member. */
+function SwitcherChip({
+  label,
+  colour,
+  active,
+  onClick,
+}: {
+  label: string
+  colour?: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-pill px-3 py-1 transition-colors',
+        active ? 'bg-accent text-white' : 'text-muted-foreground hover:text-ink',
+      )}
+    >
+      {colour && (
+        <span
+          className="size-2 rounded-full"
+          style={{ backgroundColor: active ? 'currentColor' : colour }}
+          aria-hidden
+        />
+      )}
+      {label}
+    </button>
   )
 }
 

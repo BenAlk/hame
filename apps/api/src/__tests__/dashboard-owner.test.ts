@@ -37,21 +37,57 @@ describe('resolveOwner', () => {
     expect(resolveOwner(req({ userId: 'u1' }))).toEqual({ kind: 'user', userId: 'u1' })
   })
 
-  it('rejects an unknown owner value with 400', () => {
-    expect(() => resolveOwner(req({ owner: 'someone-else', userId: 'u1' }))).toThrow(HttpError)
-    try {
-      resolveOwner(req({ owner: 'someone-else', userId: 'u1' }))
-    } catch (err) {
-      expect((err as HttpError).status).toBe(400)
-    }
+  it('rejects a non-string owner (e.g. repeated param) with 400', () => {
+    expectStatus(() => resolveOwner(req({ owner: ['a', 'b'], userId: 'u1' })), 400)
   })
 
   it('rejects a user owner with no authenticated user (401)', () => {
-    try {
-      resolveOwner(req({ owner: 'me' }))
-      throw new Error('expected resolveOwner to throw')
-    } catch (err) {
-      expect((err as HttpError).status).toBe(401)
-    }
+    expectStatus(() => resolveOwner(req({ owner: 'me' })), 401)
+  })
+
+  // ── Write path (default): only self or household may be written ──────────────
+  const otherId = '11111111-1111-4111-8111-111111111111'
+
+  it('lets a user write their own row by explicit id', () => {
+    expect(resolveOwner(req({ owner: otherId, userId: otherId }))).toEqual({
+      kind: 'user',
+      userId: otherId,
+    })
+  })
+
+  it('refuses to write another user’s row with 403', () => {
+    expectStatus(() => resolveOwner(req({ owner: otherId, userId: 'u1' })), 403)
+  })
+
+  // ── Read path (allowOtherUser): any member’s row is viewable ─────────────────
+  it('resolves any valid user id for a read', () => {
+    expect(resolveOwner(req({ owner: otherId, userId: 'u1' }), { allowOtherUser: true })).toEqual({
+      kind: 'user',
+      userId: otherId,
+    })
+  })
+
+  it('still rejects a malformed (non-uuid) id on a read with 400', () => {
+    expectStatus(
+      () => resolveOwner(req({ owner: 'not-a-uuid', userId: 'u1' }), { allowOtherUser: true }),
+      400,
+    )
+  })
+
+  it('still resolves household on a read', () => {
+    expect(resolveOwner(req({ owner: 'household' }), { allowOtherUser: true })).toEqual({
+      kind: 'household',
+    })
   })
 })
+
+/** Assert the thunk throws an HttpError with the given status. */
+function expectStatus(fn: () => unknown, status: number): void {
+  try {
+    fn()
+    throw new Error('expected resolveOwner to throw')
+  } catch (err) {
+    expect(err).toBeInstanceOf(HttpError)
+    expect((err as HttpError).status).toBe(status)
+  }
+}

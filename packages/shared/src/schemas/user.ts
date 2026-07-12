@@ -55,6 +55,17 @@ export const MemberSummarySchema = z.object({
 })
 export type MemberSummary = z.infer<typeof MemberSummarySchema>
 
+/**
+ * The wall-tablet account's login, returned exactly once when it is created or
+ * its password is reset (spec §8.1). The password is never stored in plaintext or
+ * returned again — the admin copies it to the tablet there and then.
+ */
+export const TabletCredentialsSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+})
+export type TabletCredentials = z.infer<typeof TabletCredentialsSchema>
+
 /** Public-safe representation of a user (never includes the password hash). */
 export const PublicUserSchema = z.object({
   id: z.string().uuid(),
@@ -71,3 +82,9 @@ export const PublicUserSchema = z.object({
   updatedAt: z.coerce.date(),
 })
 export type PublicUser = z.infer<typeof PublicUserSchema>
+
+/** The current wall-tablet account (public shape), or null if none exists yet. */
+export const TabletAccountSchema = z.object({
+  account: PublicUserSchema.nullable(),
+})
+export type TabletAccount = z.infer<typeof TabletAccountSchema>

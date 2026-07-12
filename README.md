@@ -154,9 +154,10 @@ pnpm dev
 - API: http://localhost:4000
 
 > **First-run credentials.** `pnpm db:seed` creates demo users with the password
-> `changeme123` (admin: `alex`, member: `sam`). These are for local development
-> only — if you deploy Hame, either skip the seed and use the first-run setup
-> wizard to create your admin, or change every seeded password immediately.
+> `changeme123` (admin: `alex`, member: `sam`, plus a shared wall-tablet account
+> `tablet` — see below). These are for local development only — if you deploy Hame,
+> either skip the seed and use the first-run setup wizard to create your admin, or
+> change every seeded password immediately.
 
 ### First-run setup (a fresh, unseeded deployment)
 
@@ -180,6 +181,18 @@ Enter that token along with your admin details, and you're in. The token is held
 in memory only (no database row): a restart before setup completes simply prints a
 fresh one, and once the admin exists the wizard — and the token — are gone. A
 seeded instance already has users, so it skips straight to the login screen.
+
+#### The wall-tablet account
+
+Setup also creates a shared **wall-tablet account** (username `tablet`) and shows
+its generated password once — sign your wall-mounted tablet in with it. It's a
+first-class, **non-admin** login that can't reach any settings, and it isn't a
+household member (no chores, reminders or stats), but from it you can page through
+**everyone's** dashboard: the dashboard's owner switcher lists Household plus each
+member, so anyone can walk up and pull up their own view. You can only _edit_ your
+own (and the household) layout — other members' dashboards are read-only from the
+tablet. Lost the password? Re-issue it any time under **Settings → Users → Wall-tablet
+account** (it's only ever shown once, and stored argon2-hashed).
 
 ## Workspace scripts
 

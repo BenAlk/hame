@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { LoginInput, PublicUser, SetupInput } from '@hame/shared'
+import type { LoginInput, PublicUser, SetupInput, SetupResult } from '@hame/shared'
 import { ApiError, apiFetch } from './client'
 
 const ME_KEY = ['me'] as const
@@ -49,7 +49,7 @@ export function useSetup() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: SetupInput) =>
-      apiFetch<PublicUser>('/api/setup', { method: 'POST', body: JSON.stringify(body) }),
+      apiFetch<SetupResult>('/api/setup', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['setup-status'] }),
   })
 }

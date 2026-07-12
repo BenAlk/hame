@@ -1,9 +1,9 @@
-import type { PublicUser, SetupInput } from '@hame/shared'
+import type { PublicUser, SetupInput, SetupResult } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
 import { HttpError } from '../lib/http-error.js'
 import { clearSetupToken, verifySetupToken } from '../lib/setup-token.js'
-import { toPublicUser } from './user.service.js'
+import { createTabletAccount, toPublicUser } from './user.service.js'
 
 // A real argon2 hash of a throwaway value, computed once. Verifying against it
 // for unknown usernames equalises response timing so accounts can't be
@@ -29,8 +29,13 @@ export async function login(username: string, password: string): Promise<PublicU
   return toPublicUser(user)
 }
 
-/** First-run only: create the initial ADMIN. Rejected once any user exists. */
-export async function createInitialAdmin(input: SetupInput): Promise<PublicUser> {
+/**
+ * First-run only: create the initial ADMIN and auto-provision the shared
+ * wall-tablet account alongside it (spec §8.1), returning both. Rejected once any
+ * user exists. The tablet's generated password is returned here **once** so the
+ * operator can sign the tablet in; it's re-issuable later from Settings → Users.
+ */
+export async function createInitialAdmin(input: SetupInput): Promise<SetupResult> {
   const userCount = await prisma.user.count()
   if (userCount > 0) throw HttpError.conflict('Setup has already been completed')
 
@@ -51,6 +56,7 @@ export async function createInitialAdmin(input: SetupInput): Promise<PublicUser>
       role: 'ADMIN',
     },
   })
+  const tablet = await createTabletAccount()
   clearSetupToken()
-  return toPublicUser(user)
+  return { admin: toPublicUser(user), tablet }
 }

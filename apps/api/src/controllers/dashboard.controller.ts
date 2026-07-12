@@ -5,7 +5,9 @@ import { getDashboardLayout, saveDashboardLayout } from '../services/dashboard.s
 
 export const getDashboardController: RequestHandler = async (req, res, next) => {
   try {
-    res.json(await getDashboardLayout(resolveOwner(req)))
+    // Reads may target any member's dashboard so the wall tablet can page through
+    // them; writes (below) stay restricted to the caller's own row (spec §8.1).
+    res.json(await getDashboardLayout(resolveOwner(req, { allowOtherUser: true })))
   } catch (err) {
     next(err)
   }

@@ -2,8 +2,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DashboardLayout, UpdateDashboardLayoutInput } from '@hame/shared'
 import { apiFetch } from './client'
 
-/** Which dashboard to read/write: the signed-in user's, or the shared tablet's. */
-export type DashboardOwner = 'me' | 'household'
+/**
+ * Which dashboard to read/write: the signed-in user's (`me`), the shared
+ * household/tablet's (`household`), or a specific member's (their user id) —
+ * the last only ever *read*, so the wall tablet can page through everyone's
+ * dashboards. Editing is limited to the editable owners below (spec §8.1).
+ */
+export type DashboardOwner = 'me' | 'household' | (string & {})
+
+/** Only `me` and `household` are writable; a member id is a read-only view. */
+export function isEditableOwner(owner: DashboardOwner): boolean {
+  return owner === 'me' || owner === 'household'
+}
 
 const dashboardKey = (owner: DashboardOwner) => ['dashboard', owner] as const
 

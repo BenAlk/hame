@@ -5,6 +5,7 @@ import {
   CreateUserSchema,
   type CreateUserInput,
   type PublicUser,
+  type TabletCredentials,
   DEFAULT_USER_COLOUR,
 } from '@hame/shared'
 import { FormField } from '@/components/form-field'
@@ -14,7 +15,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { ApiError } from '@/api/client'
 import { useCurrentUser } from '@/api/auth'
-import { useCreateUser, useDeleteUser, useUpdateUser, useUsers } from '@/api/users'
+import {
+  useCreateTablet,
+  useCreateUser,
+  useDeleteUser,
+  useResetTablet,
+  useTabletAccount,
+  useUpdateUser,
+  useUsers,
+} from '@/api/users'
 import { applyApiErrors } from '@/lib/form'
 
 export function UsersPage() {
@@ -183,6 +192,8 @@ export function UsersPage() {
         </Card>
       </div>
 
+      <TabletAccountCard />
+
       <Modal
         open={confirmDelete !== null}
         onClose={() => setConfirmDelete(null)}
@@ -212,5 +223,96 @@ export function UsersPage() {
         </div>
       </Modal>
     </main>
+  )
+}
+
+/**
+ * The shared wall-tablet account (spec §8.1): a first-class, non-admin login the
+ * wall tablet uses to page through everyone's dashboards read-only. One is
+ * auto-created at first-run setup; from here an admin can provision one if it's
+ * missing, or re-issue its password. Either action returns the login **once**.
+ */
+function TabletAccountCard() {
+  const { data, isPending } = useTabletAccount()
+  const createTablet = useCreateTablet()
+  const resetTablet = useResetTablet()
+  const [creds, setCreds] = useState<TabletCredentials | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const account = data?.account ?? null
+  const busy = createTablet.isPending || resetTablet.isPending
+
+  async function run(action: Promise<TabletCredentials>) {
+    setError(null)
+    try {
+      setCreds(await action)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Action failed.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Wall-tablet account</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          A shared login for the wall tablet. It can page through everyone’s dashboards but has no
+          access to settings, and isn’t a household member (no chores, reminders or stats). Its
+          password is only ever shown once — re-issue it here if the tablet needs signing in again.
+        </p>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            {isPending ? (
+              <span className="text-muted-foreground">Loading…</span>
+            ) : account ? (
+              <span className="text-ink">
+                Active · <span className="font-mono">@{account.username}</span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Not set up yet.</span>
+            )}
+          </div>
+          {account ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => void run(resetTablet.mutateAsync())}
+            >
+              {resetTablet.isPending ? 'Working…' : 'Reset password'}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              disabled={busy || isPending}
+              onClick={() => void run(createTablet.mutateAsync())}
+            >
+              {createTablet.isPending ? 'Creating…' : 'Create tablet account'}
+            </Button>
+          )}
+        </div>
+
+        {creds && (
+          <dl className="rounded-inner border border-accent/40 bg-accent-soft p-4 text-sm">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-accent">
+              Save this now — it isn’t shown again
+            </p>
+            <div className="flex items-center justify-between gap-4 py-1">
+              <dt className="text-muted-foreground">Username</dt>
+              <dd className="font-mono text-ink">{creds.username}</dd>
+            </div>
+            <div className="flex items-center justify-between gap-4 py-1">
+              <dt className="text-muted-foreground">Password</dt>
+              <dd className="font-mono text-ink">{creds.password}</dd>
+            </div>
+          </dl>
+        )}
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+      </CardContent>
+    </Card>
   )
 }

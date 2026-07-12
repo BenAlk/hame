@@ -2,10 +2,13 @@ import type { RequestHandler } from 'express'
 import type { CreateUserInput, UpdateProfileInput, UpdateUserInput } from '@hame/shared'
 import {
   adminUpdateUser,
+  createTabletAccount,
   createUser,
   deleteUser,
+  getTabletAccount,
   listMembers,
   listUsers,
+  resetTabletPassword,
   updateProfile,
 } from '../services/user.service.js'
 
@@ -21,6 +24,33 @@ export const listUsersController: RequestHandler = async (_req, res, next) => {
 export const listMembersController: RequestHandler = async (_req, res, next) => {
   try {
     res.json(await listMembers())
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** GET /api/users/tablet — the wall-tablet account (or null), admin-only. */
+export const getTabletAccountController: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json({ account: await getTabletAccount() })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** POST /api/users/tablet — provision the tablet account; returns its login once. */
+export const createTabletController: RequestHandler = async (_req, res, next) => {
+  try {
+    res.status(201).json(await createTabletAccount())
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** POST /api/users/tablet/reset — re-issue the tablet password; returned once. */
+export const resetTabletController: RequestHandler = async (_req, res, next) => {
+  try {
+    res.json(await resetTabletPassword())
   } catch (err) {
     next(err)
   }

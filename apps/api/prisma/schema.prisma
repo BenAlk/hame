@@ -55,6 +55,10 @@ model User {
 enum Role {
   ADMIN
   MEMBER
+  // The shared wall-tablet account (spec §8.1): member-level permissions, but not
+  // a household person — excluded from assignment/notification/stats rosters and
+  // with no personal dashboard. Pages through members' dashboards read-only.
+  TABLET
 }
 
 // ── Phase 2: Tags & Items (foundation layer) ─────────────────────────────────

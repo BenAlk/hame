@@ -1,13 +1,10 @@
-import { randomBytes } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import type { CalDavConnection, CalDavCredential, CalDavCredentialCreated } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { env } from '../lib/env.js'
 import { HttpError } from '../lib/http-error.js'
 import { hashPassword, verifyPassword } from '../lib/password.js'
-
-/** Unambiguous charset (no 0/o/1/l) for a readable app password. */
-const CHARSET = 'abcdefghijkmnpqrstuvwxyz23456789'
+import { generateReadablePassword } from '../lib/generate-password.js'
 
 // A real argon2 hash of a throwaway value, computed once. Verifying against it
 // when the username is unknown (or has no app passwords) equalises response
@@ -17,13 +14,6 @@ let dummyHash: Promise<string> | null = null
 function getDummyHash(): Promise<string> {
   dummyHash ??= hashPassword('hame-caldav-timing-equaliser')
   return dummyHash
-}
-
-/** A grouped, readable app password, e.g. `abcde-fghij-klmnp-qrstu`. */
-function generatePassword(): string {
-  const bytes = randomBytes(20)
-  const chars = Array.from(bytes, (b) => CHARSET[b % CHARSET.length])
-  return [0, 5, 10, 15].map((i) => chars.slice(i, i + 5).join('')).join('-')
 }
 
 function toCredential(row: {
@@ -65,7 +55,7 @@ export async function createCalDavCredential(
   userId: string,
   label: string,
 ): Promise<CalDavCredentialCreated> {
-  const password = generatePassword()
+  const password = generateReadablePassword()
   const row = await prisma.calDavCredential.create({
     data: { userId, label, passwordHash: await hashPassword(password) },
   })

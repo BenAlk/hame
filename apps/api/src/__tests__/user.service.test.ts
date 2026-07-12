@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { PERSON_ROLES } from '@hame/shared'
 
 const findUnique = vi.fn()
+const findFirst = vi.fn()
+const findMany = vi.fn()
+const create = vi.fn()
 const count = vi.fn()
 const del = vi.fn()
 const update = vi.fn()
@@ -9,7 +13,7 @@ const transaction = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
-    user: { findUnique, count, delete: del, update },
+    user: { findUnique, findFirst, findMany, create, count, delete: del, update },
     item: { updateMany },
     shoppingList: { updateMany },
     shoppingListItem: { updateMany },
@@ -20,13 +24,33 @@ vi.mock('../lib/prisma.js', () => ({
   },
 }))
 
-const { deleteUser, adminUpdateUser } = await import('../services/user.service.js')
+const {
+  deleteUser,
+  adminUpdateUser,
+  createTabletAccount,
+  resetTabletPassword,
+  getTabletAccount,
+  listMembers,
+  listUsers,
+} = await import('../services/user.service.js')
 
 const admin = { id: 'a1', role: 'ADMIN' as const }
 const member = { id: 'm1', role: 'MEMBER' as const }
+const READABLE_PW = /^[a-z2-9]{5}-[a-z2-9]{5}-[a-z2-9]{5}-[a-z2-9]{5}$/
 
 beforeEach(() => {
-  for (const fn of [findUnique, count, del, update, updateMany, transaction]) fn.mockReset()
+  for (const fn of [
+    findUnique,
+    findFirst,
+    findMany,
+    create,
+    count,
+    del,
+    update,
+    updateMany,
+    transaction,
+  ])
+    fn.mockReset()
   transaction.mockResolvedValue([])
 })
 
@@ -72,5 +96,69 @@ describe('adminUpdateUser guards', () => {
     count.mockResolvedValue(1)
     await expect(adminUpdateUser('a1', { role: 'MEMBER' })).rejects.toMatchObject({ status: 400 })
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('refuses to mutate the tablet account via the generic person endpoint', async () => {
+    findUnique.mockResolvedValue({ id: 't1', role: 'TABLET' })
+    await expect(adminUpdateUser('t1', { role: 'ADMIN' })).rejects.toMatchObject({ status: 400 })
+    expect(update).not.toHaveBeenCalled()
+  })
+})
+
+describe('tablet account provisioning (spec §8.1)', () => {
+  it('creates the tablet with role TABLET and returns a one-time readable password', async () => {
+    findFirst.mockResolvedValue(null) // none provisioned yet
+    findUnique.mockResolvedValue(null) // username free
+    create.mockResolvedValue({ id: 't1', username: 'tablet', role: 'TABLET' })
+
+    const creds = await createTabletAccount()
+
+    expect(create.mock.calls[0][0].data.role).toBe('TABLET')
+    expect(create.mock.calls[0][0].data.username).toBe('tablet')
+    expect(creds.username).toBe('tablet')
+    expect(creds.password).toMatch(READABLE_PW)
+  })
+
+  it('refuses to create a second tablet account (409)', async () => {
+    findFirst.mockResolvedValue({ id: 't1', role: 'TABLET' })
+    await expect(createTabletAccount()).rejects.toMatchObject({ status: 409 })
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('resets the tablet password, bumping tokenVersion to revoke sessions', async () => {
+    findFirst.mockResolvedValue({ id: 't1', username: 'tablet', role: 'TABLET' })
+    update.mockResolvedValue({})
+
+    const creds = await resetTabletPassword()
+
+    expect(creds).toMatchObject({ username: 'tablet' })
+    expect(creds.password).toMatch(READABLE_PW)
+    expect(update.mock.calls[0][0].data.tokenVersion).toEqual({ increment: 1 })
+  })
+
+  it('reset 404s when no tablet account exists', async () => {
+    findFirst.mockResolvedValue(null)
+    await expect(resetTabletPassword()).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('getTabletAccount returns null when none provisioned', async () => {
+    findFirst.mockResolvedValue(null)
+    expect(await getTabletAccount()).toBeNull()
+  })
+})
+
+describe('the tablet is excluded from people-lists', () => {
+  const personWhere = { role: { in: [...PERSON_ROLES] } }
+
+  it('listMembers filters to person roles only', async () => {
+    findMany.mockResolvedValue([])
+    await listMembers()
+    expect(findMany.mock.calls[0][0].where).toEqual(personWhere)
+  })
+
+  it('listUsers filters to person roles only', async () => {
+    findMany.mockResolvedValue([])
+    await listUsers()
+    expect(findMany.mock.calls[0][0].where).toEqual(personWhere)
   })
 })
