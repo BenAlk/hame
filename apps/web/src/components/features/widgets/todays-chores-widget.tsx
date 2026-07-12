@@ -1,14 +1,15 @@
 import { Link } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { WidgetCard } from '@/components/features/widget-card'
-import { useCompleteInstance, useTodaysChores } from '@/api/chores'
+import { useTodaysChores } from '@/api/chores'
+import { useChoreCompletion } from '@/components/features/chores/chore-completion'
 import { cn } from '@/lib/utils'
 import { isOverdueOrToday, relativeDay } from '@/lib/format'
 
 /** Open chore instances due today or overdue (spec §8.12). */
 export function TodaysChoresWidget() {
   const { data: instances, isPending } = useTodaysChores()
-  const complete = useCompleteInstance()
+  const { completeChore, isCompleting } = useChoreCompletion()
 
   return (
     <WidgetCard
@@ -32,8 +33,8 @@ export function TodaysChoresWidget() {
               <li key={instance.id} className="flex items-center gap-3 py-1.5 text-sm">
                 <button
                   type="button"
-                  onClick={() => void complete.mutateAsync({ id: instance.id })}
-                  disabled={complete.isPending}
+                  onClick={() => completeChore(instance.id)}
+                  disabled={isCompleting}
                   aria-label={`Mark ${instance.chore.title} done`}
                   className="flex size-6 shrink-0 items-center justify-center rounded-pill border border-line bg-surface text-transparent transition-colors hover:border-accent hover:text-accent"
                 >

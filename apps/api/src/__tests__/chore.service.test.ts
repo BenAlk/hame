@@ -6,6 +6,7 @@ const choreDelete = vi.fn()
 const instanceCreate = vi.fn()
 const instanceFindUnique = vi.fn()
 const userCount = vi.fn()
+const userFindUnique = vi.fn()
 const petCount = vi.fn()
 const tagCount = vi.fn()
 const transaction = vi.fn()
@@ -16,7 +17,7 @@ vi.mock('../lib/prisma.js', () => ({
   prisma: {
     chore: { create: choreCreate, findUnique: choreFindUnique, delete: choreDelete },
     choreInstance: { create: instanceCreate, findUnique: instanceFindUnique },
-    user: { count: userCount },
+    user: { count: userCount, findUnique: userFindUnique },
     pet: { count: petCount },
     tag: { count: tagCount },
     $transaction: transaction,
@@ -57,6 +58,7 @@ beforeEach(() => {
     instanceCreate,
     instanceFindUnique,
     userCount,
+    userFindUnique,
     petCount,
     tagCount,
     transaction,
@@ -66,6 +68,8 @@ beforeEach(() => {
     fn.mockReset()
   }
   choreFindUnique.mockResolvedValue(fullChoreRow)
+  // By default the completer is a real household member.
+  userFindUnique.mockResolvedValue({ role: 'MEMBER' })
   transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
     cb({ choreInstance: { create: txInstanceCreate, update: txInstanceUpdate } }),
   )
@@ -165,6 +169,33 @@ describe('completeInstance', () => {
   it('rejects completing an already-completed instance', async () => {
     instanceFindUnique.mockResolvedValue({ ...rotatingInstance, completedAt: day(2026, 5, 2) })
     await expect(completeInstance('i1', {}, 'u1')).rejects.toMatchObject({ status: 400 })
+    expect(transaction).not.toHaveBeenCalled()
+  })
+
+  it('credits an explicit completer (picked at the wall tablet) rather than the caller', async () => {
+    instanceFindUnique.mockResolvedValue(rotatingInstance)
+    userFindUnique.mockResolvedValue({ role: 'MEMBER' }) // the picked member is a person
+
+    // Caller is the tablet ('t1'); the picked member is 'u2'.
+    await completeInstance('i1', { completedById: 'u2' }, 't1')
+
+    expect(userFindUnique).toHaveBeenCalledWith({ where: { id: 'u2' }, select: { role: true } })
+    expect(txInstanceUpdate.mock.calls[0][0].data.completedById).toBe('u2')
+  })
+
+  it('rejects a completion credited to a non-person (e.g. the tablet itself)', async () => {
+    instanceFindUnique.mockResolvedValue(rotatingInstance)
+    userFindUnique.mockResolvedValue({ role: 'TABLET' }) // caller is the tablet, no member picked
+    await expect(completeInstance('i1', {}, 't1')).rejects.toMatchObject({ status: 400 })
+    expect(transaction).not.toHaveBeenCalled()
+  })
+
+  it('rejects a completedById that doesn’t resolve to a user', async () => {
+    instanceFindUnique.mockResolvedValue(rotatingInstance)
+    userFindUnique.mockResolvedValue(null)
+    await expect(completeInstance('i1', { completedById: 'ghost' }, 'u1')).rejects.toMatchObject({
+      status: 400,
+    })
     expect(transaction).not.toHaveBeenCalled()
   })
 })

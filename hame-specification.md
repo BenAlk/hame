@@ -904,6 +904,7 @@ enum BackupRunStatus {
   - On completion of an instance: mark complete, generate next instance based on recurrence
 - **Pet linkage** — `petId` optional; pet-related chores show on pet profile pages
 - **Completion history** — full audit (who completed, when). Unlocks streak tracking and "pulling your weight" stats later.
+- **Completing at the wall tablet** (§10 Phase 7.5) — the tablet account isn't a person, so ticking a chore from it opens a **"who completed this?"** member picker and credits the chosen member (a signed-in member's own completions are credited to them, no prompt). The completion endpoint takes an optional `completedById` and enforces that the credited completer is a real household member.
 
 ### 8.8 Pet Care
 
@@ -1780,8 +1781,10 @@ enum — a shared, non-admin account for the wall tablet. It has member-level pe
 existing `requireAdmin` gate already keeps it out of settings, users, integrations and backups) but
 is **not a household person**: `@hame/shared` gains `PERSON_ROLES`, and the members roster, the
 notification run and the chore-stats leaderboard all filter to it — so the tablet never appears as an
-assignee, a rotation member, a push recipient or a stats row (a chore ticked at the tablet is
-attributed to it and simply left off the leaderboard). The generic person update/delete refuse a
+assignee, a rotation member, a push recipient or a stats row. Because the tablet is nobody, completing
+a chore from it opens a **"who completed this?"** picker and credits the chosen member (§8.7); the
+completion endpoint enforces this, refusing a completion that would be banked to a non-person. The
+generic person update/delete refuse a
 `TABLET` target, so its lifecycle is the dedicated endpoints alone and it can't be promoted to admin.
 It's **auto-provisioned at first-run setup** alongside the admin (setup now returns `{ admin, tablet }`,
 the generated password shown once), seeded for `pnpm db:seed`, and managed from **Settings → Users**
@@ -1800,9 +1803,10 @@ each member, the signed-in person shown as "My dashboard"); a board other than y
 there; the tablet account — not a person, so absent from the roster — defaults to Household. The setup
 wizard and an admin **Wall-tablet account** card surface the login once.
 
-Verified: typecheck / lint / format green, **496 tests** (453 API + 43 web; incl. the resolver's
+Verified: typecheck / lint / format green, **499 tests** (456 API + 43 web; incl. the resolver's
 read-allows-member-id / write-rejects-403 / malformed-400 cases, the tablet provisioning
-create/reset/409/404 and the generic-endpoint guard, and the roster/stats exclusion), all builds clean,
+create/reset/409/404 and the generic-endpoint guard, the roster/stats exclusion, and the
+complete-instance completer credit / non-person refusal), all builds clean,
 plus a **live end-to-end smoke**: the tablet absent from `/members`, an admin reading another member's
 dashboard (200) but refused a cross-user write (403), and the tablet account logging in (role TABLET),
 viewing a member's dashboard (200) yet refused `/api/users` and `/api/backup/settings` (403) and any

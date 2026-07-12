@@ -82,10 +82,14 @@ export const UpdateChoreSchema = ChoreFields.partial()
   .refine(atLeastOneField, atLeastOneFieldMessage)
 export type UpdateChoreInput = z.infer<typeof UpdateChoreSchema>
 
-/** Mark an instance done — optional note and a backdateable completion time. */
+/** Mark an instance done — optional note and a backdateable completion time.
+ *  `completedById` credits a specific member (who it's completed *by*) rather than
+ *  the caller — used when completing at the shared wall tablet, which must name who
+ *  actually did it (spec §8.1). Omitted, the completion is credited to the caller. */
 export const CompleteInstanceSchema = z.object({
   notes: z.string().max(500).nullish(),
   completedAt: z.coerce.date().optional(),
+  completedById: z.string().uuid().optional(),
 })
 export type CompleteInstanceInput = z.infer<typeof CompleteInstanceSchema>
 

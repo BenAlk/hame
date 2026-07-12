@@ -6,7 +6,7 @@ import type {
   CreateChoreInput,
   UpdateChoreInput,
 } from '@hame/shared'
-import { firstDueDate, nextDueDate } from '@hame/shared'
+import { firstDueDate, nextDueDate, PERSON_ROLES } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { toTag } from './tag.service.js'
@@ -245,6 +245,19 @@ export async function completeInstance(
   if (!instance) throw HttpError.notFound('Chore instance not found')
   if (instance.completedAt) throw HttpError.badRequest('This chore is already completed')
 
+  // Who gets the credit: an explicit completer (picked at the shared wall tablet,
+  // spec §8.1) or, by default, the caller. It must be a real household member — the
+  // tablet account isn't a person, so a completion there must name who actually did
+  // it rather than bank it to the tablet (which would then be dropped from stats).
+  const completedById = input.completedById ?? userId
+  const completer = await prisma.user.findUnique({
+    where: { id: completedById },
+    select: { role: true },
+  })
+  if (!completer || !(PERSON_ROLES as readonly string[]).includes(completer.role)) {
+    throw HttpError.badRequest('Choose who completed this chore')
+  }
+
   const { chore } = instance
   const completedAt = input.completedAt ?? new Date()
   const next = chore.isActive
@@ -256,7 +269,7 @@ export async function completeInstance(
       where: { id: instanceId },
       data: {
         completedAt,
-        completedById: userId,
+        completedById,
         ...(input.notes !== undefined && { notes: input.notes }),
       },
     })

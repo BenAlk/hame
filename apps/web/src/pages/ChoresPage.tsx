@@ -10,13 +10,8 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
 import { useMembers } from '@/api/users'
 import { usePets } from '@/api/pets'
-import {
-  useChores,
-  useCompleteInstance,
-  useCreateChore,
-  useDeleteChore,
-  useUpdateChore,
-} from '@/api/chores'
+import { useChores, useCreateChore, useDeleteChore, useUpdateChore } from '@/api/chores'
+import { useChoreCompletion } from '@/components/features/chores/chore-completion'
 import { isOverdueOrToday } from '@/lib/format'
 
 /** Sort key: overdue/today first by due date, undated chores last. */
@@ -33,7 +28,7 @@ export function ChoresPage() {
   const createChore = useCreateChore()
   const updateChore = useUpdateChore()
   const deleteChore = useDeleteChore()
-  const completeInstance = useCompleteInstance()
+  const { completeChore, isCompleting } = useChoreCompletion()
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Chore | null>(null)
@@ -96,13 +91,13 @@ export function ChoresPage() {
           <ChoreCheckRow
             key={chore.id}
             chore={chore}
-            onComplete={(instanceId) => void completeInstance.mutateAsync({ id: instanceId })}
+            onComplete={(instanceId) => completeChore(instanceId)}
             onEdit={() => openEdit(chore)}
             onDelete={() => {
               setDeleteError(null)
               setPendingDelete(chore)
             }}
-            disabled={completeInstance.isPending}
+            disabled={isCompleting}
           />
         ))}
       </div>
