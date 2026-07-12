@@ -5,9 +5,10 @@
  *
  * The ring is: a run of photos (each `photoDisplaySeconds`) → the clock (for
  * `clockDisplaySeconds`) → an optional bins screen → an optional meals screen →
- * photos again — looping until touch wakes the display. The two info screens only
- * appear when they have content *right now* (a bin due today/tomorrow; a meal
- * planned for the current time-of-day slot), so an empty one is skipped at the
+ * an optional QuickNotes board → photos again — looping until touch wakes the
+ * display. The three info screens only appear when they have content *right now*
+ * (a bin due today/tomorrow; a meal planned for the current time-of-day slot; at
+ * least one household note on the board), so an empty one is skipped at the
  * transition rather than shown blank. Clock is always in the ring, so with no
  * photos and nothing to show it stays clock-only (the fallback).
  */
@@ -18,11 +19,12 @@ import type { IdleModeSettings } from '@hame/shared'
  *  another setting; small enough that the clock returns regularly. */
 export const PHOTOS_PER_RUN = 5
 
-/** The two info screens hold for a fixed 20s each (not a per-household setting). */
+/** The info screens hold for a fixed 20s each (not a per-household setting). */
 export const BINS_DISPLAY_SECONDS = 20
 export const MEALS_DISPLAY_SECONDS = 20
+export const NOTES_DISPLAY_SECONDS = 20
 
-export type ScreensaverMode = 'photo' | 'clock' | 'bins' | 'meals'
+export type ScreensaverMode = 'photo' | 'clock' | 'bins' | 'meals' | 'notes'
 
 /** What has content at a given moment — fed in at each transition so the machine
  *  can skip an empty info screen. `poolLength` is the photo pool size. */
@@ -30,6 +32,7 @@ export interface ScreensaverContext {
   poolLength: number
   binsAvailable: boolean
   mealAvailable: boolean
+  notesAvailable: boolean
 }
 
 export interface ScreensaverState {
@@ -41,7 +44,7 @@ export interface ScreensaverState {
 }
 
 /** Fixed rotation order; unavailable screens are skipped at each transition. */
-const RING: ScreensaverMode[] = ['photo', 'clock', 'bins', 'meals']
+const RING: ScreensaverMode[] = ['photo', 'clock', 'bins', 'meals', 'notes']
 
 function isAvailable(mode: ScreensaverMode, ctx: ScreensaverContext): boolean {
   switch (mode) {
@@ -53,6 +56,8 @@ function isAvailable(mode: ScreensaverMode, ctx: ScreensaverContext): boolean {
       return ctx.binsAvailable
     case 'meals':
       return ctx.mealAvailable
+    case 'notes':
+      return ctx.notesAvailable
   }
 }
 
@@ -115,6 +120,8 @@ export function phaseDurationMs(state: ScreensaverState, settings: IdleModeSetti
         ? settings.clockDisplaySeconds
         : state.mode === 'bins'
           ? BINS_DISPLAY_SECONDS
-          : MEALS_DISPLAY_SECONDS
+          : state.mode === 'meals'
+            ? MEALS_DISPLAY_SECONDS
+            : NOTES_DISPLAY_SECONDS
   return Math.max(1, seconds) * 1000
 }

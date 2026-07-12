@@ -23,10 +23,12 @@ import { UpcomingEventsWidget } from './upcoming-events-widget'
 import { WifiQrWidget } from './wifi-qr-widget'
 import { ChoreStatsWidget } from './chore-stats-widget'
 import { IntegrationStatusWidget } from './integration-status-widget'
+import { QuickNotesWidget } from './quick-notes-widget'
 
 /** The component rendered for each placeable widget type (spec §10 Phase 7.1). */
 export const WIDGET_COMPONENTS: Record<WidgetType, ComponentType> = {
   clockGreeting: ClockGreetingWidget,
+  quickNotes: QuickNotesWidget,
   weather: WeatherWidget,
   todaysMeals: TodaysMealsWidget,
   activeShopping: ActiveShoppingWidget,

@@ -55,6 +55,10 @@ const EnvSchema = z.object({
   // active integration's cached snapshot/events self-correct on this schedule; the
   // same single-instance caveat applies. Default: every 15 minutes.
   INTEGRATION_SYNC_CRON: z.string().default('*/15 * * * *'),
+  // Cron expression for the nightly QuickNotes sweep (spec §8.16, §10 Phase 11).
+  // Hard-deletes past-expiry notes (pinned notes never expire); same single-
+  // instance caveat as above. Default: daily at 04:00.
+  NOTE_SWEEP_CRON: z.string().default('0 4 * * *'),
   // Public base URL CalDAV clients should use (spec §10 Phase 5.5), e.g.
   // https://calendar.example.com. Shown in the app's CalDAV setup. Leave unset to
   // fall back to the server's detected LAN address (handy for local testing).

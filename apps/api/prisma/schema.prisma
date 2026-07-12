@@ -50,6 +50,9 @@ model User {
   dashboardLayout      DashboardLayout?
   smartHomeSettings    SmartHomeSettings?
   notificationPrefs    NotificationPreference?
+  notesAuthored        Note[]             @relation("NoteAuthor")
+  notesReceived        Note[]             @relation("NoteRecipient")
+  noteAcks             NoteAck[]
 }
 
 enum Role {
@@ -625,6 +628,8 @@ model NotificationPreference {
   haNotifyService      String?
   // Opt-in: send as a high-priority / iOS critical alert (bypasses silent/DND).
   criticalAlerts       Boolean @default(false)
+  // A direct QuickNote (§8.16) to this user pings them via the push above.
+  directNoteAlerts     Boolean @default(true)
 
   updatedAt DateTime @updatedAt
 }
@@ -715,4 +720,48 @@ enum BackupFrequency {
 enum BackupRunStatus {
   SUCCESS
   FAILURE
+}
+
+// ── Phase 11: QuickNotes (household noteboard) ───────────────────────────────
+
+/// A QuickNote (§8.16) — the household "fridge board". Short, glanceable, shown
+/// on dashboards and the wall-tablet screensaver, either household-wide or as a
+/// private direct note to one member. Ephemeral: an optional expiry ages it out
+/// (pinned notes never expire) and a nightly sweep hard-deletes past-expiry rows.
+model Note {
+  id          String       @id @default(uuid())
+  authorId    String
+  author      User         @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  body        String // the note text (short; ≤280 chars, enforced by Zod)
+  audience    NoteAudience @default(HOUSEHOLD)
+  recipientId String? // set only for DIRECT — the one member it's for
+  recipient   User?        @relation("NoteRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  colour      String? // sticky tint (hex); null = inherit the author's User.colour
+  pinned      Boolean      @default(false) // sorts to top; exempt from expiry
+  expiresAt   DateTime? // null = never (pinned, or an explicit "keep")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  acks        NoteAck[]
+
+  @@index([audience, recipientId])
+}
+
+/// Per-user read/dismiss state for a note. A row means "this user has seen it";
+/// `dismissed` hides a household note from that user's own board without removing
+/// it for anyone else. Also powers the sender's "seen" indicator on a direct note.
+model NoteAck {
+  id        String   @id @default(uuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dismissed Boolean  @default(false)
+  seenAt    DateTime @default(now())
+
+  @@unique([noteId, userId])
+}
+
+enum NoteAudience {
+  HOUSEHOLD // everyone's board + the wall-tablet screensaver
+  DIRECT // one member only; never shown on the shared tablet
 }

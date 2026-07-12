@@ -5,6 +5,7 @@ import { useIdlePhotos } from '@/api/idle'
 import { useHaEntities } from '@/api/home-assistant'
 import { useBins } from '@/api/bins'
 import { useMealPlan } from '@/api/meal-plans'
+import { useNotes } from '@/api/notes'
 import { cn } from '@/lib/utils'
 import {
   advanceScreensaver,
@@ -16,6 +17,7 @@ import {
 import { selectDueBins, selectSlotMeal } from './idle-info'
 import { BinsScreen } from './bins-screen'
 import { MealsScreen } from './meals-screen'
+import { NotesScreen } from './notes-screen'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
@@ -226,11 +228,21 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
     [settings.showMealsInIdle, mealEntries, now],
   )
 
+  // Household QuickNotes (spec §8.16) for the board screen. The tablet account
+  // only ever receives household notes, but filter defensively so a direct note
+  // could never reach the shared wall.
+  const { data: allNotes } = useNotes()
+  const householdNotes = useMemo(
+    () => (allNotes ?? []).filter((n) => n.audience === 'HOUSEHOLD'),
+    [allNotes],
+  )
+
   // Availability fed into the state machine so it skips an empty info screen.
   const screenCtx: ScreensaverContext = {
     poolLength: pool.length,
     binsAvailable: dueBins !== null,
     mealAvailable: slotMeal !== null,
+    notesAvailable: householdNotes.length > 0,
   }
 
   // The rotation state machine, driven by a single self-scheduling timer. The
@@ -268,6 +280,8 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
       overlay = <BinsScreen due={dueBins} />
     } else if (state.mode === 'meals' && slotMeal) {
       overlay = <MealsScreen entry={slotMeal} />
+    } else if (state.mode === 'notes' && householdNotes.length > 0) {
+      overlay = <NotesScreen notes={householdNotes} />
     } else {
       overlay = (
         <div className="flex h-full w-full items-center justify-center bg-background">

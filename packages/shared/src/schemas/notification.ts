@@ -34,6 +34,8 @@ export const NotificationPreferenceSchema = z.object({
   haNotifyService: z.string().nullable(),
   /** Opt-in high-priority / iOS critical alert that breaks through silent/DND. */
   criticalAlerts: z.boolean(),
+  /** A direct QuickNote (§8.16) addressed to this user pings them via the push. */
+  directNoteAlerts: z.boolean(),
 })
 export type NotificationPreference = z.infer<typeof NotificationPreferenceSchema>
 
@@ -51,6 +53,7 @@ export const UpdateNotificationPreferenceSchema = z
     // notify service name, e.g. `mobile_app_bens_phone`.
     haNotifyService: z.string().max(200).nullish(),
     criticalAlerts: z.boolean(),
+    directNoteAlerts: z.boolean(),
   })
   .partial()
 export type UpdateNotificationPreferenceInput = z.infer<typeof UpdateNotificationPreferenceSchema>

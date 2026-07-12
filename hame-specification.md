@@ -779,6 +779,55 @@ enum BackupRunStatus {
 }
 ```
 
+### 7.9 QuickNotes
+
+```prisma
+model Note {
+  // QuickNotes (§8.16, §10 Phase 11) — the household "fridge board": short,
+  // glanceable notes shown on dashboards and the wall-tablet screensaver, either
+  // household-wide or as a private direct note to one member. Ephemeral by design
+  // — an optional expiry ages them out (pinned notes never expire) and a nightly
+  // sweep hard-deletes past-expiry rows — so the board never accretes clutter.
+  id          String       @id @default(uuid())
+  authorId    String
+  author      User         @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  body        String                                     // the note text (short; ≤280 chars, enforced by Zod)
+  audience    NoteAudience @default(HOUSEHOLD)
+  recipientId String?                                    // set only for DIRECT — the one member it's for
+  recipient   User?        @relation("NoteRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  colour      String?                                    // sticky tint (hex); null = inherit the author's User.colour
+  pinned      Boolean      @default(false)               // sorts to top; exempt from expiry
+  expiresAt   DateTime?                                  // null = never (pinned, or an explicit "keep")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  acks        NoteAck[]
+
+  @@index([audience, recipientId])
+}
+
+model NoteAck {
+  // Per-user read/dismiss state for a note. A row means "this user has seen it";
+  // `dismissed` hides a household note from that user's own board without removing
+  // it for anyone else. Also powers the sender's "seen" indicator on a direct note.
+  id        String   @id @default(uuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dismissed Boolean  @default(false)
+  seenAt    DateTime @default(now())
+
+  @@unique([noteId, userId])
+}
+
+enum NoteAudience {
+  HOUSEHOLD                                              // everyone's board + the wall-tablet screensaver
+  DIRECT                                                 // one member only; never shown on the shared tablet
+}
+```
+
+`NotificationPreference` (§7.8) gains a `directNoteAlerts Boolean @default(true)` toggle for the direct-note push (§8.16).
+
 ---
 
 ## 8. Feature Specifications
@@ -1199,6 +1248,36 @@ that never remembers to click still has recent backups, and so those backups
   returns only `hasPassphrase`, never the passphrase. Files are written `0o600` in
   a `0o700` directory and git-ignored. Restore reuses the existing upload flow
   (download a file off the host, restore it under the Data card).
+
+---
+
+### 8.16 QuickNotes (Household Noteboard)
+
+A lightweight household "fridge board": short, glanceable notes surfaced where the household already looks — the dashboards and the wall-tablet screensaver — rather than a chat app (which the phones in everyone's pocket already do better). It's the ambient wall surface Hame uniquely has, worn as a note. Two audiences:
+
+- **Household note** — the shared board: shows on **every** dashboard's QuickNotes widget and rotates through the **idle screensaver** (§8.14).
+- **Direct note** (member → member) — a private sticky shown **only** on the recipient's own signed-in dashboard; never on the shared tablet or the screensaver.
+
+**Composing**
+
+- From the QuickNotes widget's **+** — a small dialog: body text (≤280 chars, emoji fine), audience (Household / a specific member), optional pin, optional colour tint (defaults to the author's `User.colour`).
+- The shared **wall-tablet account** (§8.1) can post **household** notes only ("Back in 10"), authored as _Wall tablet_; it can't send a direct note (it isn't a household person).
+
+**Lifecycle (anti-clutter)**
+
+- Every note carries an optional **`expiresAt`**, defaulting to `now + 7 days`. **Pinned** notes never expire and sort to the top.
+- Expired notes are filtered on read; a nightly `node-cron` sweep (the §9.6 mould) hard-deletes them.
+- **"Got it" dismiss** — anyone can clear a household note from **their own** board (a `NoteAck` row); it stays for everyone else. The author can **delete** a note outright (gone for all).
+
+**Surfaces (all existing seams)**
+
+- **Widget** — a new `quickNotes` dashboard widget (§8.12 registry). It shows household notes on any dashboard; on the viewer's **own** dashboard it also shows direct notes addressed to them. Ordered pinned-first then newest; each note tinted, with author avatar and relative time.
+- **Screensaver** — a `notes` screen joins the idle rotation ring (§8.14), shown only when an undismissed household note exists right now (same skip-when-empty rule as the bins/meals screens). Household notes only.
+- **Notification** — a new **direct** note pings its recipient through the existing engine (§8.13, HA push), gated on `NotificationPreference.directNoteAlerts` (default on). Household notes stay ambient (no push).
+
+**Privacy invariant.** The notes feed is scoped **server-side to the authenticated user** — household notes plus their own direct notes. The wall tablet paging a member's dashboard requests as the `TABLET` account (§8.1), so it structurally can never receive that member's direct notes: privacy is enforced by the query, not the UI.
+
+**API** — a `notes` slice: `GET /api/notes` (viewer-scoped feed), `POST /api/notes`, `PATCH /api/notes/:id`, `DELETE /api/notes/:id`, `POST /api/notes/:id/dismiss` (upserts a `NoteAck`). CSRF-protected; `@hame/shared` Zod schemas are the single source of truth for both the compose form and request validation.
 
 ---
 
@@ -2273,6 +2352,62 @@ scheduled and both `/api/integrations` (admin) and `/api/integrations/status`
 (member) mount behind their auth gates. Verified live end-to-end (10-07-2026)
 against real servers: a Gitea repo's milestone due-dates on the calendar, and a
 TrueNAS Scale's pools/system on the System status widget.
+
+### Phase 11 — QuickNotes (Household Noteboard) ✅ Complete (12-07-2026)
+
+A lightweight household "fridge board" (§8.16): short, glanceable notes surfaced
+on every dashboard and the wall-tablet screensaver (household-wide), or as a
+private direct note to one member. Deliberately **not** a chat app — the frame is
+the ambient wall surface Hame uniquely has, which the phones in everyone's pocket
+already beat at conversation.
+
+**Goal**: Leave a note on the wall — for the whole house, or for one person.
+
+**Design**:
+
+- **`Note` + `NoteAck` models + `NoteAudience` enum** (§7.9) — a Phase 11
+  migration adds them; both join `BACKUP_MODELS` (§9.8) so notes round-trip
+  through backup/restore, and `NotificationPreference` gains `directNoteAlerts`.
+- **Viewer-scoped feed.** `GET /api/notes` returns household notes **plus the
+  caller's own direct notes only** — the privacy invariant is a query, not UI
+  (§8.16), so the shared tablet paging a member's dashboard (as the `TABLET`
+  account) can never surface that member's private note.
+- **Ephemeral by default.** Optional `expiresAt` (default `now + 7 days`), pinned
+  = never; a nightly `node-cron` sweep hard-deletes past-expiry rows (the §9.6
+  graceful mould). Per-user "Got it" dismiss via `NoteAck` hides a household note
+  from one board without removing it for the rest.
+- **Three surfaces, all existing seams.** A `quickNotes` dashboard widget (§8.12),
+  a `notes` screen in the idle rotation ring (§8.14, household-only,
+  skip-when-empty), and a direct-note push through the existing notification
+  engine (§8.13).
+- **Shared Zod contract** in `@hame/shared` drives both the compose form and API
+  validation.
+
+**Delivered**: A single Phase 11 migration adds `Note`, `NoteAck` and the
+`NoteAudience` enum (both models join `BACKUP_MODELS`, §9.8; `NotificationPreference`
+gains `directNoteAlerts`). Shared `@hame/shared` carries the QuickNotes Zod
+contract — a `CreateNoteSchema` whose refinement makes a DIRECT note require a
+recipient and a HOUSEHOLD note refuse one, a body cap, and the viewer-relative
+public `Note` shape (`mine` / `dismissed` / `recipientSeenAt`). The API `notes`
+slice (thin controller, thick service) implements the viewer-scoped feed as a
+**query** (household ∪ the caller's own direct notes) so the privacy invariant is
+structural, per-user "Got it" dismiss via `NoteAck`, author/admin delete, a
+best-effort direct-note push through the existing HA notify path, and a nightly
+`NOTE_SWEEP_CRON` job that hard-deletes past-expiry notes (pinned = no expiry).
+Web: a `quickNotes` dashboard widget (in the default layout) with a compose dialog
+— audience toggle, member picker hidden for the tablet account, pin — plus a
+`notes` screen wired into the idle screensaver ring (household-only,
+skip-when-empty) and a `directNoteAlerts` toggle in the notifications settings.
+
+**Verified**: typecheck / lint / format green, **473 API + 45 web tests** (incl.
+the schema refinements, the viewer-scoping / dismiss / seen-marking / expiry /
+tablet-guard service cases, and the screensaver-ring inclusion), full build clean,
+and a **live end-to-end smoke** across three accounts — a household note (with a
+7-day expiry) and a direct note posted; the direct note visible to its author and
+recipient but **absent from the shared tablet's feed**; the recipient's view
+recording a "seen" receipt back to the author; the tablet refused a direct note
+(403); a per-user dismiss hiding a household note for one member only; and a
+non-author delete refused (403).
 
 ---
 

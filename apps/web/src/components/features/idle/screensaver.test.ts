@@ -5,6 +5,7 @@ import {
   BINS_DISPLAY_SECONDS,
   initialScreensaverState,
   MEALS_DISPLAY_SECONDS,
+  NOTES_DISPLAY_SECONDS,
   PHOTOS_PER_RUN,
   phaseDurationMs,
   type ScreensaverContext,
@@ -29,6 +30,7 @@ const ctx = (over: Partial<ScreensaverContext> = {}): ScreensaverContext => ({
   poolLength: 20,
   binsAvailable: false,
   mealAvailable: false,
+  notesAvailable: false,
   ...over,
 })
 
@@ -121,6 +123,23 @@ describe('advanceScreensaver', () => {
       const done: ScreensaverState = { mode: 'photo', photoIndex: 4, shownInRun: PHOTOS_PER_RUN }
       expect(advanceScreensaver(done, ctx()).mode).toBe('clock')
     })
+
+    it('inserts the notes board after meals, then returns to photos', () => {
+      const full = ctx({ binsAvailable: true, mealAvailable: true, notesAvailable: true })
+      const meals: ScreensaverState = { mode: 'meals', photoIndex: 4, shownInRun: 0 }
+      const notes = advanceScreensaver(meals, full)
+      expect(notes.mode).toBe('notes')
+      expect(advanceScreensaver(notes, full)).toEqual({
+        mode: 'photo',
+        photoIndex: 5,
+        shownInRun: 1,
+      })
+    })
+
+    it('shows the notes board when it is the only screen due', () => {
+      const clock: ScreensaverState = { mode: 'clock', photoIndex: 0, shownInRun: 0 }
+      expect(advanceScreensaver(clock, ctx({ notesAvailable: true })).mode).toBe('notes')
+    })
   })
 })
 
@@ -136,6 +155,9 @@ describe('phaseDurationMs', () => {
     )
     expect(phaseDurationMs({ mode: 'meals', photoIndex: 0, shownInRun: 0 }, settings)).toBe(
       MEALS_DISPLAY_SECONDS * 1000,
+    )
+    expect(phaseDurationMs({ mode: 'notes', photoIndex: 0, shownInRun: 0 }, settings)).toBe(
+      NOTES_DISPLAY_SECONDS * 1000,
     )
   })
 })

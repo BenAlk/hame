@@ -38,6 +38,7 @@ export const BACKUP_MODELS = [
   'SmartHomeSettings',
   'NotificationPreference',
   'Integration',
+  'Note',
   // Reference the layer above.
   'ShoppingListItem',
   'PantryEntry',
@@ -46,6 +47,7 @@ export const BACKUP_MODELS = [
   'RecipeStep',
   'MealPlanEntry',
   'IntegrationEvent',
+  'NoteAck',
   // Config singletons — no foreign keys, grouped last.
   'HouseholdSettings',
   'OllamaConfig',

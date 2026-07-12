@@ -8,6 +8,7 @@ import { startBinSyncJob, stopBinSyncJob } from './jobs/bin-sync.job.js'
 import { startNotificationJob, stopNotificationJob } from './jobs/notification.job.js'
 import { startIntegrationSyncJob, stopIntegrationSyncJob } from './jobs/integration-sync.job.js'
 import { startBackupJob, stopBackupJob } from './jobs/backup.job.js'
+import { startNoteSweepJob, stopNoteSweepJob } from './jobs/note-sweep.job.js'
 import { startHomeAssistant, stopHomeAssistant } from './integrations/home-assistant/index.js'
 
 const app = createApp()
@@ -21,6 +22,7 @@ startBinSyncJob()
 startNotificationJob()
 startIntegrationSyncJob()
 startBackupJob()
+startNoteSweepJob()
 void startHomeAssistant()
 
 /**
@@ -54,6 +56,7 @@ async function shutdown(signal: string) {
   stopNotificationJob()
   stopIntegrationSyncJob()
   stopBackupJob()
+  stopNoteSweepJob()
   stopHomeAssistant()
   server.close()
   await prisma.$disconnect()

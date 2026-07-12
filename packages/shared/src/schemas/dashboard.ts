@@ -12,6 +12,7 @@ import { z } from 'zod'
 /** Every widget the dashboard can place. */
 export const WIDGET_TYPES = [
   'clockGreeting',
+  'quickNotes',
   'weather',
   'todaysMeals',
   'activeShopping',
@@ -56,6 +57,14 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
     label: 'Clock & greeting',
     defaultW: 1,
     defaultH: 2,
+    minW: 1,
+    minH: 2,
+    requiresHa: false,
+  },
+  quickNotes: {
+    label: 'QuickNotes',
+    defaultW: 1,
+    defaultH: 3,
     minW: 1,
     minH: 2,
     requiresHa: false,
@@ -141,6 +150,7 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
 /** The default placement order — clock first, then reading order of the grid. */
 export const DEFAULT_WIDGET_ORDER: WidgetType[] = [
   'clockGreeting',
+  'quickNotes',
   'weather',
   'todaysMeals',
   'activeShopping',

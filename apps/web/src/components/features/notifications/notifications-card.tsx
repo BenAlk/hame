@@ -30,6 +30,7 @@ interface Draft {
   pushViaHA: boolean
   haNotifyService: string
   criticalAlerts: boolean
+  directNoteAlerts: boolean
 }
 
 /**
@@ -59,6 +60,7 @@ export function NotificationsCard() {
       pushViaHA: prefs.pushViaHA,
       haNotifyService: prefs.haNotifyService ?? '',
       criticalAlerts: prefs.criticalAlerts,
+      directNoteAlerts: prefs.directNoteAlerts,
     })
   }, [prefs])
 
@@ -83,6 +85,7 @@ export function NotificationsCard() {
     NOTIFICATION_CATEGORIES.some((c) => draft[c] !== prefs[c]) ||
     draft.pushViaHA !== prefs.pushViaHA ||
     draft.criticalAlerts !== prefs.criticalAlerts ||
+    draft.directNoteAlerts !== prefs.directNoteAlerts ||
     draft.haNotifyService !== (prefs.haNotifyService ?? '')
 
   // Keep the stored target selectable even if HA is currently unreachable.
@@ -100,6 +103,7 @@ export function NotificationsCard() {
       customEventReminders: draft.customEventReminders,
       pushViaHA: draft.pushViaHA,
       criticalAlerts: draft.criticalAlerts,
+      directNoteAlerts: draft.directNoteAlerts,
       haNotifyService: draft.haNotifyService === '' ? null : draft.haNotifyService,
     })
   }
@@ -166,6 +170,13 @@ export function NotificationsCard() {
                 checked={draft.criticalAlerts}
                 disabled={draft.haNotifyService === ''}
                 onChange={(next) => set('criticalAlerts', next)}
+              />
+
+              <Toggle
+                label="Direct QuickNotes sent to me"
+                checked={draft.directNoteAlerts}
+                disabled={draft.haNotifyService === ''}
+                onChange={(next) => set('directNoteAlerts', next)}
               />
             </div>
           )}
