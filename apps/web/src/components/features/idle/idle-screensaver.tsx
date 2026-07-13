@@ -228,13 +228,14 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
     [settings.showMealsInIdle, mealEntries, now],
   )
 
-  // Household QuickNotes (spec §8.16) for the board screen. The tablet account
-  // only ever receives household notes, but filter defensively so a direct note
-  // could never reach the shared wall.
+  // Household QuickNotes (spec §8.16) for the board screen, gated on the toggle.
+  // The tablet account only ever receives household notes, but filter defensively
+  // so a direct note could never reach the shared wall.
   const { data: allNotes } = useNotes()
   const householdNotes = useMemo(
-    () => (allNotes ?? []).filter((n) => n.audience === 'HOUSEHOLD'),
-    [allNotes],
+    () =>
+      settings.showNotesInIdle ? (allNotes ?? []).filter((n) => n.audience === 'HOUSEHOLD') : [],
+    [settings.showNotesInIdle, allNotes],
   )
 
   // Availability fed into the state machine so it skips an empty info screen.

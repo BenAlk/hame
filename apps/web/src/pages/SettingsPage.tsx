@@ -1440,6 +1440,7 @@ function IdleModeCard() {
         immichEnabled: form.immichEnabled,
         showBinsInIdle: form.showBinsInIdle,
         showMealsInIdle: form.showMealsInIdle,
+        showNotesInIdle: form.showNotesInIdle,
       })
       setSaved(true)
     } catch (err) {
@@ -1453,9 +1454,10 @@ function IdleModeCard() {
         <CardTitle>Idle mode (screensaver)</CardTitle>
         <CardDescription>
           When the wall tablet&apos;s Household dashboard is left idle it becomes a photo frame —
-          cycling Immich photos, a large clock, and (when there&apos;s something to show) bin and
-          meal reminders. Touch wakes it. It runs only on the device showing the Household
-          dashboard, not on phones. These settings are shared across the household.
+          cycling Immich photos, a large clock, and (when there&apos;s something to show) bin
+          reminders, meals and the QuickNotes board. Touch wakes it. It runs only on the device
+          showing the Household dashboard, not on phones. These settings are shared across the
+          household.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -1515,6 +1517,12 @@ function IdleModeCard() {
               checked={form.showMealsInIdle}
               disabled={!form.enabled || update.isPending}
               onChange={(v) => set('showMealsInIdle', v)}
+            />
+            <ToggleRow
+              label="Show the QuickNotes board (when the household has notes)"
+              checked={form.showNotesInIdle}
+              disabled={!form.enabled || update.isPending}
+              onChange={(v) => set('showNotesInIdle', v)}
             />
           </div>
         </div>

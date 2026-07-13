@@ -597,6 +597,7 @@ model IdleModeSettings {
   immichEnabled          Boolean  @default(true)
   showBinsInIdle         Boolean  @default(true) // rotate in a "bin due today/tomorrow" screen
   showMealsInIdle        Boolean  @default(true) // rotate in today's meal for the current slot
+  showNotesInIdle        Boolean  @default(true) // rotate in the household QuickNotes board
   updatedAt              DateTime @updatedAt
 }
 

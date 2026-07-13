@@ -22,6 +22,7 @@ const settings: IdleModeSettings = {
   immichEnabled: true,
   showBinsInIdle: true,
   showMealsInIdle: true,
+  showNotesInIdle: true,
   updatedAt: new Date(),
 }
 
