@@ -47,6 +47,7 @@ export const BACKUP_MODELS = [
   'RecipeStep',
   'MealPlanEntry',
   'IntegrationEvent',
+  'NoteRecipient',
   'NoteAck',
   // Config singletons — no foreign keys, grouped last.
   'HouseholdSettings',

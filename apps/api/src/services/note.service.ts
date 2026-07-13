@@ -15,7 +15,7 @@ import { sendHaNotification } from '../integrations/home-assistant/notifications
 
 /**
  * QuickNotes (spec §8.16, §10 Phase 11) — the household "fridge board". Household
- * notes show on every dashboard; a direct note is private to its recipient. The
+ * notes show on every dashboard; a direct note is private to its recipients. The
  * privacy invariant (§8.16) is enforced here as a **query**: the viewer feed only
  * ever unions household notes with the caller's own direct notes, so the shared
  * tablet (which requests as the TABLET account, never a note's author/recipient)
@@ -26,7 +26,7 @@ const memberSelect = { id: true, firstName: true, colour: true } as const
 
 const noteInclude = {
   author: { select: memberSelect },
-  recipient: { select: memberSelect },
+  recipients: { include: { user: { select: memberSelect } } },
   acks: true,
 } as const satisfies Prisma.NoteInclude
 
@@ -36,16 +36,17 @@ type NoteRow = Prisma.NoteGetPayload<{ include: typeof noteInclude }>
 function toNote(row: NoteRow, viewerId: string): Note {
   const mine = row.authorId === viewerId
   const myAck = row.acks.find((a) => a.userId === viewerId)
-  // "Seen" is shown to the author of a direct note — the recipient's first view.
-  const recipientAck = row.recipientId
-    ? row.acks.find((a) => a.userId === row.recipientId)
-    : undefined
+  // Read receipts are shown only to the author — each recipient's first view.
+  const recipients = row.recipients.map((r) => ({
+    ...toMemberSummary(r.user),
+    seenAt: mine ? (row.acks.find((a) => a.userId === r.userId)?.seenAt ?? null) : null,
+  }))
   return {
     id: row.id,
     body: row.body,
     audience: row.audience,
     author: toMemberSummary(row.author),
-    recipient: row.recipient ? toMemberSummary(row.recipient) : null,
+    recipients,
     colour: row.colour,
     pinned: row.pinned,
     expiresAt: row.expiresAt,
@@ -53,7 +54,6 @@ function toNote(row: NoteRow, viewerId: string): Note {
     updatedAt: row.updatedAt,
     mine,
     dismissed: myAck?.dismissed ?? false,
-    recipientSeenAt: mine && row.audience === 'DIRECT' ? (recipientAck?.seenAt ?? null) : null,
   }
 }
 
@@ -80,7 +80,7 @@ export async function listNotesForViewer(
         {
           OR: [
             { audience: 'HOUSEHOLD' },
-            { audience: 'DIRECT', recipientId: viewerId },
+            { audience: 'DIRECT', recipients: { some: { userId: viewerId } } },
             { audience: 'DIRECT', authorId: viewerId },
           ],
         },
@@ -95,7 +95,7 @@ export async function listNotesForViewer(
   const toMarkSeen = rows.filter(
     (r) =>
       r.audience === 'DIRECT' &&
-      r.recipientId === viewerId &&
+      r.recipients.some((rec) => rec.userId === viewerId) &&
       !r.acks.some((a) => a.userId === viewerId),
   )
   if (toMarkSeen.length > 0) {
@@ -126,14 +126,23 @@ interface Author {
 
 export async function createNote(input: CreateNoteInput, author: Author): Promise<Note> {
   const pinned = input.pinned ?? false
+  let recipientIds: string[] = []
 
   if (input.audience === 'DIRECT') {
     // The shared tablet isn't a household person, so it can only post to the board.
     if (!(PERSON_ROLES as readonly string[]).includes(author.role)) {
       throw HttpError.forbidden('The wall tablet can only post household notes')
     }
-    const recipient = await prisma.user.findUnique({ where: { id: input.recipientId! } })
-    if (!recipient || !(PERSON_ROLES as readonly string[]).includes(recipient.role)) {
+    // Dedupe, and don't let the author address the note to themselves.
+    recipientIds = [...new Set(input.recipientIds ?? [])].filter((id) => id !== author.id)
+    if (recipientIds.length === 0) {
+      throw HttpError.badRequest('Choose a household member to send it to')
+    }
+    const members = await prisma.user.findMany({
+      where: { id: { in: recipientIds }, role: { in: [...PERSON_ROLES] } },
+      select: { id: true },
+    })
+    if (members.length !== recipientIds.length) {
       throw HttpError.badRequest('Choose a household member to send it to')
     }
   }
@@ -144,16 +153,18 @@ export async function createNote(input: CreateNoteInput, author: Author): Promis
       authorId: author.id,
       body: input.body,
       audience: input.audience,
-      recipientId: input.audience === 'DIRECT' ? input.recipientId! : null,
       colour: input.colour ?? null,
       pinned,
       expiresAt: expiryFor(pinned, now),
+      ...(recipientIds.length > 0 && {
+        recipients: { create: recipientIds.map((userId) => ({ userId })) },
+      }),
     },
     include: noteInclude,
   })
 
-  // A direct note pings its recipient's phone (best-effort; never blocks the post).
-  if (row.audience === 'DIRECT' && row.recipient) {
+  // A direct note pings each recipient's phone (best-effort; never blocks the post).
+  if (row.audience === 'DIRECT') {
     void notifyDirectNote(row).catch((err) =>
       logger.warn({ err, noteId: row.id }, 'Direct-note push failed'),
     )
@@ -208,11 +219,16 @@ export async function deleteNote(id: string, viewer: Author): Promise<void> {
  * note itself is untouched, so the author's copy and its expiry are unaffected.
  */
 export async function dismissNote(id: string, viewerId: string): Promise<void> {
-  const note = await prisma.note.findUnique({ where: { id } })
+  const note = await prisma.note.findUnique({
+    where: { id },
+    include: { recipients: { select: { userId: true } } },
+  })
   if (!note) throw HttpError.notFound('Note not found')
   // You can only dismiss a note that's actually on your board.
   const onMyBoard =
-    note.audience === 'HOUSEHOLD' || note.recipientId === viewerId || note.authorId === viewerId
+    note.audience === 'HOUSEHOLD' ||
+    note.authorId === viewerId ||
+    note.recipients.some((r) => r.userId === viewerId)
   if (!onMyBoard) throw HttpError.forbidden('That note is not on your board')
 
   await prisma.noteAck.upsert({
@@ -230,19 +246,24 @@ export async function sweepExpiredNotes(now: Date = new Date()): Promise<number>
   return count
 }
 
-/** Best-effort phone push for a new direct note, gated on the recipient's prefs. */
+/** Best-effort phone push for a new direct note, gated on each recipient's prefs. */
 async function notifyDirectNote(row: NoteRow): Promise<void> {
-  if (!row.recipientId) return
-  const prefs = await prisma.notificationPreference.findUnique({
-    where: { userId: row.recipientId },
-  })
-  if (!prefs || !prefs.pushViaHA || !prefs.haNotifyService || !prefs.directNoteAlerts) return
+  if (row.recipients.length === 0) return
 
   const settings = await getConnectionSettings()
   if (!settings) return
 
-  await sendHaNotification(settings.url, settings.token, prefs.haNotifyService, {
-    title: `Note from ${row.author.firstName}`,
-    message: row.body,
+  const prefs = await prisma.notificationPreference.findMany({
+    where: { userId: { in: row.recipients.map((r) => r.userId) } },
   })
+
+  await Promise.all(
+    prefs.map((p) => {
+      if (!p.pushViaHA || !p.haNotifyService || !p.directNoteAlerts) return undefined
+      return sendHaNotification(settings.url, settings.token, p.haNotifyService, {
+        title: `Note from ${row.author.firstName}`,
+        message: row.body,
+      })
+    }),
+  )
 }

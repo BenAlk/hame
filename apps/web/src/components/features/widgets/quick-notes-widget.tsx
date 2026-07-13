@@ -65,6 +65,7 @@ function NoteRow({ note }: { note: Note }) {
   const dismiss = useDismissNote()
   const update = useUpdateNote()
   const tint = note.colour ?? note.author.colour
+  const seenBy = note.recipients.filter((r) => r.seenAt)
 
   return (
     <li
@@ -77,7 +78,9 @@ function NoteRow({ note }: { note: Note }) {
         {note.audience === 'DIRECT' && (
           <span className="inline-flex items-center gap-1 text-[color:var(--accent)]">
             <Lock className="size-3" aria-hidden />
-            {note.mine && note.recipient ? `to ${note.recipient.firstName}` : 'private'}
+            {note.mine && note.recipients.length > 0
+              ? `to ${note.recipients.map((r) => r.firstName).join(', ')}`
+              : 'private'}
           </span>
         )}
         <span className="truncate">{note.author.firstName}</span>
@@ -85,8 +88,10 @@ function NoteRow({ note }: { note: Note }) {
         <span className="shrink-0">
           {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
         </span>
-        {note.mine && note.audience === 'DIRECT' && note.recipientSeenAt && (
-          <span className="shrink-0 text-[color:var(--accent)]">Seen</span>
+        {note.mine && note.audience === 'DIRECT' && seenBy.length > 0 && (
+          <span className="shrink-0 text-[color:var(--accent)]">
+            Seen by {seenBy.map((r) => r.firstName).join(', ')}
+          </span>
         )}
         <div className="ml-auto flex items-center gap-1">
           {note.mine ? (
@@ -136,22 +141,26 @@ function ComposeNoteModal({ onClose }: { onClose: () => void }) {
 
   const [body, setBody] = useState('')
   const [audience, setAudience] = useState<NoteAudience>('HOUSEHOLD')
-  const [recipientId, setRecipientId] = useState('')
+  const [recipientIds, setRecipientIds] = useState<string[]>([])
   const [pinned, setPinned] = useState(false)
 
   const recipients = (members ?? []).filter((m) => m.id !== current?.id)
   const canSubmit =
     body.trim().length > 0 &&
     body.length <= NOTE_MAX_LENGTH &&
-    (audience === 'HOUSEHOLD' || recipientId !== '') &&
+    (audience === 'HOUSEHOLD' || recipientIds.length > 0) &&
     !create.isPending
+
+  function toggleRecipient(id: string) {
+    setRecipientIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))
+  }
 
   function submit() {
     const input: CreateNoteInput = {
       body: body.trim(),
       audience,
       pinned,
-      ...(audience === 'DIRECT' ? { recipientId } : {}),
+      ...(audience === 'DIRECT' ? { recipientIds } : {}),
     }
     create.mutate(input, { onSuccess: onClose })
   }
@@ -185,22 +194,36 @@ function ComposeNoteModal({ onClose }: { onClose: () => void }) {
               <AudienceButton
                 active={audience === 'DIRECT'}
                 onClick={() => setAudience('DIRECT')}
-                label="One person"
+                label="Specific people"
               />
             </div>
             {audience === 'DIRECT' && (
-              <select
-                value={recipientId}
-                onChange={(e) => setRecipientId(e.target.value)}
-                className="h-10 rounded-control border border-input bg-surface px-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                <option value="">Choose who it’s for…</option>
-                {recipients.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.firstName}
-                  </option>
-                ))}
-              </select>
+              <div className="flex flex-col gap-1 rounded-control border border-input bg-surface p-1">
+                {recipients.length === 0 ? (
+                  <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                    No other household members yet.
+                  </p>
+                ) : (
+                  recipients.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-ink hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={recipientIds.includes(m.id)}
+                        onChange={() => toggleRecipient(m.id)}
+                      />
+                      <span
+                        className="size-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: m.colour }}
+                        aria-hidden
+                      />
+                      {m.firstName}
+                    </label>
+                  ))
+                )}
+              </div>
             )}
           </div>
         )}

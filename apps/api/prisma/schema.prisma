@@ -51,7 +51,7 @@ model User {
   smartHomeSettings    SmartHomeSettings?
   notificationPrefs    NotificationPreference?
   notesAuthored        Note[]             @relation("NoteAuthor")
-  notesReceived        Note[]             @relation("NoteRecipient")
+  notesReceived        NoteRecipient[]    @relation("NoteRecipient")
   noteAcks             NoteAck[]
 }
 
@@ -726,24 +726,37 @@ enum BackupRunStatus {
 
 /// A QuickNote (§8.16) — the household "fridge board". Short, glanceable, shown
 /// on dashboards and the wall-tablet screensaver, either household-wide or as a
-/// private direct note to one member. Ephemeral: an optional expiry ages it out
-/// (pinned notes never expire) and a nightly sweep hard-deletes past-expiry rows.
+/// private direct note to specific members. Ephemeral: an optional expiry ages it
+/// out (pinned notes never expire) and a nightly sweep hard-deletes past-expiry rows.
 model Note {
-  id          String       @id @default(uuid())
-  authorId    String
-  author      User         @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  body        String // the note text (short; ≤280 chars, enforced by Zod)
-  audience    NoteAudience @default(HOUSEHOLD)
-  recipientId String? // set only for DIRECT — the one member it's for
-  recipient   User?        @relation("NoteRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  colour      String? // sticky tint (hex); null = inherit the author's User.colour
-  pinned      Boolean      @default(false) // sorts to top; exempt from expiry
-  expiresAt   DateTime? // null = never (pinned, or an explicit "keep")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  acks        NoteAck[]
+  id         String          @id @default(uuid())
+  authorId   String
+  author     User            @relation("NoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  body       String // the note text (short; ≤280 chars, enforced by Zod)
+  audience   NoteAudience    @default(HOUSEHOLD)
+  recipients NoteRecipient[] // set only for DIRECT — the members it's addressed to
+  colour     String? // sticky tint (hex); null = inherit the author's User.colour
+  pinned     Boolean         @default(false) // sorts to top; exempt from expiry
+  expiresAt  DateTime? // null = never (pinned, or an explicit "keep")
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  acks       NoteAck[]
 
-  @@index([audience, recipientId])
+  @@index([audience])
+}
+
+/// One addressee of a DIRECT note (§8.16). A note can be sent to several members
+/// ("Sam and Ada", or "everyone but Ben"); each such member is one row here. A
+/// HOUSEHOLD note has no recipient rows.
+model NoteRecipient {
+  id     String @id @default(uuid())
+  noteId String
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation("NoteRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, userId])
+  @@index([userId])
 }
 
 /// Per-user read/dismiss state for a note. A row means "this user has seen it";

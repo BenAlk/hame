@@ -16,7 +16,7 @@ export const NOTE_MAX_LENGTH = 280
 export const NOTE_DEFAULT_TTL_DAYS = 7
 
 /** Who a note is for. HOUSEHOLD shows on the shared board + screensaver; DIRECT
- *  is private to one member and never surfaces on the shared tablet. */
+ *  is private to specific members and never surfaces on the shared tablet. */
 export const NOTE_AUDIENCES = ['HOUSEHOLD', 'DIRECT'] as const
 export type NoteAudience = (typeof NOTE_AUDIENCES)[number]
 export const NoteAudienceSchema = z.enum(NOTE_AUDIENCES)
@@ -33,22 +33,23 @@ const NoteBody = z
   .max(NOTE_MAX_LENGTH, `Keep it under ${NOTE_MAX_LENGTH} characters`)
 
 /**
- * A DIRECT note needs exactly one recipient; a HOUSEHOLD note must not carry one.
- * Runs on both create and (partial) update, skipping the check when neither field
- * is present so an update that touches only the body/colour still validates.
+ * A DIRECT note needs at least one recipient; a HOUSEHOLD note must not carry any.
+ * Runs on create, skipping the check when the audience is absent so a partial
+ * update that touches only the body/colour still validates.
  */
 function refineAudience(
-  data: { audience?: NoteAudience; recipientId?: string | null },
+  data: { audience?: NoteAudience; recipientIds?: string[] },
   ctx: z.RefinementCtx,
 ) {
-  if (data.audience === 'DIRECT' && !data.recipientId) {
-    ctx.addIssue({ code: 'custom', path: ['recipientId'], message: 'Choose who it’s for' })
+  const count = data.recipientIds?.length ?? 0
+  if (data.audience === 'DIRECT' && count === 0) {
+    ctx.addIssue({ code: 'custom', path: ['recipientIds'], message: 'Choose who it’s for' })
   }
-  if (data.audience === 'HOUSEHOLD' && data.recipientId) {
+  if (data.audience === 'HOUSEHOLD' && count > 0) {
     ctx.addIssue({
       code: 'custom',
-      path: ['recipientId'],
-      message: 'A household note has no single recipient',
+      path: ['recipientIds'],
+      message: 'A household note has no specific recipients',
     })
   }
 }
@@ -56,8 +57,8 @@ function refineAudience(
 const NoteFields = z.object({
   body: NoteBody,
   audience: NoteAudienceSchema.default('HOUSEHOLD'),
-  /** Set only for a DIRECT note — the one member it's for. */
-  recipientId: z.string().uuid().nullish(),
+  /** Set only for a DIRECT note — the members it's addressed to (deduped). */
+  recipientIds: z.array(z.string().uuid()).optional(),
   /** Sticky tint; omit to inherit the author's colour. */
   colour: z.string().regex(HEX_COLOUR_REGEX, 'Pick a colour').nullish(),
   /** Pinned notes sort to the top and never expire. */
@@ -81,18 +82,28 @@ export type UpdateNoteInput = z.infer<typeof UpdateNoteSchema>
 // ── Public shape ─────────────────────────────────────────────────────────────
 
 /**
+ * One addressee of a DIRECT note. `seenAt` is the read receipt shown to the
+ * note's author (when the recipient first viewed it); it's null for viewers other
+ * than the author, who don't get to see each other's read state.
+ */
+export const NoteRecipientSchema = MemberSummarySchema.extend({
+  seenAt: z.coerce.date().nullable(),
+})
+export type NoteRecipient = z.infer<typeof NoteRecipientSchema>
+
+/**
  * A note as returned to a viewer. Some fields are viewer-relative and computed
  * server-side: `mine` is whether the viewer authored it (so the UI offers edit /
- * delete), `dismissed` whether they've cleared it from their own board, and
- * `recipientSeenAt` the "seen" timestamp shown to the author of a direct note.
+ * delete), `dismissed` whether they've cleared it from their own board, and each
+ * recipient's `seenAt` (populated only for the note's author) the read receipt.
  */
 export const NoteSchema = z.object({
   id: z.string().uuid(),
   body: z.string(),
   audience: NoteAudienceSchema,
   author: MemberSummarySchema,
-  /** The addressee of a DIRECT note; null for a HOUSEHOLD note. */
-  recipient: MemberSummarySchema.nullable(),
+  /** The addressees of a DIRECT note; empty for a HOUSEHOLD note. */
+  recipients: z.array(NoteRecipientSchema),
   colour: z.string().nullable(),
   pinned: z.boolean(),
   expiresAt: z.coerce.date().nullable(),
@@ -102,7 +113,5 @@ export const NoteSchema = z.object({
   mine: z.boolean(),
   /** The viewer has dismissed this (household) note from their own board. */
   dismissed: z.boolean(),
-  /** For a DIRECT note the viewer authored: when the recipient first saw it, else null. */
-  recipientSeenAt: z.coerce.date().nullable(),
 })
 export type Note = z.infer<typeof NoteSchema>

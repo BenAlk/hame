@@ -9,9 +9,10 @@ const note = {
   deleteMany: vi.fn(),
 }
 const noteAck = { createMany: vi.fn(), upsert: vi.fn() }
-const user = { findUnique: vi.fn() }
+const user = { findUnique: vi.fn(), findMany: vi.fn() }
+const notificationPreference = { findMany: vi.fn() }
 
-vi.mock('../lib/prisma.js', () => ({ prisma: { note, noteAck, user } }))
+vi.mock('../lib/prisma.js', () => ({ prisma: { note, noteAck, user, notificationPreference } }))
 // The direct-note push is fire-and-forget; stub the HA path to a no-op so tests
 // exercise the note logic, not the transport.
 vi.mock('../services/home-assistant-config.service.js', () => ({
@@ -25,6 +26,11 @@ const { listNotesForViewer, createNote, dismissNote, sweepExpiredNotes } =
   await import('../services/note.service.js')
 
 const member = (id: string, firstName = 'Alex') => ({ id, firstName, colour: '#3B82F6' })
+/** A recipient join row as Prisma returns it with the service's include. */
+const recipientRow = (id: string, firstName = 'Sam') => ({
+  userId: id,
+  user: member(id, firstName),
+})
 
 /** A stored note row as Prisma would return it with the service's include. */
 function row(over: Partial<Record<string, unknown>> = {}) {
@@ -33,8 +39,7 @@ function row(over: Partial<Record<string, unknown>> = {}) {
     authorId: 'author',
     body: 'hello',
     audience: 'HOUSEHOLD',
-    recipientId: null,
-    recipient: null,
+    recipients: [],
     colour: null,
     pinned: false,
     expiresAt: null,
@@ -57,9 +62,12 @@ beforeEach(() => {
     noteAck.createMany,
     noteAck.upsert,
     user.findUnique,
+    user.findMany,
+    notificationPreference.findMany,
   ])
     fn.mockReset()
   noteAck.createMany.mockResolvedValue({ count: 0 })
+  notificationPreference.findMany.mockResolvedValue([])
 })
 
 describe('listNotesForViewer', () => {
@@ -70,7 +78,7 @@ describe('listNotesForViewer', () => {
     const branches = where.AND[1].OR
     expect(branches).toEqual([
       { audience: 'HOUSEHOLD' },
-      { audience: 'DIRECT', recipientId: 'me' },
+      { audience: 'DIRECT', recipients: { some: { userId: 'me' } } },
       { audience: 'DIRECT', authorId: 'me' },
     ])
     // Unexpired filter is present (null expiry or in the future).
@@ -88,7 +96,13 @@ describe('listNotesForViewer', () => {
 
   it('marks a direct note to the viewer as seen on first view', async () => {
     note.findMany.mockResolvedValue([
-      row({ id: 'd1', audience: 'DIRECT', authorId: 'author', recipientId: 'me', acks: [] }),
+      row({
+        id: 'd1',
+        audience: 'DIRECT',
+        authorId: 'author',
+        recipients: [recipientRow('me', 'Me')],
+        acks: [],
+      }),
     ])
     await listNotesForViewer('me')
     expect(noteAck.createMany).toHaveBeenCalledWith({
@@ -97,21 +111,22 @@ describe('listNotesForViewer', () => {
     })
   })
 
-  it('surfaces the recipient’s seen time to the note’s author', async () => {
+  it('surfaces each recipient’s seen time to the note’s author', async () => {
     const seenAt = new Date('2026-07-02')
     note.findMany.mockResolvedValue([
       row({
         id: 'd1',
         audience: 'DIRECT',
         authorId: 'me',
-        recipientId: 'them',
-        recipient: member('them', 'Sam'),
+        recipients: [recipientRow('them', 'Sam'), recipientRow('other', 'Ada')],
         acks: [{ userId: 'them', dismissed: false, seenAt }],
       }),
     ])
     const [n] = await listNotesForViewer('me')
     expect(n.mine).toBe(true)
-    expect(n.recipientSeenAt).toEqual(seenAt)
+    expect(n.recipients.find((r) => r.id === 'them')?.seenAt).toEqual(seenAt)
+    // The recipient who hasn't looked yet has no read receipt.
+    expect(n.recipients.find((r) => r.id === 'other')?.seenAt).toBeNull()
   })
 })
 
@@ -119,10 +134,31 @@ describe('createNote', () => {
   it('refuses a direct note from the shared tablet account', async () => {
     await expect(
       createNote(
-        { body: 'hi', audience: 'DIRECT', recipientId: 'sam' },
+        { body: 'hi', audience: 'DIRECT', recipientIds: ['sam'] },
         { id: 'tablet', role: 'TABLET' },
       ),
     ).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('rejects a direct note whose recipient isn’t a household member', async () => {
+    user.findMany.mockResolvedValue([]) // none of the ids resolve to a person
+    await expect(
+      createNote(
+        { body: 'hi', audience: 'DIRECT', recipientIds: ['ghost'] },
+        { id: 'author', role: 'MEMBER' },
+      ),
+    ).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('creates a join row per recipient, deduped and excluding the author', async () => {
+    user.findMany.mockResolvedValue([member('sam'), member('ada')])
+    note.create.mockResolvedValue(row())
+    await createNote(
+      { body: 'psst', audience: 'DIRECT', recipientIds: ['sam', 'ada', 'sam', 'author'] },
+      { id: 'author', role: 'MEMBER' },
+    )
+    const data = note.create.mock.calls[0][0].data
+    expect(data.recipients.create).toEqual([{ userId: 'sam' }, { userId: 'ada' }])
   })
 
   it('gives a non-pinned note a +7 day expiry', async () => {
@@ -149,7 +185,7 @@ describe('dismissNote', () => {
     note.findUnique.mockResolvedValue({
       id: 'n1',
       audience: 'HOUSEHOLD',
-      recipientId: null,
+      recipients: [],
       authorId: 'x',
     })
     await dismissNote('n1', 'me')

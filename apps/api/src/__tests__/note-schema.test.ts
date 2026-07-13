@@ -9,25 +9,30 @@ describe('CreateNoteSchema', () => {
     expect(parsed.audience).toBe('HOUSEHOLD')
   })
 
-  it('rejects a DIRECT note with no recipient', () => {
-    const result = CreateNoteSchema.safeParse({ body: 'psst', audience: 'DIRECT' })
-    expect(result.success).toBe(false)
+  it('rejects a DIRECT note with no recipients', () => {
+    expect(CreateNoteSchema.safeParse({ body: 'psst', audience: 'DIRECT' }).success).toBe(false)
+    expect(
+      CreateNoteSchema.safeParse({ body: 'psst', audience: 'DIRECT', recipientIds: [] }).success,
+    ).toBe(false)
   })
 
-  it('accepts a DIRECT note with a recipient', () => {
+  it('accepts a DIRECT note addressed to one or more members', () => {
     const result = CreateNoteSchema.safeParse({
       body: 'your parcel is behind the sofa',
       audience: 'DIRECT',
-      recipientId: '11111111-1111-1111-1111-111111111111',
+      recipientIds: [
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+      ],
     })
     expect(result.success).toBe(true)
   })
 
-  it('rejects a HOUSEHOLD note that carries a recipient', () => {
+  it('rejects a HOUSEHOLD note that carries recipients', () => {
     const result = CreateNoteSchema.safeParse({
       body: 'for the whole house',
       audience: 'HOUSEHOLD',
-      recipientId: '11111111-1111-1111-1111-111111111111',
+      recipientIds: ['11111111-1111-1111-1111-111111111111'],
     })
     expect(result.success).toBe(false)
   })

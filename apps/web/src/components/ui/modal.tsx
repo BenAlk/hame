@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +15,11 @@ interface ModalProps {
  * Lightweight modal dialog (no Radix dependency yet): centred surface panel on
  * a dimmed backdrop, closes on Escape or backdrop click. Used for flows like
  * the shopping-list archive (spec §8.3).
+ *
+ * Rendered through a portal to `document.body` so its `position: fixed` backdrop
+ * covers the viewport rather than being trapped by a transformed ancestor — the
+ * dashboard grid transforms each widget cell, which would otherwise pin the
+ * modal inside the widget that opened it.
  */
 export function Modal({ open, onClose, title, children, className }: ModalProps) {
   React.useEffect(() => {
@@ -25,7 +31,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10"
       onClick={onClose}
@@ -52,6 +58,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
