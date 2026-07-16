@@ -53,6 +53,7 @@ services:
       BIN_SYNC_CRON: ${BIN_SYNC_CRON:-0 3 * * *}
       NOTIFICATION_CRON: ${NOTIFICATION_CRON:-0 * * * *}
       INTEGRATION_SYNC_CRON: ${INTEGRATION_SYNC_CRON:-*/15 * * * *}
+      NOTE_SWEEP_CRON: ${NOTE_SWEEP_CRON:-0 4 * * *}
       # Public CalDAV base URL shown to phone clients; leave unset for LAN use.
       CALDAV_PUBLIC_URL: ${CALDAV_PUBLIC_URL:-}
       # Where automated backups are written (spec §10 Phase 8.9). This is the path

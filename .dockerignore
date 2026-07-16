@@ -2,6 +2,10 @@
 **/dist
 **/build
 **/coverage
+# Incremental-build stamps. These are composite-project state pointing at a dist/
+# that .dockerignore strips, so a copied-in one makes tsc emit nothing and exit 0 —
+# a silent no-op that leaves the image without @hame/shared/dist.
+**/*.tsbuildinfo
 .git
 .github
 *.md

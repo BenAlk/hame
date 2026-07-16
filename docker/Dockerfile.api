@@ -9,15 +9,20 @@ WORKDIR /app
 # Manifests first for better layer caching
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/bin-scraper/package.json packages/bin-scraper/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile
 
 # Source
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/bin-scraper packages/bin-scraper
 COPY apps/api apps/api
 
+# Both workspace packages resolve via their built dist/, so they must be built
+# before the API can import them at runtime.
 RUN pnpm --filter @hame/shared build \
+  && pnpm --filter uk-bin-scraper build \
   && pnpm --filter @hame/api db:generate
 
 # ---- Runtime stage ----
@@ -27,5 +32,6 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /app /app
 EXPOSE 4000
-# Apply migrations then start the API.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma && node_modules/.bin/tsx apps/api/src/index.ts"]
+# Apply migrations then start the API. prisma and tsx are dependencies of
+# apps/api, so pnpm links them under that package rather than the root .bin.
+CMD ["sh", "-c", "apps/api/node_modules/.bin/prisma migrate deploy --schema apps/api/prisma/schema.prisma && apps/api/node_modules/.bin/tsx apps/api/src/index.ts"]
