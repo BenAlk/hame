@@ -60,6 +60,15 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
+  // react-grid-layout / react-draggable read these two env flags off a runtime
+  // `process` object the browser doesn't have. Replacing them at build time (like
+  // Vite already does for NODE_ENV) removes the last runtime `process` access, so
+  // no inline `window.process` shim is needed — which the production CSP
+  // (`script-src 'self'`, docker/nginx.conf) would otherwise block.
+  define: {
+    'process.env.DRAGGABLE_DEBUG': 'false',
+    'process.env.BABEL_ES_COMPAT': 'false',
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
