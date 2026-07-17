@@ -1,16 +1,17 @@
 import type { ImmichAlbum, ImmichTestResult } from '@hame/shared'
-import { extractAlbums, extractImageAssetIds } from './assets.js'
+import { extractAlbums, extractSearchAssetIds } from './assets.js'
 
 /**
  * Dependency-free Immich REST client (spec §8.14, §10 Phase 7.3) — native
- * `fetch` + the `x-api-key` header, mirroring the HA REST probe. Only three
+ * `fetch` + the `x-api-key` header, mirroring the HA REST probe. Only a few
  * endpoints are touched, kept in one place so they're easy to adjust against a
  * live server:
- *   - `GET /api/albums`          — list albums (Settings picker)
- *   - `GET /api/albums/{id}`     — album detail with its assets
- *   - `GET /api/assets/{id}/thumbnail?size=preview` — a preview-sized image
- *   - `GET /api/server/version`  — reported version (best-effort)
- *   - `GET /api/server/ping`     — reachability + key check
+ *   - `GET  /api/albums`          — list albums (Settings picker)
+ *   - `POST /api/search/metadata` — an album's image asset ids (paged). Current
+ *     Immich no longer embeds `assets` in `GET /api/albums/{id}`, so the pool is
+ *     enumerated through search (filtered to `type: IMAGE`) rather than album detail.
+ *   - `GET  /api/assets/{id}/thumbnail?size=preview` — a preview-sized image
+ *   - `GET  /api/server/version`  — reported version (best-effort)
  *
  * The decrypted key never leaves the server: the browser pulls photos through
  * Hame's `/api/idle/photo/:id` proxy, so the screensaver works remotely without
@@ -18,6 +19,11 @@ import { extractAlbums, extractImageAssetIds } from './assets.js'
  */
 
 const REQUEST_TIMEOUT_MS = 15_000
+
+// Immich caps search `size` at 1000; page through until `nextPage` runs out,
+// with a hard cap so a misbehaving server can't spin the loop forever.
+const SEARCH_PAGE_SIZE = 1000
+const MAX_SEARCH_PAGES = 100
 
 export interface ImmichConnection {
   url: string
@@ -50,6 +56,21 @@ async function immichFetch(conn: ImmichConnection, path: string): Promise<Respon
   }
 }
 
+async function immichPost(conn: ImmichConnection, path: string, body: unknown): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(`${baseUrl(conn.url)}${path}`, {
+      method: 'POST',
+      headers: { ...headers(conn.apiKey), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 /** List the server's albums for the Settings picker. Throws on a non-OK response. */
 export async function fetchAlbums(conn: ImmichConnection): Promise<ImmichAlbum[]> {
   const res = await immichFetch(conn, '/api/albums')
@@ -57,20 +78,37 @@ export async function fetchAlbums(conn: ImmichConnection): Promise<ImmichAlbum[]
   return extractAlbums(await res.json())
 }
 
-/** Image asset ids in one album (videos skipped). Throws on a non-OK response. */
+/**
+ * Image asset ids in one album (videos skipped), enumerated via the metadata
+ * search endpoint and paged until Immich stops handing back a `nextPage`. Throws
+ * on a non-OK response. (Album detail — `GET /api/albums/{id}` — no longer embeds
+ * its assets on current Immich, so search is the reliable source.)
+ */
 export async function fetchAlbumAssetIds(
   conn: ImmichConnection,
   albumId: string,
 ): Promise<string[]> {
-  const res = await immichFetch(conn, `/api/albums/${encodeURIComponent(albumId)}`)
-  if (!res.ok) throw new Error(`Immich responded ${res.status} reading album ${albumId}`)
-  return extractImageAssetIds(await res.json())
+  const ids: string[] = []
+  let page: number | null = 1
+  for (let i = 0; page !== null && i < MAX_SEARCH_PAGES; i++) {
+    const res = await immichPost(conn, '/api/search/metadata', {
+      albumIds: [albumId],
+      type: 'IMAGE',
+      size: SEARCH_PAGE_SIZE,
+      page,
+    })
+    if (!res.ok) throw new Error(`Immich responded ${res.status} searching album ${albumId}`)
+    const { ids: pageIds, nextPage } = extractSearchAssetIds(await res.json())
+    ids.push(...pageIds)
+    page = nextPage
+  }
+  return ids
 }
 
 /**
  * Collect image asset ids for the configured selection. An **empty** selection
- * means "all photos" — interpreted as every image across all albums (only the
- * rock-solid album endpoints, no reliance on Immich's shifting search API). A
+ * means "all photos" — interpreted as every image across all albums (the album
+ * list gives the ids; each album's assets come from `fetchAlbumAssetIds`). A
  * single album that can't be read is skipped rather than failing the whole pool.
  */
 export async function fetchAssetIds(

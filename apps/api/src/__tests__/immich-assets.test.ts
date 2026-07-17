@@ -3,6 +3,7 @@ import {
   buildAssetPool,
   extractAlbums,
   extractImageAssetIds,
+  extractSearchAssetIds,
   shuffle,
 } from '../integrations/immich/assets.js'
 
@@ -52,6 +53,40 @@ describe('extractImageAssetIds', () => {
   it('returns [] when there are no assets', () => {
     expect(extractImageAssetIds({})).toEqual([])
     expect(extractImageAssetIds(null)).toEqual([])
+  })
+})
+
+describe('extractSearchAssetIds', () => {
+  it('pulls image ids out of the search response and skips videos', () => {
+    const { ids, nextPage } = extractSearchAssetIds({
+      assets: {
+        items: [
+          { id: 'p1', type: 'IMAGE' },
+          { id: 'v1', type: 'VIDEO' },
+          { id: 'p2', type: 'image' },
+        ],
+        nextPage: null,
+      },
+    })
+    expect(ids).toEqual(['p1', 'p2'])
+    expect(nextPage).toBeNull()
+  })
+
+  it('normalises a string nextPage cursor to a number', () => {
+    expect(extractSearchAssetIds({ assets: { items: [], nextPage: '2' } }).nextPage).toBe(2)
+    expect(extractSearchAssetIds({ assets: { items: [], nextPage: 3 } }).nextPage).toBe(3)
+  })
+
+  it('returns null nextPage for a missing/blank/non-numeric cursor', () => {
+    expect(extractSearchAssetIds({ assets: { items: [] } }).nextPage).toBeNull()
+    expect(extractSearchAssetIds({ assets: { items: [], nextPage: '' } }).nextPage).toBeNull()
+    expect(extractSearchAssetIds({ assets: { items: [], nextPage: 'x' } }).nextPage).toBeNull()
+  })
+
+  it('returns [] when the response has no assets/items', () => {
+    expect(extractSearchAssetIds({}).ids).toEqual([])
+    expect(extractSearchAssetIds({ assets: {} }).ids).toEqual([])
+    expect(extractSearchAssetIds(null).ids).toEqual([])
   })
 })
 

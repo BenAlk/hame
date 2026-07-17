@@ -25,15 +25,10 @@ export function extractAlbums(raw: unknown): ImmichAlbum[] {
   return albums
 }
 
-/**
- * Pull the **image** asset ids out of an `GET /api/albums/{id}` detail response.
- * Videos are skipped — the screensaver shows stills only. Tolerant of a missing
- * `type` (treated as an image), so an older Immich that omits it still works.
- */
-export function extractImageAssetIds(raw: unknown): string[] {
-  const rec = asRecord(raw)
-  const assets = rec?.assets
-  if (!Array.isArray(assets)) return []
+/** Image asset ids from an array of Immich asset objects. Videos are skipped —
+ *  the screensaver shows stills only. A missing `type` is treated as an image
+ *  (tolerant of an Immich that omits it). */
+function imageIdsFromAssets(assets: unknown[]): string[] {
   const ids: string[] = []
   for (const entry of assets) {
     const asset = asRecord(entry)
@@ -42,6 +37,41 @@ export function extractImageAssetIds(raw: unknown): string[] {
     ids.push(asset.id)
   }
   return ids
+}
+
+/**
+ * Pull the **image** asset ids out of an `GET /api/albums/{id}` detail response
+ * (its embedded `assets` array). Retained for older Immich servers; current ones
+ * no longer embed assets in the album detail, so the pool is built from
+ * `extractSearchAssetIds` instead.
+ */
+export function extractImageAssetIds(raw: unknown): string[] {
+  const rec = asRecord(raw)
+  const assets = rec?.assets
+  if (!Array.isArray(assets)) return []
+  return imageIdsFromAssets(assets)
+}
+
+/**
+ * Pull image asset ids and the next-page cursor out of a `POST /api/search/metadata`
+ * response (`{ assets: { items[], nextPage } }`). Current Immich no longer embeds
+ * assets in the album detail (`GET /api/albums/{id}`), so the pool is paged out of
+ * this search endpoint instead. `nextPage` is a string page number (or null at the
+ * end); it's normalised to a number so the client can request the next page.
+ */
+export function extractSearchAssetIds(raw: unknown): { ids: string[]; nextPage: number | null } {
+  const assets = asRecord(asRecord(raw)?.assets)
+  const items = Array.isArray(assets?.items) ? assets.items : []
+  const ids = imageIdsFromAssets(items)
+
+  const next = assets?.nextPage
+  const nextPage =
+    typeof next === 'string' && /^\d+$/.test(next)
+      ? Number(next)
+      : typeof next === 'number' && Number.isFinite(next)
+        ? next
+        : null
+  return { ids, nextPage }
 }
 
 /** In-place Fisher–Yates shuffle, with an injectable RNG so it's deterministic in tests. */
