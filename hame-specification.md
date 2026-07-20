@@ -1844,6 +1844,18 @@ generated SW confirmed to carry **no `/api` in its precache** (only in the navig
 Installing on a phone/tablet for the real add-to-home-screen + offline check is the one remaining
 battle-test, like the Immich / HA live smokes.
 
+**Follow-up — portrait-tablet breakpoint (20-07-2026).** The original responsive split reused a single
+1024px cutoff for both the dashboard grid and the nav shell — but that's a _desktop_ width, so a
+portrait tablet (the primary wall-tablet target, ~800px) fell into the phone bucket: a single-column
+stack and the hamburger drawer instead of the widget grid. Fixed by adding a **2-column portrait-tablet
+tier**. `GRID_BREAKPOINTS` / `GRID_COLS` (`@hame/shared`, design §9) become three tiers — 3 columns at
+≥880px, 2 at ≥512px, 1 below — where the thresholds are grid-**container** widths (what
+react-grid-layout measures, i.e. the viewport minus the icon rail and gutters), not the viewport, which
+is why they sit below the matching device widths. The paired nav-rail cutoff drops from `lg` to `sm`
+(640px viewport), so a portrait tablet keeps the persistent icon rail rather than the phone drawer. No
+migration: existing layouts carry only the `lg`/`xs` keys and react-grid-layout synthesises the new
+`md` layout on the fly, persisting it on the next save.
+
 **Phase 7 is complete.**
 
 ### Phase 7.5 — Shared wall-tablet account & dashboard switcher ✅ Complete (12-07-2026)

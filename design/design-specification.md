@@ -205,7 +205,14 @@ spanning 1–2 columns).
 | ------------------------------ | ----------------------------------------------------- |
 | Wall tablet (~1280, landscape) | 3-column widget grid; greeting strip spans full width |
 | Desktop browser                | Same grid, wider; widgets may span more columns       |
+| Tablet (portrait, ~800)        | 2-column widget grid; persistent icon nav rail        |
 | Phone (PWA, portrait)          | Single column; glanceable cards drop to a 2-up row    |
+
+The cutoffs are set on the grid **container** width (what react-grid-layout
+measures — viewport minus the icon rail and gutters), so a portrait tablet lands
+on 2 columns rather than the phone's single column: 3 columns at ≥880px
+container, 2 at ≥512px, 1 below. The nav rail (vs. the phone's off-canvas drawer)
+switches on the viewport at Tailwind `sm` (640px).
 
 Hit targets are **≥44px** on touch surfaces (check rows, toggles, buttons).
 
