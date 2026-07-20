@@ -160,9 +160,10 @@ function NavItems({
 }
 
 /**
- * The app shell: a left sidebar (collapsed icon rail on ≥lg, off-canvas drawer below)
- * plus the routed page content. Expanding the rail slides a labelled panel in over a
- * shroud; on phones the same panel is the only nav, opened from a slim top bar.
+ * The app shell: a left sidebar (collapsed icon rail on ≥sm — tablets included,
+ * off-canvas drawer on phones below) plus the routed page content. Expanding the
+ * rail slides a labelled panel in over a shroud; on phones the same panel is the
+ * only nav, opened from a slim top bar.
  */
 export function AppShell() {
   const { data } = useCurrentUser()
@@ -187,8 +188,8 @@ export function AppShell() {
     <DashboardOwnerProvider>
       <ChoreCompletionProvider>
         <div className="flex min-h-screen">
-          {/* Collapsed icon rail — tablet/desktop only */}
-          <aside className="sticky top-0 hidden h-screen w-16 shrink-0 flex-col border-r border-line bg-surface px-2 py-3 lg:flex">
+          {/* Collapsed icon rail — tablet/desktop only (portrait tablet included) */}
+          <aside className="sticky top-0 hidden h-screen w-16 shrink-0 flex-col border-r border-line bg-surface px-2 py-3 sm:flex">
             <button
               type="button"
               onClick={() => setOpen(true)}
@@ -201,7 +202,7 @@ export function AppShell() {
           </aside>
 
           {/* Slim top bar — phone only */}
-          <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
+          <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 sm:hidden">
             <button
               type="button"
               onClick={() => setOpen(true)}
@@ -214,7 +215,7 @@ export function AppShell() {
           </header>
 
           {/* Page content */}
-          <div className="min-w-0 flex-1 pt-14 lg:pt-0">
+          <div className="min-w-0 flex-1 pt-14 sm:pt-0">
             <Outlet />
           </div>
 

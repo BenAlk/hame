@@ -31,13 +31,23 @@ export type WidgetType = (typeof WIDGET_TYPES)[number]
 export const WidgetTypeSchema = z.enum(WIDGET_TYPES)
 
 /**
- * Responsive grid breakpoints (design §9): a 3-column grid on tablet/desktop,
- * reflowing to a single column on the phone. `BREAKPOINTS` maps each name to its
- * min width (px) and `GRID_COLS` to its column count — both feed
- * react-grid-layout's `ResponsiveGridLayout` directly.
+ * Responsive grid breakpoints (design §9): three columns on a landscape
+ * tablet/desktop, two on a portrait tablet, reflowing to a single column on the
+ * phone. `GRID_BREAKPOINTS` maps each name to its min width and `GRID_COLS` to
+ * its column count — both feed react-grid-layout's `ResponsiveGridLayout`
+ * directly.
+ *
+ * These widths are the *grid container* width (what react-grid-layout measures),
+ * not the viewport — the container is the viewport minus the ~64px icon rail and
+ * the page gutters, so the thresholds sit below the matching device widths:
+ * `lg` (880) so a ≥1024-viewport landscape tablet/desktop still lands on 3
+ * columns, `md` (512) so a portrait tablet (~768–900 viewport) gets 2 rather
+ * than dropping to the phone's single column — the original 1024 cutoff was a
+ * *desktop* width, so a portrait tablet wrongly counted as a phone. The paired
+ * nav-rail cutoff lives in `app-shell.tsx` (Tailwind `sm`, viewport-based).
  */
-export const GRID_BREAKPOINTS = { lg: 1024, xs: 0 } as const
-export const GRID_COLS = { lg: 3, xs: 1 } as const
+export const GRID_BREAKPOINTS = { lg: 880, md: 512, xs: 0 } as const
+export const GRID_COLS = { lg: 3, md: 2, xs: 1 } as const
 export type Breakpoint = keyof typeof GRID_COLS
 
 /** Catalogue metadata per widget: label, default + minimum grid size, and
