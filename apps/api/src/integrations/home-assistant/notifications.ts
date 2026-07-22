@@ -172,14 +172,22 @@ export async function sendHaNotification(
 
 /**
  * Build the `data` payload for a critical / high-priority push (spec §10 Phase 8).
- * Sends both platforms' keys — iOS reads `push.sound.critical` (bypasses the ring
- * switch and DND), Android reads `priority`/`ttl` (immediate, high-priority) — and
- * each side ignores the other's. Used only when a user opts into critical alerts.
+ * Sends both platforms' keys — each side ignores the other's:
+ *
+ * - **iOS** reads `push.sound.critical`, which bypasses the ring switch and Do Not
+ *   Disturb (needs the Critical Alerts permission granted to the HA app once).
+ * - **Android** has no payload-only "critical" flag. `priority`/`ttl` only make the
+ *   push immediate + heads-up; to actually *sound while the ringer is silenced* the
+ *   notification must play through the alarm audio stream — that's what
+ *   `channel: 'alarm_stream'` does. (Overriding Do Not Disturb too is a per-device
+ *   choice Android won't let an app self-grant: each user allows the "alarm_stream"
+ *   channel to override DND once in the HA app — see the companion docs.)
  */
 export function criticalAlertData(): Record<string, unknown> {
   return {
     push: { sound: { name: 'default', critical: 1, volume: 1.0 } },
     ttl: 0,
     priority: 'high',
+    channel: 'alarm_stream',
   }
 }

@@ -129,7 +129,8 @@ describe('criticalAlertData', () => {
     const data = criticalAlertData()
     // iOS: the critical sound payload that bypasses the ring switch / DND.
     expect(data).toMatchObject({ push: { sound: { critical: 1 } } })
-    // Android: immediate, high-priority delivery.
-    expect(data).toMatchObject({ ttl: 0, priority: 'high' })
+    // Android: immediate, high-priority delivery through the alarm stream so it
+    // sounds even while the ringer is silenced.
+    expect(data).toMatchObject({ ttl: 0, priority: 'high', channel: 'alarm_stream' })
   })
 })
