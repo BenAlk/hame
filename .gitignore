@@ -7,6 +7,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# Deploy image bundles (docker save | gzip → scp to the server)
+*.tar.gz
+
 # Env / secrets
 .env
 .env.local
