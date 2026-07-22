@@ -31,6 +31,7 @@ import { statsRouter } from './stats.js'
 import { backupRouter } from './backup.js'
 import { integrationsRouter } from './integrations.js'
 import { notesRouter } from './notes.js'
+import { alertsRouter } from './alerts.js'
 
 export const apiRouter = Router()
 
@@ -66,3 +67,4 @@ apiRouter.use('/stats', statsRouter)
 apiRouter.use('/backup', backupRouter)
 apiRouter.use('/integrations', integrationsRouter)
 apiRouter.use('/notes', notesRouter)
+apiRouter.use('/alerts', alertsRouter)

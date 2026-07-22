@@ -26,6 +26,7 @@ import { useCurrentUser, useLogout } from '@/api/auth'
 import { DashboardOwnerProvider } from '@/components/features/dashboard/dashboard-owner'
 import { ChoreCompletionProvider } from '@/components/features/chores/chore-completion'
 import { DashboardIdleMode } from '@/components/features/idle/idle-mode'
+import { AlertButton } from '@/components/features/alerts/alert-button'
 import { cn } from '@/lib/utils'
 
 interface NavItemDef {
@@ -212,6 +213,7 @@ export function AppShell() {
               <Menu className="h-5 w-5" aria-hidden />
             </button>
             <span className="font-serif text-xl font-medium text-ink">Hame</span>
+            <AlertButton />
           </header>
 
           {/* Page content */}

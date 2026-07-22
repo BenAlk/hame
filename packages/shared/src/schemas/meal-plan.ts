@@ -178,6 +178,8 @@ export const HouseholdSettingsSchema = z.object({
   caldavEnabled: z.boolean(),
   /** Labs: estimate consumable re-order cadences from purchase history (§10 Phase 8.5). */
   autoConsumableCadence: z.boolean(),
+  /** Whether the mobile top-bar critical-alert "poke" between members is on (§10 Phase 12). */
+  householdAlertsEnabled: z.boolean(),
   updatedAt: z.coerce.date(),
 })
 export type HouseholdSettings = z.infer<typeof HouseholdSettingsSchema>
@@ -188,6 +190,7 @@ export const UpdateHouseholdSettingsSchema = z
     ingredientNormaliser: NormaliserStrategySchema,
     caldavEnabled: z.boolean(),
     autoConsumableCadence: z.boolean(),
+    householdAlertsEnabled: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided' })

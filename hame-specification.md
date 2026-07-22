@@ -2421,6 +2421,53 @@ recording a "seen" receipt back to the author; the tablet refused a direct note
 (403); a per-user dismiss hiding a household note for one member only; and a
 non-author delete refused (403).
 
+### Phase 12 — Household alerts (critical ping) ✅ Complete (22-07-2026)
+
+A one-off, person-to-person **urgent ping** from the phone: a bell icon on the
+mobile top bar opens a modal to pick a household member (or, in a two-person house,
+go straight to them), type a short message, and land it on their phone as a
+**critical alert** that rings through silent mode / Do Not Disturb. It's the "come
+here / dinner's ready / I need you now" affordance — distinct from QuickNotes (a
+persistent fridge board) and from the twice-daily reminder batch. Fire-and-forget:
+nothing is persisted.
+
+**Goal**: From your phone, urgently reach someone else in the house — right now.
+
+**Delivered**: A one-field Phase 12 migration adds `HouseholdSettings.householdAlertsEnabled`
+(default **on**) — an admin toggle so a household that doesn't want the feature turns
+it off and the icon disappears for everyone. No new model (the alert itself persists
+nothing), and `HouseholdSettings` is already in `BACKUP_MODELS` (§9.8), so the column
+round-trips through backup/restore for free. The whole feature **reuses the Phase 8
+notify path**: `sendHaNotification` + the existing `criticalAlertData()` payload (iOS
+`push.sound.critical` + Android `priority:high`/`ttl:0`), so Hame stands up no new push
+infrastructure — HA owns the push. Shared `@hame/shared` gains the alert contract — a
+`SendAlertSchema` (recipient + a 1–200 char message) and the viewer-facing
+`AlertRecipientsResponse` (`enabled` / `haConfigured` flags + the other members, each
+carrying `canReceive` = "has picked a phone").
+
+A new `alerts` API slice (thin controller, thick service) exposes a member-level
+`GET /api/alerts/recipients` (every *other* real person — never the caller, never the
+tablet — with reachability) and `POST /api/alerts`. The send path is **always critical
+and deliberately independent of the recipient's reminder prefs** (`pushViaHA` /
+`criticalAlerts` are for scheduled reminders; an intentional human-to-human alert
+overrides them) — the only requirement is that the recipient has picked a phone
+(`NotificationPreference.haNotifyService`); absent, it returns `delivered:false` (not an
+error) so the UI can say "hasn't set up their phone" rather than fail silently. The
+household toggle is enforced on **both** the picker and the send path (a disabled house
+403s a crafted POST, not just hides the icon), and the tablet account can neither send
+(403) nor see the icon.
+
+Web: a `useAlertRecipients` / `useSendAlert` hook pair and an `AlertButton` that renders
+**only** when the toggle is on, HA is connected, and there's ≥1 other member — so a
+non-HA household, the wall tablet, or a house that turned it off never sees it. The
+phone-only top bar gains the right-aligned bell; its modal skips the picker entirely
+when there's exactly one other member (the two-person case) and otherwise lists members
+with unreachable ones disabled and labelled. An admin **Household alerts** card
+(Settings → Smart home) drives the toggle. Verified: typecheck / lint / format green,
+**502 API + 45 web tests** (incl. recipients excluding self/tablet, `canReceive` from the
+phone target, toggle-off → empty recipients + send refused, the always-critical title /
+payload, and the self / non-person / tablet / no-HA guards), all builds clean.
+
 ---
 
 ## 11. Security & Conventions

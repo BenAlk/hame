@@ -119,6 +119,7 @@ export function SettingsPage() {
             <TabPanel>
               <HomeAssistantCard />
               <WifiCard />
+              <HouseholdAlertsCard />
             </TabPanel>
           )}
           {activeTab === 'screensaver' && (
@@ -672,6 +673,47 @@ function AutoBackupCard() {
 }
 
 /** Beta/experimental household features (spec §10 Phase 8.5). */
+/** Household alerts: the mobile top-bar critical-alert "poke" toggle (spec §10 Phase 12). */
+function HouseholdAlertsCard() {
+  const { data: settings } = useHouseholdSettings()
+  const updateSettings = useUpdateHouseholdSettings()
+  const qc = useQueryClient()
+
+  const enabled = settings?.householdAlertsEnabled ?? true
+
+  function toggle() {
+    updateSettings.mutate(
+      { householdAlertsEnabled: !enabled },
+      // The top-bar icon reads the recipients endpoint; refetch so it appears/hides at once.
+      { onSuccess: () => void qc.invalidateQueries({ queryKey: ['alert-recipients'] }) },
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Household alerts</CardTitle>
+        <CardDescription>Ping another member’s phone with an urgent alert.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <ToggleRow
+          label={enabled ? 'Household alerts on' : 'Household alerts off'}
+          checked={enabled}
+          disabled={updateSettings.isPending}
+          onChange={toggle}
+        />
+        <p className="text-sm text-muted-foreground">
+          Adds a bell icon to the phone top bar. Tap it to send a household member a short message
+          that arrives as a <strong>critical alert</strong> — it rings through silent mode and Do
+          Not Disturb. It’s delivered through Home Assistant, so each recipient must pick their
+          phone under <strong>Profile → Notifications</strong> first. Turn this off and the icon
+          disappears for everyone.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 function LabsCard() {
   const { data: settings } = useHouseholdSettings()
   const updateSettings = useUpdateHouseholdSettings()

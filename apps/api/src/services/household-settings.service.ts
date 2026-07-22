@@ -11,6 +11,7 @@ function toSettings(row: HouseholdSettingsRow): HouseholdSettings {
     ingredientNormaliser: row.ingredientNormaliser,
     caldavEnabled: row.caldavEnabled,
     autoConsumableCadence: row.autoConsumableCadence,
+    householdAlertsEnabled: row.householdAlertsEnabled,
     updatedAt: row.updatedAt,
   }
 }
@@ -36,6 +37,9 @@ export async function updateHouseholdSettings(
     ...(input.caldavEnabled !== undefined && { caldavEnabled: input.caldavEnabled }),
     ...(input.autoConsumableCadence !== undefined && {
       autoConsumableCadence: input.autoConsumableCadence,
+    }),
+    ...(input.householdAlertsEnabled !== undefined && {
+      householdAlertsEnabled: input.householdAlertsEnabled,
     }),
   }
   const row = await prisma.householdSettings.upsert({
