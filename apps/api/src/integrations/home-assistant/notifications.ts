@@ -182,6 +182,13 @@ export async function sendHaNotification(
  *   `channel: 'alarm_stream'` does. (Overriding Do Not Disturb too is a per-device
  *   choice Android won't let an app self-grant: each user allows the "alarm_stream"
  *   channel to override DND once in the HA app — see the companion docs.)
+ *
+ * `importance` is sent because Android locks a channel's importance the **first**
+ * time the channel is created, and afterwards only ever honours a *lowering* of it.
+ * Left unset the channel is created at "default" (audible, but not intrusive), and
+ * that becomes permanent for the device — so the strongest setting has to be
+ * claimed up front or it can never be claimed at all. It has no effect on a device
+ * whose "alarm_stream" channel already exists; those must be reset on the handset.
  */
 export function criticalAlertData(): Record<string, unknown> {
   return {
@@ -189,5 +196,6 @@ export function criticalAlertData(): Record<string, unknown> {
     ttl: 0,
     priority: 'high',
     channel: 'alarm_stream',
+    importance: 'high',
   }
 }

@@ -336,6 +336,65 @@ Your reverse proxy must route `/caldav` and `/.well-known/caldav` to the API —
 `docker/nginx.conf` already does. App passwords are argon2-hashed; your account password is never
 shared with the device.
 
+### Phone notifications & household alerts
+
+Hame runs no push infrastructure of its own — reminders and alerts are handed to **Home Assistant**,
+which owns the push to each phone. So this needs HA connected (**Settings → Home Assistant**) and the
+[HA Companion app](https://companion.home-assistant.io/) installed and signed in on each phone.
+
+Each member then opens **Profile → Notifications**, enables push, and picks their phone from the
+dropdown — it lists the Companion-app devices HA knows about. Nobody has to pick one: without a phone
+selected the category toggles still work in-app, and an alert sent to that member reports "hasn't set
+up their phone" rather than failing silently.
+
+Two things get sent: a twice-daily **reminder digest** (bins, your chores, expiring food, low stock,
+today's events — each toggleable), and the **household alert** — the bell on the phone's top bar,
+which pings one member urgently and is deliberately sent as a _critical_ push so it rings through a
+silenced phone. Admins can turn the whole alert feature off under **Settings → Smart home → Household
+alerts**.
+
+#### Making critical alerts actually ring
+
+This is the part worth reading, because whether a critical alert makes a noise is decided by the
+**receiving handset**, not by Hame. Each phone needs a one-time setup, and getting no sound is almost
+always a device setting rather than a bug.
+
+**Android.** Hame sends `channel: alarm_stream`, which plays the notification through the _alarm_
+audio stream so it sounds while the ringer is off. The channel is created on the phone by the first
+alert that arrives. Then:
+
+- **Android locks a channel's importance and sound the first time that channel is created**, and
+  afterwards honours only a _lowering_ of them. If the channel ends up wrong, nothing Hame sends can
+  repair it — it has to be fixed on the handset.
+- Check **Settings → Apps → Home Assistant → Notifications** and confirm the `alarm_stream` channel is
+  set to **Alert** with a sound selected. Samsung calls channels _notification categories_ and has a
+  per-app toggle for them that must be on, or every channel collapses into one.
+- **The alarm volume must be above zero.** That is the stream the alert plays on, so a muted alarm
+  slider means a silent alert no matter what else is correct.
+- Overriding **Do Not Disturb** (as opposed to plain silent) is a separate per-channel permission that
+  Android will not let an app grant itself. Enable it for the `alarm_stream` channel if members use DND.
+- If a channel is stuck, note that removing it does **not** reset it — Android deliberately remembers a
+  deleted channel's settings so apps can't override a user's choice by recreating them. Clearing the
+  Companion app's storage is the reliable reset.
+
+**iOS.** Hame sends `push.sound.critical`, which bypasses both the ring switch and Do Not Disturb.
+This needs the **Critical Alerts** permission granted to the Companion app — iOS prompts for it, and
+if it was declined it can be re-enabled from the app's notification settings.
+
+To test a phone's setup independently of Hame, send the same payload straight from HA's
+**Developer Tools → Actions**:
+
+```yaml
+action: notify.mobile_app_<device>
+data:
+  title: Test
+  message: Critical test
+  data:
+    ttl: 0
+    priority: high
+    channel: alarm_stream
+```
+
 ### Automatic bin collection schedules
 
 By default you type each bin's schedule in (e.g. "Tuesday, fortnightly"). Hame can also pull the

@@ -1046,6 +1046,7 @@ enum NoteAudience {
 - **In-app toasts** — for events happening while user is active
 - **Push via Home Assistant** — HA already handles phone push; Hame just sends events to HA, no duplicated notification infra
 - **Per-user preferences** — `NotificationPreference` toggles each category
+- **Critical alerts are delivered, not guaranteed** — the household alert (§10 Phase 12) is sent as a critical push, but whether it *sounds* through a silenced phone is decided entirely by the receiving handset. Hame sends both platforms' keys — `push.sound.critical` (iOS) and `ttl: 0` / `priority: high` / `channel: alarm_stream` / `importance: high` (Android) — and there the app's control ends. Two consequences worth holding onto: **Android locks a notification channel's importance and sound the first time that channel is created**, honouring only a later *lowering*, so `importance` must be claimed on the first push or that device is permanently stuck at the weaker default; and overriding Do Not Disturb is a per-channel permission Android refuses to let an app self-grant. Both are therefore **per-device setup steps, documented for end users in the README**, not something a code change can fix.
 
 ### 8.14 Immich Screensaver / Idle Mode
 

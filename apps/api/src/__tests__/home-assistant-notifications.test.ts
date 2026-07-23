@@ -133,4 +133,11 @@ describe('criticalAlertData', () => {
     // sounds even while the ringer is silenced.
     expect(data).toMatchObject({ ttl: 0, priority: 'high', channel: 'alarm_stream' })
   })
+
+  it('claims the highest channel importance up front', () => {
+    // Android fixes a channel's importance when the channel is first created and
+    // thereafter honours only a lowering of it, so "high" has to be asserted on
+    // the very first send or the device is stuck at the weaker default forever.
+    expect(criticalAlertData()).toMatchObject({ importance: 'high' })
+  })
 })
