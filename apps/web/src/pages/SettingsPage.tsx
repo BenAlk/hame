@@ -79,7 +79,7 @@ const SETTINGS_TABS: TabItem[] = [
 
 /** A single row of one or two related setting cards within a tab panel. */
 function TabPanel({ children }: { children: ReactNode }) {
-  return <div className="grid gap-6 lg:grid-cols-2">{children}</div>
+  return <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">{children}</div>
 }
 
 /** Admin-only household settings, grouped into tabs (spec §10). */

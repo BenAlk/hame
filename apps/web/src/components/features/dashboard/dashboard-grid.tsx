@@ -102,7 +102,7 @@ export function DashboardGrid() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex flex-wrap items-center gap-1 rounded-pill border border-line p-0.5 text-sm">
+        <div className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-line p-0.5 text-sm">
           <SwitcherChip
             label="Household"
             active={owner === 'household'}

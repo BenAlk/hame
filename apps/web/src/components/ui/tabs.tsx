@@ -24,7 +24,7 @@ export function Tabs({
     <div
       role="tablist"
       aria-orientation="horizontal"
-      className={cn('flex flex-wrap items-center gap-1', className)}
+      className={cn('flex items-center gap-1', className)}
     >
       {tabs.map((tab) => {
         const active = tab.value === value
@@ -36,7 +36,7 @@ export function Tabs({
             aria-selected={active}
             onClick={() => onValueChange(tab.value)}
             className={cn(
-              '-mb-px rounded-t-control border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+              '-mb-px shrink-0 whitespace-nowrap rounded-t-control border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
               active
                 ? 'border-accent text-ink'
                 : 'border-transparent text-muted-foreground hover:text-ink',
