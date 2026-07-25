@@ -1,5 +1,10 @@
 import type { RequestHandler } from 'express'
-import type { CreateUserInput, UpdateProfileInput, UpdateUserInput } from '@hame/shared'
+import type {
+  CreateUserInput,
+  UpdateProfileInput,
+  UpdateTabletInput,
+  UpdateUserInput,
+} from '@hame/shared'
 import {
   adminUpdateUser,
   createTabletAccount,
@@ -9,6 +14,7 @@ import {
   listMembers,
   listUsers,
   resetTabletPassword,
+  setTabletName,
   updateProfile,
 } from '../services/user.service.js'
 
@@ -42,6 +48,16 @@ export const getTabletAccountController: RequestHandler = async (_req, res, next
 export const createTabletController: RequestHandler = async (_req, res, next) => {
   try {
     res.status(201).json(await createTabletAccount())
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** PATCH /api/users/tablet — name the wall tablet (empty clears its name). */
+export const updateTabletController: RequestHandler = async (req, res, next) => {
+  try {
+    const { name } = req.body as UpdateTabletInput
+    res.json({ account: await setTabletName(name) })
   } catch (err) {
     next(err)
   }

@@ -56,7 +56,9 @@ async function main() {
     create: {
       username: 'tablet',
       password,
-      firstName: 'Wall',
+      // Unnamed by default, so the dashboard greeting drops the name entirely
+      // — an admin can name it under Settings → Users (spec §8.1).
+      firstName: '',
       surname: 'Tablet',
       colour: '#857a6c',
       dob: new Date('2000-01-01'),

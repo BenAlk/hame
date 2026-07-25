@@ -16,6 +16,19 @@ export const PERSON_ROLES = ['ADMIN', 'MEMBER'] as const
 /** Fixed username of the single shared wall-tablet account (spec §8.1). */
 export const TABLET_USERNAME = 'tablet'
 
+/**
+ * The wall tablet's name is optional — it's furniture, not a person, so by
+ * default it has none and the dashboard greeting simply omits it ("Good
+ * evening."). An admin can give it one (Settings → Users), which is then used
+ * exactly like a member's first name. This label stands in only where the
+ * tablet must still be credited for something it did (a QuickNote it posted, an
+ * item it added to a list) and no name has been set.
+ */
+export const TABLET_FALLBACK_LABEL = 'Wall tablet'
+
+/** Longest display name the wall tablet may be given (spec §8.1). */
+export const TABLET_NAME_MAX_LENGTH = 30
+
 /** Default hex colour assigned to a new user if none chosen. */
 export const DEFAULT_USER_COLOUR = '#3B82F6'
 

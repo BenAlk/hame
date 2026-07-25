@@ -849,7 +849,9 @@ enum NoteAudience {
 - **Login**: username + password (argon2)
 - **JWT**: signed with `jose`, returned via httpOnly cookie OR `Authorization: Bearer <token>`
 - **Roles**: `ADMIN` (manage users, settings) vs `MEMBER` (use all features) vs `TABLET` (shared wall-tablet login — member-level, non-person; §10 Phase 7.5)
-- **Wall-tablet account** (§10 Phase 7.5) — a first-class `TABLET` role: a shared, non-admin login for the wall tablet. Member-level permissions (so it can't reach settings/admin surfaces), but **not a household person** — excluded from assignment rosters, notifications and chore stats, and with no personal dashboard. It exists so the tablet can page through **every** member's dashboard read-only (the dashboard switcher, §8.12) without borrowing a real member's login. One is auto-provisioned alongside the admin at first-run setup (its generated password shown once), and re-issuable under Settings → Users.
+- **Wall-tablet account** (§10 Phase 7.5) — a first-class `TABLET` role: a shared, non-admin login for the wall tablet. Member-level permissions (so it can't reach settings/admin surfaces), but **not a household person** — excluded from assignment rosters, notifications and chore stats, and with no personal dashboard. It exists so the tablet can page through **every** member's dashboard read-only (the dashboard switcher, §8.12) without borrowing a real member's login.
+  One is auto-provisioned alongside the admin at first-run setup (its generated password shown once), and re-issuable under Settings → Users.
+  - **Optionally named.** The tablet has **no name** by default, because it isn't a person: the dashboard greeting simply reads "Good evening." rather than addressing the account's placeholder profile fields. An admin can give it one under Settings → Users (stored as the account's `firstName`, so it then reads exactly like a member's — the greeting, and wherever the tablet is credited for something it did, e.g. a QuickNote it posted); clearing it returns to the nameless greeting. The greeting always follows the **signed-in account**, not the dashboard being viewed, so paging the tablet through a member's board doesn't start greeting that member.
 - **Admin dashboard**: create/edit/delete users
   - Members can edit their own profile (avatar, colour, password)
   - Members cannot change their own role
@@ -1903,6 +1905,24 @@ plus a **live end-to-end smoke**: the tablet absent from `/members`, an admin re
 dashboard (200) but refused a cross-user write (403), and the tablet account logging in (role TABLET),
 viewing a member's dashboard (200) yet refused `/api/users` and `/api/backup/settings` (403) and any
 cross-user dashboard write (403).
+
+**Follow-up — the tablet is optionally named (25-07-2026).** The tablet was provisioned with
+placeholder profile fields (`firstName: 'Wall'`, `surname: 'Tablet'`), which the dashboard greeting
+then dutifully read out as "Good morning, **Wall**." — it addressed the furniture. Its `firstName`
+now doubles as an **optional display name**: blank (the new default) means unnamed and the greeting
+drops the name entirely, while an admin can set one under **Settings → Users** and have it read
+exactly like a member's. A data-only migration (`tablet_display_name`) clears the placeholder from an
+already-provisioned tablet, but only where it is still untouched, so a tablet someone had already
+named keeps that name. The one place a blank name could have rendered as nobody is attribution — the
+tablet is member-level, so it can post a QuickNote or add to a shopping list — so `toMemberSummary`
+(the *display* shape others see) falls back to a "Wall tablet" label, while `toPublicUser` (the
+*account* shape) returns the blank verbatim, which is precisely what lets the greeting omit it. The
+duplicated greeting logic in the page header and the clock widget collapsed into one pure
+`greetingLine` helper, unit-tested; the greeting deliberately follows the **signed-in account**, not
+the dashboard being viewed, so paging the tablet through a member's board doesn't start greeting
+them. Verified: typecheck / lint / format green, **499 API + 50 web + 15 bin-scraper tests** (+6 API
+for the unnamed provisioning, the name set/clear/404 and the attribution fallback; +5 web for the
+greeting helper), all builds clean.
 
 ### Phase 8 — Notifications
 

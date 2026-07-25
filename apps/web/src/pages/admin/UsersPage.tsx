@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import {
@@ -7,6 +7,7 @@ import {
   type PublicUser,
   type TabletCredentials,
   DEFAULT_USER_COLOUR,
+  TABLET_NAME_MAX_LENGTH,
 } from '@hame/shared'
 import { FormField } from '@/components/form-field'
 import { Input } from '@/components/ui/input'
@@ -21,6 +22,7 @@ import {
   useDeleteUser,
   useResetTablet,
   useTabletAccount,
+  useUpdateTablet,
   useUpdateUser,
   useUsers,
 } from '@/api/users'
@@ -295,6 +297,8 @@ function TabletAccountCard() {
           )}
         </div>
 
+        {account && <TabletNameField account={account} />}
+
         {creds && (
           <dl className="rounded-inner border border-accent/40 bg-accent-soft p-4 text-sm">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-accent">
@@ -314,5 +318,61 @@ function TabletAccountCard() {
         {error && <p className="text-sm text-warning">{error}</p>}
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Name the wall tablet (spec §8.1). Optional by design: it isn't a person, so
+ * with no name the dashboard greets it as just "Good evening." Give it one and
+ * it's used exactly like a member's first name — the greeting, and wherever the
+ * tablet is credited for something it did.
+ */
+function TabletNameField({ account }: { account: PublicUser }) {
+  const updateTablet = useUpdateTablet()
+  const [name, setName] = useState(account.firstName)
+  const [error, setError] = useState<string | null>(null)
+
+  // Re-sync if the account is refetched (e.g. named from another device).
+  useEffect(() => setName(account.firstName), [account.firstName])
+
+  const dirty = name.trim() !== account.firstName
+
+  async function save() {
+    setError(null)
+    try {
+      await updateTablet.mutateAsync({ name: name.trim() })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the name.')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-4">
+      <FormField
+        label="Display name"
+        htmlFor="tablet-name"
+        hint="Used in the dashboard greeting. Leave blank and the tablet is greeted without a name."
+        error={error ?? undefined}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            id="tablet-name"
+            value={name}
+            maxLength={TABLET_NAME_MAX_LENGTH}
+            placeholder="No name"
+            className="max-w-xs"
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!dirty || updateTablet.isPending}
+            onClick={() => void save()}
+          >
+            {updateTablet.isPending ? 'Saving…' : 'Save name'}
+          </Button>
+        </div>
+      </FormField>
+    </div>
   )
 }

@@ -7,7 +7,7 @@ import type {
   UpdateProfileInput,
   UpdateUserInput,
 } from '@hame/shared'
-import { PERSON_ROLES, TABLET_USERNAME } from '@hame/shared'
+import { PERSON_ROLES, TABLET_FALLBACK_LABEL, TABLET_USERNAME } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { hashPassword } from '../lib/password.js'
 import { generateReadablePassword } from '../lib/generate-password.js'
@@ -19,9 +19,21 @@ export function toPublicUser(user: User): PublicUser {
   return rest
 }
 
-/** Minimal "who did this" attribution shape (id + first name + colour). */
+/**
+ * Minimal "who did this" attribution shape (id + first name + colour).
+ *
+ * A blank name is only ever the unnamed wall tablet (a member's first name is
+ * required at the schema, spec §8.1), and this is the display shape other people
+ * see — so it falls back to a label rather than crediting nobody. The account
+ * shape {@link toPublicUser} deliberately returns the blank as-is: that's what
+ * lets the dashboard greeting say "Good evening." with no name attached.
+ */
 export function toMemberSummary(user: Pick<User, 'id' | 'firstName' | 'colour'>): MemberSummary {
-  return { id: user.id, firstName: user.firstName, colour: user.colour }
+  return {
+    id: user.id,
+    firstName: user.firstName.trim() || TABLET_FALLBACK_LABEL,
+    colour: user.colour,
+  }
 }
 
 /** Admin user list — actual people only; the tablet account is managed separately. */
@@ -50,9 +62,14 @@ export async function listMembers(): Promise<MemberSummary[]> {
 
 // ── Wall-tablet account (spec §8.1) ──────────────────────────────────────────
 
-/** Placeholder profile fields for the tablet — it's furniture, not a person. */
+/**
+ * Placeholder profile fields for the tablet — it's furniture, not a person, so
+ * it starts **unnamed**: `firstName` doubles as its optional display name and an
+ * empty one makes the dashboard greeting drop the name ("Good evening."). An
+ * admin can set one later via {@link setTabletName}.
+ */
 const TABLET_DEFAULTS = {
-  firstName: 'Wall',
+  firstName: '',
   surname: 'Tablet',
   colour: '#857a6c', // the Hearth "muted" token — visibly not a member colour
   dob: new Date('2000-01-01T00:00:00.000Z'),
@@ -100,6 +117,22 @@ export async function resetTabletPassword(): Promise<TabletCredentials> {
     data: { password: await hashPassword(password), tokenVersion: { increment: 1 } },
   })
   return { username: tablet.username, password }
+}
+
+/**
+ * Name the wall tablet, or clear its name with an empty string (spec §8.1). The
+ * name is stored as the account's `firstName`, so it reads exactly like a
+ * member's wherever one is shown — the greeting, "added by", a QuickNote author.
+ * 404 if no tablet exists.
+ */
+export async function setTabletName(name: string): Promise<PublicUser> {
+  const tablet = await prisma.user.findFirst({ where: { role: 'TABLET' } })
+  if (!tablet) throw HttpError.notFound('No tablet account exists')
+  const user = await prisma.user.update({
+    where: { id: tablet.id },
+    data: { firstName: name.trim() },
+  })
+  return toPublicUser(user)
 }
 
 export async function getUserById(id: string): Promise<PublicUser> {

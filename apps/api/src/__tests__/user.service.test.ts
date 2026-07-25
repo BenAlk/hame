@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { PERSON_ROLES } from '@hame/shared'
+import { PERSON_ROLES, TABLET_FALLBACK_LABEL } from '@hame/shared'
 
 const findUnique = vi.fn()
 const findFirst = vi.fn()
@@ -32,6 +32,8 @@ const {
   getTabletAccount,
   listMembers,
   listUsers,
+  setTabletName,
+  toMemberSummary,
 } = await import('../services/user.service.js')
 
 const admin = { id: 'a1', role: 'ADMIN' as const }
@@ -144,6 +146,60 @@ describe('tablet account provisioning (spec §8.1)', () => {
   it('getTabletAccount returns null when none provisioned', async () => {
     findFirst.mockResolvedValue(null)
     expect(await getTabletAccount()).toBeNull()
+  })
+
+  it('provisions the tablet unnamed, so the greeting omits a name', async () => {
+    findFirst.mockResolvedValue(null)
+    findUnique.mockResolvedValue(null)
+    create.mockResolvedValue({ id: 't1', username: 'tablet', role: 'TABLET' })
+
+    await createTabletAccount()
+
+    expect(create.mock.calls[0][0].data.firstName).toBe('')
+  })
+})
+
+describe('naming the wall tablet (spec §8.1)', () => {
+  it('stores a trimmed name as the account first name', async () => {
+    findFirst.mockResolvedValue({ id: 't1', role: 'TABLET' })
+    update.mockResolvedValue({ id: 't1', firstName: 'Kitchen', password: 'hash' })
+
+    const account = await setTabletName('  Kitchen  ')
+
+    expect(update.mock.calls[0][0].data).toEqual({ firstName: 'Kitchen' })
+    expect(account.firstName).toBe('Kitchen')
+    expect(account).not.toHaveProperty('password')
+  })
+
+  it('clears the name when given an empty string', async () => {
+    findFirst.mockResolvedValue({ id: 't1', role: 'TABLET' })
+    update.mockResolvedValue({ id: 't1', firstName: '', password: 'hash' })
+
+    await setTabletName('')
+
+    expect(update.mock.calls[0][0].data).toEqual({ firstName: '' })
+  })
+
+  it('404s when no tablet account exists', async () => {
+    findFirst.mockResolvedValue(null)
+    await expect(setTabletName('Kitchen')).rejects.toMatchObject({ status: 404 })
+    expect(update).not.toHaveBeenCalled()
+  })
+})
+
+describe('attribution for a nameless tablet', () => {
+  it('labels a blank name rather than crediting nobody', () => {
+    expect(toMemberSummary({ id: 't1', firstName: '', colour: '#857a6c' })).toEqual({
+      id: 't1',
+      firstName: TABLET_FALLBACK_LABEL,
+      colour: '#857a6c',
+    })
+  })
+
+  it('leaves a real name alone', () => {
+    expect(toMemberSummary({ id: 'm1', firstName: 'Alex', colour: '#3B82F6' }).firstName).toBe(
+      'Alex',
+    )
   })
 })
 

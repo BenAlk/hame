@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { HEX_COLOUR_REGEX, ROLES } from '../constants/index.js'
+import { HEX_COLOUR_REGEX, ROLES, TABLET_NAME_MAX_LENGTH } from '../constants/index.js'
 import { httpUrl } from './common.js'
 
 export const RoleSchema = z.enum(ROLES)
@@ -88,3 +88,16 @@ export const TabletAccountSchema = z.object({
   account: PublicUserSchema.nullable(),
 })
 export type TabletAccount = z.infer<typeof TabletAccountSchema>
+
+/**
+ * Naming the wall tablet (spec §8.1). Unlike a member's required first name this
+ * is optional — an empty value means "unnamed", which is the default and makes
+ * the dashboard greeting drop the name entirely.
+ */
+export const UpdateTabletSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .max(TABLET_NAME_MAX_LENGTH, `Name must be at most ${TABLET_NAME_MAX_LENGTH} characters`),
+})
+export type UpdateTabletInput = z.infer<typeof UpdateTabletSchema>

@@ -6,6 +6,7 @@ import type {
   TabletAccount,
   TabletCredentials,
   UpdateProfileInput,
+  UpdateTabletInput,
   UpdateUserInput,
 } from '@hame/shared'
 import { apiFetch } from './client'
@@ -77,6 +78,27 @@ export function useCreateTablet() {
   return useMutation({
     mutationFn: () => apiFetch<TabletCredentials>('/api/users/tablet', { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: TABLET_KEY }),
+  })
+}
+
+/**
+ * Admin: name the wall tablet, or clear its name with an empty string. The name
+ * is what the dashboard greeting uses, so `['me']` is refreshed too — the tablet
+ * itself is usually the signed-in account watching that greeting.
+ */
+export function useUpdateTablet() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: UpdateTabletInput) =>
+      apiFetch<TabletAccount>('/api/users/tablet', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: TABLET_KEY })
+      void qc.invalidateQueries({ queryKey: ['me'] })
+      toast.success('Wall-tablet name saved.')
+    },
   })
 }
 

@@ -3,13 +3,7 @@ import { DashboardGrid } from '@/components/features/dashboard/dashboard-grid'
 import { SmartHomeSuggestions } from '@/components/features/widgets/smart-home-suggestions'
 import { useCurrentUser } from '@/api/auth'
 import { useHaEntities, useHaEntityStream } from '@/api/home-assistant'
-
-function greeting(date = new Date()): string {
-  const h = date.getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 18) return 'Good afternoon'
-  return 'Good evening'
-}
+import { greetingLine } from '@/lib/greeting'
 
 export function HomePage() {
   const { data: user } = useCurrentUser()
@@ -27,8 +21,7 @@ export function HomePage() {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-serif text-3xl font-medium text-ink sm:text-4xl">
-            {greeting()}
-            {current ? `, ${current.firstName}` : ''}.
+            {greetingLine(current)}
           </p>
           <p className="mt-1 text-muted-foreground">Here&apos;s what&apos;s happening at home.</p>
         </div>

@@ -1,5 +1,10 @@
 import { Router } from 'express'
-import { CreateUserSchema, UpdateProfileSchema, UpdateUserSchema } from '@hame/shared'
+import {
+  CreateUserSchema,
+  UpdateProfileSchema,
+  UpdateTabletSchema,
+  UpdateUserSchema,
+} from '@hame/shared'
 import { validateBody } from '../middleware/validate.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
@@ -12,6 +17,7 @@ import {
   listUsersController,
   resetTabletController,
   updateProfileController,
+  updateTabletController,
   updateUserController,
 } from '../controllers/users.controller.js'
 
@@ -26,6 +32,14 @@ usersRouter.get('/members', requireAuth, listMembersController)
 // literal "tablet" path isn't captured as an id.
 usersRouter.get('/tablet', requireAuth, requireAdmin, getTabletAccountController)
 usersRouter.post('/tablet', requireAuth, requireAdmin, verifyCsrf, createTabletController)
+usersRouter.patch(
+  '/tablet',
+  requireAuth,
+  requireAdmin,
+  verifyCsrf,
+  validateBody(UpdateTabletSchema),
+  updateTabletController,
+)
 usersRouter.post('/tablet/reset', requireAuth, requireAdmin, verifyCsrf, resetTabletController)
 
 usersRouter.post(

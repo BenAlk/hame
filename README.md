@@ -194,6 +194,12 @@ own (and the household) layout — other members' dashboards are read-only from 
 tablet. Lost the password? Re-issue it any time under **Settings → Users → Wall-tablet
 account** (it's only ever shown once, and stored argon2-hashed).
 
+Because the tablet isn't a person it has **no name**, so its dashboard greeting is
+just "Good evening." If you'd rather it were addressed — "Kitchen", or your
+household's name — set a **Display name** on that same card; leave it blank to go
+back to the nameless greeting. The greeting always follows whoever is _signed in_,
+so paging the tablet through a member's dashboard doesn't start greeting them.
+
 ## Workspace scripts
 
 | Command           | Description                                 |
