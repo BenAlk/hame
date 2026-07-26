@@ -1,6 +1,11 @@
 import type { RequestHandler } from 'express'
-import type { CreatePantryEntryInput, UpdatePantryEntryInput } from '@hame/shared'
+import type {
+  BulkCreatePantryEntriesInput,
+  CreatePantryEntryInput,
+  UpdatePantryEntryInput,
+} from '@hame/shared'
 import {
+  createPantryEntries,
   createPantryEntry,
   deletePantryEntry,
   listExpiringSoon,
@@ -38,6 +43,15 @@ export const lowStockController: RequestHandler = async (_req, res, next) => {
 export const createPantryEntryController: RequestHandler = async (req, res, next) => {
   try {
     res.status(201).json(await createPantryEntry(req.body as CreatePantryEntryInput, req.user!.id))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const createPantryEntriesController: RequestHandler = async (req, res, next) => {
+  try {
+    const { entries } = req.body as BulkCreatePantryEntriesInput
+    res.status(201).json(await createPantryEntries(entries, req.user!.id))
   } catch (err) {
     next(err)
   }

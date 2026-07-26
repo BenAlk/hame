@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
-import { Trash2 } from 'lucide-react'
+import { ScanLine, Trash2 } from 'lucide-react'
 import type { PantryEntry, Shop } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { ShopChip } from '@/components/features/shop-chip'
+import { ScanDialog } from '@/components/features/pantry/scan-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -27,6 +28,7 @@ export function PantryPage() {
   // Hold the id, not the row: editing the item from the modal refetches the
   // pantry, and a captured object would keep showing the pre-edit values.
   const [detailId, setDetailId] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
   const detail = entries?.find((e) => e.id === detailId) ?? null
 
   const grouped = useMemo(() => {
@@ -41,6 +43,10 @@ export function PantryPage() {
     <main className="container flex min-h-screen flex-col gap-6 py-10">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="font-serif text-3xl font-medium text-ink">Pantry</h1>
+        <Button onClick={() => setScanning(true)}>
+          <ScanLine className="size-4" />
+          Scan shopping in
+        </Button>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
@@ -71,6 +77,7 @@ export function PantryPage() {
       </div>
 
       <EntryDetailModal entry={detail} onClose={() => setDetailId(null)} />
+      <ScanDialog open={scanning} onClose={() => setScanning(false)} />
     </main>
   )
 }

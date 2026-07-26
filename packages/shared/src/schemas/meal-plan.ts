@@ -180,6 +180,8 @@ export const HouseholdSettingsSchema = z.object({
   autoConsumableCadence: z.boolean(),
   /** Whether the mobile top-bar critical-alert "poke" between members is on (§10 Phase 12). */
   householdAlertsEnabled: z.boolean(),
+  /** Whether an unseen barcode may be looked up against Open Food Facts (§10 Phase 14). */
+  barcodeLookupEnabled: z.boolean(),
   updatedAt: z.coerce.date(),
 })
 export type HouseholdSettings = z.infer<typeof HouseholdSettingsSchema>
@@ -191,6 +193,7 @@ export const UpdateHouseholdSettingsSchema = z
     caldavEnabled: z.boolean(),
     autoConsumableCadence: z.boolean(),
     householdAlertsEnabled: z.boolean(),
+    barcodeLookupEnabled: z.boolean(),
   })
   .partial()
   .refine((d) => Object.keys(d).length > 0, { message: 'At least one field must be provided' })

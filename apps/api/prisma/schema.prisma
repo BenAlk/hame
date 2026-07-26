@@ -94,6 +94,7 @@ model Item {
   shoppingItems   ShoppingListItem[]
   pantryEntries   PantryEntry[]
   recipeUses      RecipeIngredient[]
+  barcodes        ItemBarcode[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 }
@@ -323,6 +324,10 @@ model HouseholdSettings {
   caldavEnabled       Boolean            @default(false) // serve the calendar over CalDAV (spec §10 Phase 5.5)
   autoConsumableCadence Boolean          @default(false) // Labs: estimate consumable re-order cadences from history (spec §10 Phase 8.5)
   householdAlertsEnabled Boolean         @default(true) // mobile top-bar critical-alert "poke" between members (spec §10 Phase 12)
+  // Look an unseen barcode up against Open Food Facts (spec §10 Phase 14). On by
+  // default — without it a first scan can only be named by hand — but every
+  // unknown scan tells a third party a barcode, so it stays a household's call.
+  barcodeLookupEnabled Boolean           @default(true)
   updatedAt           DateTime           @updatedAt
 }
 
@@ -796,4 +801,25 @@ model Shop {
   colour    String? // hex for chip display
   items     Item[]
   createdAt DateTime @default(now())
+}
+
+// ── Phase 14: Barcode scanning ───────────────────────────────────────────────
+
+/// A scanned barcode linked to an Item (spec §8.4). Many-to-one by design: Item
+/// is a generic concept ("Milk") while a barcode identifies one specific
+/// product, so three supermarkets' milk are three codes against one Item —
+/// which is why this is its own model rather than a column on Item.
+///
+/// Once a code is here it resolves locally, so only a never-seen barcode ever
+/// leaves the network. The library therefore fills as a side effect of ordinary
+/// unpacking, which is what makes in-shop ticking viable later (spec §12).
+model ItemBarcode {
+  id      String   @id @default(uuid())
+  code    String   @unique // EAN-13 / UPC as scanned
+  itemId  String
+  item    Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  label   String? // product name as looked up, so a multi-barcode Item stays legible
+  addedAt DateTime @default(now())
+
+  @@index([itemId])
 }

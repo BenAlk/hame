@@ -12,6 +12,7 @@ function toSettings(row: HouseholdSettingsRow): HouseholdSettings {
     caldavEnabled: row.caldavEnabled,
     autoConsumableCadence: row.autoConsumableCadence,
     householdAlertsEnabled: row.householdAlertsEnabled,
+    barcodeLookupEnabled: row.barcodeLookupEnabled,
     updatedAt: row.updatedAt,
   }
 }
@@ -40,6 +41,9 @@ export async function updateHouseholdSettings(
     }),
     ...(input.householdAlertsEnabled !== undefined && {
       householdAlertsEnabled: input.householdAlertsEnabled,
+    }),
+    ...(input.barcodeLookupEnabled !== undefined && {
+      barcodeLookupEnabled: input.barcodeLookupEnabled,
     }),
   }
   const row = await prisma.householdSettings.upsert({

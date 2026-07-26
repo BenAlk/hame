@@ -69,6 +69,7 @@ const STRATEGIES: { value: NormaliserStrategy; label: string; description: strin
 
 const SETTINGS_TABS: TabItem[] = [
   { value: 'recipes', label: 'Recipes' },
+  { value: 'pantry', label: 'Pantry' },
   { value: 'smart-home', label: 'Smart home' },
   { value: 'screensaver', label: 'Screensaver' },
   { value: 'integrations', label: 'Integrations' },
@@ -113,6 +114,11 @@ export function SettingsPage() {
           {activeTab === 'recipes' && (
             <TabPanel>
               <NormalisationCard />
+            </TabPanel>
+          )}
+          {activeTab === 'pantry' && (
+            <TabPanel>
+              <BarcodeLookupCard />
             </TabPanel>
           )}
           {activeTab === 'smart-home' && (
@@ -672,7 +678,39 @@ function AutoBackupCard() {
   )
 }
 
-/** Beta/experimental household features (spec §10 Phase 8.5). */
+/** Whether an unseen barcode may be looked up externally (spec §10 Phase 14). */
+function BarcodeLookupCard() {
+  const { data: settings } = useHouseholdSettings()
+  const updateSettings = useUpdateHouseholdSettings()
+
+  const enabled = settings?.barcodeLookupEnabled ?? true
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Barcode lookup</CardTitle>
+        <CardDescription>Name a scanned product automatically.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <ToggleRow
+          label={enabled ? 'Barcode lookup on' : 'Barcode lookup off'}
+          checked={enabled}
+          disabled={updateSettings.isPending}
+          onChange={() => updateSettings.mutate({ barcodeLookupEnabled: !enabled })}
+        />
+        <p className="text-sm text-muted-foreground">
+          When you scan a barcode Hame hasn’t seen before, it asks <strong>Open Food Facts</strong>{' '}
+          — a free, open product database — for the product name, so you can match it to an existing
+          item instead of typing it. That sends the barcode (and nothing else) to{' '}
+          <code>openfoodfacts.org</code>. A code you’ve already linked is looked up on your own
+          server and never leaves your network. Turn this off to keep every scan local; scanning
+          still works, you just name new products yourself.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 /** Household alerts: the mobile top-bar critical-alert "poke" toggle (spec §10 Phase 12). */
 function HouseholdAlertsCard() {
   const { data: settings } = useHouseholdSettings()

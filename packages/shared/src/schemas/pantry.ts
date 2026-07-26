@@ -45,6 +45,16 @@ export const CreatePantryEntrySchema = z
   })
 export type CreatePantryEntryInput = z.infer<typeof CreatePantryEntrySchema>
 
+/**
+ * Stock several entries at once — the commit at the end of a barcode batch
+ * (spec §10 Phase 14). Applied in one transaction so a partly-stocked shop is
+ * never left behind; the cap is a sanity bound on one unpacking session.
+ */
+export const BulkCreatePantryEntriesSchema = z.object({
+  entries: z.array(CreatePantryEntrySchema).min(1, 'Nothing to stock').max(100),
+})
+export type BulkCreatePantryEntriesInput = z.infer<typeof BulkCreatePantryEntriesSchema>
+
 export const UpdatePantryEntrySchema = z
   .object({
     locationId: z.string().uuid().optional(),

@@ -41,6 +41,7 @@ export const BACKUP_MODELS = [
   'Integration',
   'Note',
   // Reference the layer above.
+  'ItemBarcode',
   'ShoppingListItem',
   'PantryEntry',
   'ChoreInstance',

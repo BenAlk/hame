@@ -64,6 +64,60 @@ export async function createPantryEntry(
   return toPantryEntry(entry)
 }
 
+/**
+ * Stock a whole batch at once — the commit at the end of a barcode scan session
+ * (spec §10 Phase 14). The rows are written in one transaction so an unpacking
+ * session either lands or doesn't; a half-stocked shop is worse than none,
+ * because you can't tell by looking which half made it.
+ *
+ * Items are resolved *before* the transaction: `findOrCreateItemByName` may mint
+ * an Item, and an unused Item is a harmless outcome, whereas holding the
+ * transaction open across those lookups would widen it for no benefit.
+ *
+ * Each distinct name is resolved **once, sequentially**. Two rows naming the
+ * same new item is the ordinary case here — two of the same product scanned for
+ * their separate expiry dates — and resolving them concurrently would race two
+ * inserts against `Item.name`'s unique index, failing the whole batch.
+ */
+export async function createPantryEntries(
+  inputs: CreatePantryEntryInput[],
+  userId: string,
+): Promise<PantryEntry[]> {
+  const locationIds = [...new Set(inputs.map((i) => i.locationId))]
+  await Promise.all(locationIds.map(assertLocationExists))
+
+  const idsByName = new Map<string, string>()
+  for (const input of inputs) {
+    if (input.itemId || !input.itemName) continue
+    const key = input.itemName.trim().toLowerCase()
+    if (!idsByName.has(key)) {
+      idsByName.set(key, await findOrCreateItemByName(input.itemName, userId))
+    }
+  }
+
+  const resolved = inputs.map((input) => ({
+    input,
+    itemId: input.itemId ?? idsByName.get(input.itemName!.trim().toLowerCase())!,
+  }))
+
+  const created = await prisma.$transaction(
+    resolved.map(({ input, itemId }) =>
+      prisma.pantryEntry.create({
+        data: {
+          itemId,
+          locationId: input.locationId,
+          quantity: input.quantity,
+          unit: input.unit ?? null,
+          expiryDate: input.expiryDate ?? null,
+          addedById: userId,
+        },
+        include: pantryInclude,
+      }),
+    ),
+  )
+  return created.map(toPantryEntry)
+}
+
 export async function updatePantryEntry(
   id: string,
   input: UpdatePantryEntryInput,

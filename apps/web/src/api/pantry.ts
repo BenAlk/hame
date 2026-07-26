@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  BulkCreatePantryEntriesInput,
   CreatePantryEntryInput,
   LowStockItem,
   PantryEntry,
@@ -40,6 +41,16 @@ export function useCreatePantryEntry() {
   return useMutation({
     mutationFn: (body: CreatePantryEntryInput) =>
       apiFetch<PantryEntry>('/api/pantry', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => invalidatePantry(qc),
+  })
+}
+
+/** Commit a whole scanned batch in one transaction (spec §10 Phase 14). */
+export function useCreatePantryEntries() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BulkCreatePantryEntriesInput) =>
+      apiFetch<PantryEntry[]>('/api/pantry/bulk', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => invalidatePantry(qc),
   })
 }

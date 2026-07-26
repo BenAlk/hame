@@ -6,6 +6,7 @@ import { usersRouter } from './users.js'
 import { tagsRouter } from './tags.js'
 import { itemsRouter } from './items.js'
 import { shopsRouter } from './shops.js'
+import { barcodesRouter } from './barcodes.js'
 import { storageLocationsRouter } from './storage-locations.js'
 import { pantryRouter } from './pantry.js'
 import { shoppingListsRouter } from './shopping-lists.js'
@@ -43,6 +44,7 @@ apiRouter.use('/users', usersRouter)
 apiRouter.use('/tags', tagsRouter)
 apiRouter.use('/items', itemsRouter)
 apiRouter.use('/shops', shopsRouter)
+apiRouter.use('/barcodes', barcodesRouter)
 apiRouter.use('/storage-locations', storageLocationsRouter)
 apiRouter.use('/pantry', pantryRouter)
 apiRouter.use('/shopping-lists', shoppingListsRouter)

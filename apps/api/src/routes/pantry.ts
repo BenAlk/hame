@@ -1,9 +1,14 @@
 import { Router } from 'express'
-import { CreatePantryEntrySchema, UpdatePantryEntrySchema } from '@hame/shared'
+import {
+  BulkCreatePantryEntriesSchema,
+  CreatePantryEntrySchema,
+  UpdatePantryEntrySchema,
+} from '@hame/shared'
 import { validateBody } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
 import {
+  createPantryEntriesController,
   createPantryEntryController,
   deletePantryEntryController,
   expiringSoonController,
@@ -23,6 +28,13 @@ pantryRouter.post(
   verifyCsrf,
   validateBody(CreatePantryEntrySchema),
   createPantryEntryController,
+)
+pantryRouter.post(
+  '/bulk',
+  requireAuth,
+  verifyCsrf,
+  validateBody(BulkCreatePantryEntriesSchema),
+  createPantryEntriesController,
 )
 pantryRouter.patch(
   '/:id',

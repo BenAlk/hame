@@ -2580,7 +2580,7 @@ clean. The seed was run against a **fresh throwaway database** — both shops
 created and both exclusive items assigned, then the database dropped, leaving
 Ben's dev DB untouched by the count guards.
 
-### Phase 14 — Barcode scanning into the pantry
+### Phase 14 — Barcode scanning into the pantry ✅ Complete (26-07-2026)
 
 Unpacking the shop is the moment pantry data is most accurate and least likely to
 be entered, because every item means a typed name. Phase 14 replaces the typing
@@ -2615,6 +2615,58 @@ with the phone camera.
   instance (the §10 Phase 7.4 PWA constraint again).
 - **Batch scan → single review screen** on the Pantry page: location set once,
   expiry per row, one commit. Not a dialog per item.
+
+**Delivered**: A Phase 14 migration adds `ItemBarcode` (unique `code`, cascading
+`itemId`, and the looked-up `label`) plus `HouseholdSettings.barcodeLookupEnabled`
+(default **on** — without it a first scan can only be named by hand).
+`ItemBarcode` joins `BACKUP_MODELS` (§9.8) in the layer that references `Item`,
+so a restore keeps the learned library rather than silently resetting the
+feature to day one. Shared `@hame/shared` carries the barcode contract: a
+`BarcodeSchema` validating 8–14 digits as a **shape, not a checksum** (a scanner
+that read a real product beats our arithmetic), the `BarcodeResolution` the UI
+switches on, and a `LinkBarcodeSchema` refined to take an item by id _or_ name.
+
+The lookup lives in `integrations/open-food-facts/` in the `recipe-import` mould
+— explicitly **not** an `IntegrationProvider`, whose kinds are `STATUS` and
+`CALENDAR`. It goes through `safeFetch` (§8.6) with no LAN exemption, carries a
+descriptive `User-Agent` per OFF's policy, times out at 5s, and returns `null` on
+every failure path: a lookup is an accelerator, never a gate. The pure
+`toSuggestion` mapper absorbs the reality of crowd-sourced data (absent, blank or
+non-string fields; comma-separated brand lists).
+
+A new `barcodes` slice resolves in the order that matters — linked `ItemBarcode`
+first (instant, offline, nothing leaves the network), then OFF only if the
+household allows it, then nothing at all, which is still a working scan. The
+toggle gates the **outbound call**, not just the displayed result. Linking
+upserts, so rescanning something filed wrongly re-points it. `POST /api/pantry/bulk`
+commits a batch in one transaction; each distinct new name is resolved **once,
+sequentially**, because two rows naming the same new item is the ordinary case
+here and resolving them concurrently races two inserts against `Item.name`'s
+unique index.
+
+Web: `lib/barcode-scanner.ts` wraps the native `BarcodeDetector` — **no decoder
+dependency** — feature-detected, with manual code entry always present so iOS
+Safari degrades instead of showing a dead button. A `ScanDialog` on the Pantry
+page batches scans into one review screen (location once, expiry per row, one
+commit), holds its scan callback in a ref so an accepted scan doesn't tear down
+the camera, and debounces a held-still barcode on a cooldown rather than a
+seen-set — because scanning the same product twice on purpose _should_ be two
+jars. Typing an existing item's name into a row matches it rather than minting a
+duplicate. A Settings → Pantry card states plainly what the toggle sends and to
+whom.
+
+**Verified**: typecheck / lint / format green, **528 API + 71 web + 15
+bin-scraper tests**, all builds clean. **Live smoke** against a running API: a
+real unseen barcode resolved through OFF to a named product; linking it made the
+next resolve local with no outbound call; an invalid code 400'd, an unknown item
+id 404'd and a missing CSRF token 403'd; a bulk batch stocked by id and by name
+together; a bad row rolled the whole batch back leaving the pantry untouched; and
+the same product scanned twice produced **two entries against one item** with
+their own expiry dates. That last case initially returned a 500 — the concurrent
+name race above — which the smoke caught, and which now has its own regression
+test. The camera path itself is Ben's check on an Android phone against the
+deployed instance: `getUserMedia` needs a secure context, so it cannot be
+exercised from a LAN-IP dev URL.
 
 ---
 

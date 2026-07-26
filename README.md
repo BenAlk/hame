@@ -27,7 +27,8 @@ surfaces, a dusty-rose accent, a reading serif for human moments._
   that rolls unbought items over and stocks the pantry; unit-aware low-stock and expiry tracking; a
   household re-order checklist for consumables with an auto-cadence "probably due" hint. Items only
   stocked in one supermarket can be tagged with a **shop**, so a single list regroups itself by shop
-  when you're standing in one.
+  when you're standing in one. Unpacking the shop, **scan barcodes** with your phone camera to stock
+  the pantry in one batch — codes are learned as you go, so scanning gets faster every week.
 - **Recipes & meal planning** — manual recipes or one-paste URL import (schema.org), a weekly plan
   with serving scaling, and the keystone: **generate a shopping list for the week** that scales each
   recipe, subtracts what's already in the pantry, and lists only the shortfall.
@@ -325,6 +326,24 @@ variants here: at `temperature: 0` they add latency without improving a constrai
 
 Opening the recipe-import dialog preloads the selected model in the background, so the first import
 of a session isn't slowed by Ollama's cold-start.
+
+### Barcode scanning (pantry)
+
+Scan the shopping into the pantry from the Pantry page: batch-scan the barcodes, review the rows
+once (storage location for the batch, use-by date per row), and commit. Scanning the same product
+twice creates two entries, so each carries its own expiry date.
+
+Decoding uses the browser's built-in `BarcodeDetector`, so **no scanning library is downloaded**.
+That means camera scanning works in Chrome on Android; browsers without it (notably iOS Safari)
+fall back to typing the code in, and everything else behaves the same. The camera also needs a
+secure context, so scanning works over your HTTPS domain but not over a plain `http://` LAN address.
+
+A code Hame has seen before is resolved on your own server and never leaves your network. The first
+time a code appears, Hame asks [Open Food Facts](https://world.openfoodfacts.org) — a free, open
+product database needing no account — for the product name, so you can match it to an existing item
+instead of typing it. That sends the barcode and nothing else. Turn it off under
+**Settings → Pantry** to keep every scan local; scanning still works, you just name new products
+yourself. Either way the code is remembered, so the library fills up as you shop.
 
 ### Phone calendar sync (CalDAV)
 
