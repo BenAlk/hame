@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
-import type { ShoppingList, ShoppingListItem } from '@hame/shared'
+import type { ShoppingList } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CheckRow } from '@/components/features/shopping/check-row'
 import { ArchiveDialog } from '@/components/features/shopping/archive-dialog'
 import { AddConsumablesPanel } from '@/components/features/shopping/add-consumables-panel'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { cn } from '@/lib/utils'
+import { groupItems, type Grouping } from '@/lib/shopping-groups'
 import { ApiError } from '@/api/client'
 import { useItems } from '@/api/items'
 import {
@@ -16,23 +18,6 @@ import {
   useShoppingLists,
   useUpdateShoppingItem,
 } from '@/api/shopping'
-
-const UNTAGGED = 'Other'
-
-/** Group a list's items by their first tag; bought items sink to the bottom. */
-function groupByTag(items: ShoppingListItem[]): [string, ShoppingListItem[]][] {
-  const groups = new Map<string, ShoppingListItem[]>()
-  for (const item of items) {
-    const key = item.item.tags[0]?.name ?? UNTAGGED
-    groups.set(key, [...(groups.get(key) ?? []), item])
-  }
-  for (const list of groups.values()) {
-    list.sort((a, b) => Number(a.isBought) - Number(b.isBought))
-  }
-  return [...groups.entries()].sort(([a], [b]) =>
-    a === UNTAGGED ? 1 : b === UNTAGGED ? -1 : a.localeCompare(b),
-  )
-}
 
 export function ShoppingPage() {
   const { data: lists, isPending } = useShoppingLists()
@@ -194,6 +179,43 @@ function ListButton({
   )
 }
 
+/** Segmented control switching how the list is sectioned while shopping. */
+function GroupingToggle({
+  value,
+  onChange,
+}: {
+  value: Grouping
+  onChange: (next: Grouping) => void
+}) {
+  const options: [Grouping, string][] = [
+    ['category', 'Category'],
+    ['shop', 'Shop'],
+  ]
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        Group by
+      </span>
+      <div className="inline-flex rounded-pill border border-line p-0.5">
+        {options.map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={value === key}
+            onClick={() => onChange(key)}
+            className={cn(
+              'rounded-pill px-3 py-1 text-xs font-medium transition-colors',
+              value === key ? 'bg-accent-soft text-accent' : 'text-muted-foreground hover:text-ink',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ListDetail({
   list,
   onArchive,
@@ -210,8 +232,11 @@ function ListDetail({
   const removeItem = useRemoveShoppingItem(list.id)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [grouping, setGrouping] = useState<Grouping>('category')
 
-  const groups = useMemo(() => groupByTag(list.items), [list.items])
+  const groups = useMemo(() => groupItems(list.items, grouping), [list.items, grouping])
+  // Only worth offering once something on the list is actually shop-specific.
+  const hasShops = list.items.some((i) => i.item.shop)
 
   async function onAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -271,16 +296,18 @@ function ListDetail({
         <p className="text-sm text-muted-foreground">This list is empty.</p>
       ) : (
         <div className="flex flex-col gap-4">
-          {groups.map(([tag, rows]) => (
-            <div key={tag}>
+          {hasShops && <GroupingToggle value={grouping} onChange={setGrouping} />}
+          {groups.map(([group, rows]) => (
+            <div key={group}>
               <h3 className="mb-1 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                {tag}
+                {group}
               </h3>
               <div className="divide-y divide-line">
                 {rows.map((row) => (
                   <CheckRow
                     key={row.id}
                     row={row}
+                    showShop={grouping === 'category'}
                     disabled={!isActive}
                     onToggle={() =>
                       void updateItem.mutateAsync({ itemId: row.id, isBought: !row.isBought })

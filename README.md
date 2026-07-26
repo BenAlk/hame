@@ -25,7 +25,9 @@ surfaces, a dusty-rose accent, a reading serif for human moments._
 
 - **Shopping & pantry** — multi-list shopping with quick-add, tag-grouped aisles and an archive flow
   that rolls unbought items over and stocks the pantry; unit-aware low-stock and expiry tracking; a
-  household re-order checklist for consumables with an auto-cadence "probably due" hint.
+  household re-order checklist for consumables with an auto-cadence "probably due" hint. Items only
+  stocked in one supermarket can be tagged with a **shop**, so a single list regroups itself by shop
+  when you're standing in one.
 - **Recipes & meal planning** — manual recipes or one-paste URL import (schema.org), a weekly plan
   with serving scaling, and the keystone: **generate a shopping list for the week** that scales each
   recipe, subtracts what's already in the pantry, and lists only the shortfall.

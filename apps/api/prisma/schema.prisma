@@ -68,7 +68,7 @@ enum Role {
 
 model Tag {
   id      String   @id @default(uuid())
-  name    String   @unique // "dairy", "frozen", "quick-add", "tesco"
+  name    String   @unique // "dairy", "frozen", "quick-add", "baking"
   colour  String? // hex for chip display
   items   Item[]   @relation("ItemTags")
   chores  Chore[]  @relation("ChoreTags")
@@ -86,6 +86,8 @@ model Item {
   isStaple        Boolean            @default(false) // pantry staple — excluded from generated shopping lists
   isConsumable    Boolean            @default(false) // household consumable — surfaced as a re-order checklist (spec §8.3)
   reorderIntervalDays Int? // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (spec §12)
+  shopId          String? // the one shop this is only buyable at (spec §8.3); null = buy anywhere
+  shop            Shop?              @relation(fields: [shopId], references: [id], onDelete: SetNull)
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
   tags            Tag[]              @relation("ItemTags")
@@ -779,4 +781,19 @@ model NoteAck {
 enum NoteAudience {
   HOUSEHOLD // everyone's board + the wall-tablet screensaver
   DIRECT // one member only; never shown on the shared tablet
+}
+
+// ── Phase 13: Shops ──────────────────────────────────────────────────────────
+
+/// A shop an item can only be bought at (spec §8.3). User-defined rows rather
+/// than an enum, so a household names its own shops without a migration —
+/// the StorageLocation mould. An Item carries at most one: exclusive to this
+/// shop, or (null) buyable anywhere. Deleting a shop is `SetNull`, returning
+/// its items to generic rather than cascading into deleting products.
+model Shop {
+  id        String   @id @default(uuid())
+  name      String   @unique // "Lidl", "Aldi", "Tesco"
+  colour    String? // hex for chip display
+  items     Item[]
+  createdAt DateTime @default(now())
 }

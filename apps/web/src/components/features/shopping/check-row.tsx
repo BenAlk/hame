@@ -2,12 +2,15 @@ import { Check, X } from 'lucide-react'
 import type { ShoppingItemSource, ShoppingListItem } from '@hame/shared'
 import { cn } from '@/lib/utils'
 import { quantityLabel } from '@/lib/format'
+import { ShopChip } from '@/components/features/shop-chip'
 
 interface CheckRowProps {
   row: ShoppingListItem
   onToggle: () => void
   onRemove: () => void
   disabled?: boolean
+  /** Show the item's shop chip — redundant when the list is already grouped by shop. */
+  showShop?: boolean
 }
 
 const SOURCE_LABELS: Record<ShoppingItemSource, string> = {
@@ -42,7 +45,7 @@ function MergeBadge({ sources }: { sources: ShoppingItemSource[] }) {
  * trailing quantity and the member-colour dot. Ticked rows fill the box with a
  * white tick and strike through the label.
  */
-export function CheckRow({ row, onToggle, onRemove, disabled }: CheckRowProps) {
+export function CheckRow({ row, onToggle, onRemove, disabled, showShop }: CheckRowProps) {
   const qty = quantityLabel(row.quantity, row.unit)
   return (
     <div className="group flex items-center gap-3 py-2">
@@ -72,6 +75,8 @@ export function CheckRow({ row, onToggle, onRemove, disabled }: CheckRowProps) {
         </p>
         {row.notes && <p className="truncate text-xs text-muted-foreground">{row.notes}</p>}
       </div>
+
+      {showShop && row.item.shop && <ShopChip shop={row.item.shop} />}
 
       <MergeBadge sources={row.sources} />
 

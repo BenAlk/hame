@@ -22,12 +22,17 @@ export function useCreateItem() {
   })
 }
 
+/** Items are embedded in pantry entries and shopping lines, so those refresh too. */
 export function useUpdateItem() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateItemInput & { id: string }) =>
       apiFetch<Item>(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ITEMS_KEY })
+      void qc.invalidateQueries({ queryKey: ['pantry'] })
+      void qc.invalidateQueries({ queryKey: ['shopping-lists'] })
+    },
   })
 }
 

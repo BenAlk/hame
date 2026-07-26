@@ -152,6 +152,23 @@ async function main() {
     tags?: string[]
     isConsumable?: boolean
     reorderIntervalDays?: number
+    /** Only when the item is buyable nowhere else (spec §8.3); omit = anywhere. */
+    shop?: string
+  }
+
+  // ── Shops (spec §8.3) ────────────────────────────────────────────────────—
+  const shopSpecs = [
+    { name: 'Lidl', colour: '#2f6fb0' },
+    { name: 'Aldi', colour: '#6f8169' },
+  ]
+  const shops: Record<string, string> = {}
+  for (const spec of shopSpecs) {
+    const shop = await prisma.shop.upsert({
+      where: { name: spec.name },
+      update: {},
+      create: spec,
+    })
+    shops[spec.name] = shop.id
   }
   const itemSpecs: ItemSpec[] = [
     {
@@ -184,7 +201,13 @@ async function main() {
     },
     { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen', 'meat'] },
     { name: 'Pasta', baseUnit: 'g', minimumQuantity: 500, tags: ['dry-goods', 'ambient'] },
-    { name: 'Coffee', baseUnit: 'g', minimumQuantity: 200, tags: ['quick-add', 'ambient'] },
+    {
+      name: 'Coffee',
+      baseUnit: 'g',
+      minimumQuantity: 200,
+      tags: ['quick-add', 'ambient'],
+      shop: 'Lidl',
+    },
     // Consumables (spec §8.3): household re-order goods, not recipe/expiry tracked.
     {
       name: 'Toilet roll',
@@ -206,6 +229,7 @@ async function main() {
       defaultUnit: 'box',
       isConsumable: true,
       reorderIntervalDays: 45,
+      shop: 'Aldi',
     },
     { name: 'Washing-up liquid', baseUnit: 'ml', defaultUnit: 'bottle', isConsumable: true },
     { name: 'Kitchen foil', baseUnit: 'unit', defaultUnit: 'roll', isConsumable: true },
@@ -223,6 +247,7 @@ async function main() {
         defaultUnit: spec.defaultUnit ?? null,
         isConsumable: spec.isConsumable ?? false,
         reorderIntervalDays: spec.reorderIntervalDays ?? null,
+        shopId: spec.shop ? shops[spec.shop] : null,
         createdById: admin.id,
         tags: { connect: spec.tags?.map((name) => ({ id: tags[name] })) ?? [] },
       },

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { BASE_UNITS } from '../units.js'
 import { TagSchema } from './tag.js'
+import { ShopSchema } from './shop.js'
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
 const atLeastOneFieldMessage = { message: 'At least one field must be provided' }
@@ -18,6 +19,8 @@ const ItemFields = z.object({
   isStaple: z.boolean().optional(),
   isConsumable: z.boolean().optional(),
   reorderIntervalDays: z.number().int().positive().max(3650).nullish(),
+  /** The one shop this is only buyable at; null/absent = buy anywhere (§8.3). */
+  shopId: z.string().uuid().nullish(),
   tagIds: z.array(z.string().uuid()).optional(),
 })
 
@@ -39,6 +42,8 @@ export const ItemSchema = z.object({
   isStaple: z.boolean(),
   isConsumable: z.boolean(),
   reorderIntervalDays: z.number().nullable(),
+  /** Expanded so a list row can render the shop chip without a second lookup. */
+  shop: ShopSchema.nullable(),
   tags: z.array(TagSchema),
   createdById: z.string().uuid(),
   createdAt: z.coerce.date(),

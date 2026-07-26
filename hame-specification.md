@@ -304,23 +304,49 @@ model Item {
   isStaple        Boolean             @default(false)  // pantry staple (salt, water) — excluded from generated shopping lists
   isConsumable    Boolean             @default(false)  // household consumable (loo roll, foil, dishwasher tabs) — surfaced as a re-order checklist (§8.3); not expiry- or recipe-tracked
   reorderIntervalDays Int?                             // rough re-order cadence (days); drives the "probably due" highlight (§8.3)
+  shopId          String?                          // the one shop this is only buyable at (§8.3); null = buy anywhere
+  shop            Shop?               @relation(fields: [shopId], references: [id], onDelete: SetNull)
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   tags            Tag[]               @relation("ItemTags")
   shoppingItems   ShoppingListItem[]
   pantryEntries   PantryEntry[]
   recipeUses      RecipeIngredient[]
+  barcodes        ItemBarcode[]
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 }
 
 model Tag {
   id        String   @id @default(uuid())
-  name      String   @unique             // "dairy", "frozen", "quick-add", "tesco"
+  name      String   @unique             // "dairy", "frozen", "quick-add", "baking"
   colour    String?                      // hex for chip display
   items     Item[]   @relation("ItemTags")
   recipes   Recipe[] @relation("RecipeTags")
   chores    Chore[]  @relation("ChoreTags")
+}
+
+// Where an Item can be bought, when it's buyable in only one place (§8.3, §10
+// Phase 13). Modelled like StorageLocation — user-defined rows, not an enum, so
+// a household names its own shops without a migration.
+model Shop {
+  id        String   @id @default(uuid())
+  name      String   @unique             // "Lidl", "Aldi", "Tesco"
+  colour    String?                      // hex for chip display
+  items     Item[]
+  createdAt DateTime @default(now())
+}
+
+// A scanned barcode linked to an Item (§8.4, §10 Phase 14). Many-to-one: "Milk"
+// is one Item, but Tesco/Lidl/Aldi milk are three distinct barcodes — which is
+// why this is its own model rather than a column on Item.
+model ItemBarcode {
+  id      String   @id @default(uuid())
+  code    String   @unique              // EAN-13 / UPC as scanned
+  itemId  String
+  item    Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  label   String?                       // product name as looked up, so a multi-barcode Item stays legible
+  addedAt DateTime @default(now())
 }
 ```
 
@@ -866,12 +892,13 @@ enum NoteAudience {
 
 ### 8.3 Shopping Lists
 
-- **Multi-list** — any user can create new lists ("Weekly Shop", "Aldi", "B&Q")
+- **Multi-list** — any user can create new lists ("Weekly Shop", "B&Q", "Christmas"). Lists are for genuinely separate _trips_; splitting one shop across supermarkets is the **shop field**'s job, not a second list
 - **Items are reusable entities** — "Milk" exists once in DB
 - **Quick-add dropdown** — populated by querying items with `quick-add` tag
 - **Tick to mark bought** — `isBought=true`, `boughtAt=now()`. Items remain visible during shop
 - **Show who added what** — display user's colour beside each item
 - **Show categories** — visual grouping by tags during shop (dairy, frozen, etc.)
+- **Shops** — an `Item` optionally carries a single `Shop` (§7.2), meaning "only buyable here". **One shop or none**: an item stocked in several places stays generic, because maintaining a full availability matrix per item is work nobody does and the shopping value is identical either way. A `null` shop therefore reads as "buy anywhere". This is a **field, not a tag** — a tag can't stop an item claiming both `lidl` and `tesco`, which the rule forbids, and a field earns a real picker and sane sorting. The payoff is on the list, not the pantry: the Shopping page toggles its grouping between **by category** (tags, today) and **by shop**, so standing in Aldi shows just the Aldi lines. Deleting a shop is `onDelete: SetNull` — its items fall back to generic, never cascade-delete
 - **Archive flow** (the key UX moment):
   1. User clicks "Archive shopping list"
   2. Modal shows ticked items — per-item: storage location dropdown + optional expiry date → creates `PantryEntry` rows
@@ -893,6 +920,7 @@ enum NoteAudience {
 - **Low stock** — `Item.minimumQuantity` triggers alert when total pantry quantity (all entries converted to `Item.baseUnit`, see §9.2) drops below it
 - **Manual edits** — users can adjust quantity directly (used some flour)
 - **Recipe deduction** — opt-in: marking meal plan entry as "cooked" deducts ingredients from pantry
+- **Barcode stocking** — unpacking the shop, scan products with the phone camera to create `PantryEntry` rows (§10 Phase 14). A code resolves through `ItemBarcode` (§7.2) if seen before — instant, no outbound call — otherwise an **Open Food Facts** lookup suggests a name and the scan is matched to an _existing_ `Item` where possible, keeping `Item` generic so recipe linking and low-stock maths (§9.2) still work. Whatever is chosen, the code is learned, so the library populates as a side effect of ordinary use. **Batch scan → one review screen** (location set once, expiry per row), never a modal per scan: barcodes carry no expiry date, so identification is what's automated, not the review. Scanning the same code twice naturally yields two rows, which is already the correct per-instance behaviour above
 
 ### 8.5 Recipes
 
@@ -2489,6 +2517,105 @@ with unreachable ones disabled and labelled. An admin **Household alerts** card
 phone target, toggle-off → empty recipients + send refused, the always-critical title /
 payload, and the self / non-person / tablet / no-HA guards), all builds clean.
 
+### Phase 13 — Shops (where an item is buyable) ✅ Complete (26-07-2026)
+
+Some products are only stocked in one supermarket, and the weekly shop is
+routinely split across two. Today the only way to express that is a second
+shopping list named after the shop, which has to be curated by hand and drifts
+from the real list. Phase 13 makes "where can I buy this" a property of the
+product, and lets the one list section itself by shop.
+
+**Goal**: Standing in Aldi, see the Aldi part of the weekly shop — without
+maintaining a parallel list.
+
+**Design**:
+
+- **`Shop` model + `Item.shopId`** (§7.2) — a Phase 13 migration. `Shop` follows
+  the `StorageLocation` mould (user-defined rows with a name and a chip colour)
+  rather than an enum of UK supermarkets: an enum bakes one country's high street
+  into the schema and makes every new shop a migration, for no gain.
+- **One shop or none** (§8.3). A single nullable FK encodes the rule directly —
+  exclusive to one shop, or generic. `onDelete: SetNull`, so deleting a shop
+  returns its items to generic and can never cascade into deleting products.
+- **Member-level CRUD**, `requireAuth` + `verifyCsrf`, mirroring
+  `storage-locations` — shops are ordinary household data, not admin config.
+- **`Shop` joins `BACKUP_MODELS`** (§9.8), or items restore pointing at shops
+  that no longer exist.
+- **Shopping page grouping toggle** — **by category** (tags, today) or **by
+  shop**, with a colour chip on each line. The item form (pantry, consumables)
+  gains a shop picker. A couple of example shops join `seed.ts` so a fresh clone
+  demonstrates the feature.
+
+**Delivered**: A single Phase 13 migration adds `Shop` (user-defined name +
+chip colour) and `Item.shopId` with `ON DELETE SET NULL`, so removing a shop
+returns its items to generic and can never cascade into deleting products.
+`Shop` joins `BACKUP_MODELS` (§9.8) among the FK-less roots, so items restore
+pointing at shops that still exist. Shared `@hame/shared` carries the shop
+contract (`CreateShopSchema` / `UpdateShopSchema` / `ShopSchema`, hex-colour
+validated like tags), and `Item` gains a nullable `shopId` on write plus an
+**expanded** `shop` on read, so a list row renders its chip without a second
+lookup. A new `shops` API slice (thin controller, thick service) mirrors
+`storage-locations` at member level behind `requireAuth` + `verifyCsrf`, with
+case-insensitive name uniqueness — but deliberately **no in-use guard on
+delete**, unlike storage locations: "we stopped shopping at Lidl" must not be
+blocked by the products it sold.
+
+Web: a `useShops` hook family, a `ShopChip` mirroring `TagChip` (sage-tinted
+when uncoloured, so a shop reads differently from a category), a **Shops panel**
+on the Pantry page whose delete confirm names how many items will fall back to
+"buy anywhere", and a shop picker in the pantry entry detail — worded "Only at
+Lidl" to make the exclusivity rule legible at the point of choosing. The
+Shopping page gains a **Group by · Category / Shop** segmented control, shown
+only once something on the list is actually shop-specific; grouping by shop
+suppresses the per-row chip as redundant. The grouping itself moved to a pure
+`lib/shopping-groups.ts` so it is unit-testable. Two example shops join
+`seed.ts`, with Coffee and Dishwasher tablets exclusive to one each.
+
+**Verified**: typecheck / lint / format green across all packages, **509 API +
+55 web + 15 bin-scraper tests** (incl. the `SetNull` delete-while-in-use case,
+case-insensitive duplicate refusal, self-collision rename, `shopId` null
+meaning "clear" vs absent meaning "leave alone", and the grouping's
+fallback-last ordering / bought-sink / category-view isolation), all builds
+clean. The seed was run against a **fresh throwaway database** — both shops
+created and both exclusive items assigned, then the database dropped, leaving
+Ben's dev DB untouched by the count guards.
+
+### Phase 14 — Barcode scanning into the pantry
+
+Unpacking the shop is the moment pantry data is most accurate and least likely to
+be entered, because every item means a typed name. Phase 14 replaces the typing
+with the phone camera.
+
+**Goal**: Scan the shopping in as you unpack it.
+
+**Design**:
+
+- **`ItemBarcode` model** (§7.2) — a Phase 14 migration; joins `BACKUP_MODELS`
+  (§9.8), since a restore that silently forgot every learned barcode would undo
+  the feature's whole compounding value. Many-to-one by design: `Item` is a
+  generic concept ("Milk") and a barcode is a specific product, so three
+  supermarkets' milk are three codes against one Item.
+- **Resolution order** — `ItemBarcode` first (instant, offline, no third party),
+  then an **Open Food Facts** lookup for anything unseen. OFF is free, key-less
+  open data with strong UK grocery coverage; it's a public URL, so it goes
+  through the existing `safeFetch` SSRF guard (§8.6) with no exemption. It needs
+  a descriptive `User-Agent` per their API policy, and the lookup is a
+  **toggleable setting** (like Ollama) — every unknown scan tells a third party a
+  barcode, which a self-hosted app should say out loud rather than do silently.
+  A miss is not an error: the name is typed and the code learned regardless.
+- **Suggest-and-match, never auto-create.** An unknown code offers the closest
+  existing `Item` first, with "create new" as the fallback — auto-creating per
+  barcode would fragment "Milk" into brand rows and quietly break recipe linking
+  and low-stock aggregation (§9.2).
+- **Native decoding, no dependency.** The browser `BarcodeDetector` API covers
+  the Android phones this is for. Feature-detected, with a manual code-entry
+  fallback where it's absent (notably iOS Safari), so an unsupported browser
+  degrades instead of showing a dead button. Camera access needs a secure
+  context — fine in production, but it will not work over a plain LAN-IP dev
+  instance (the §10 Phase 7.4 PWA constraint again).
+- **Batch scan → single review screen** on the Pantry page: location set once,
+  expiry per row, one commit. Not a dialog per item.
+
 ---
 
 ## 11. Security & Conventions
@@ -2568,6 +2695,26 @@ The Phase 10 integration framework (§9.9, §10) ships two read-only output kind
   read-only security envelope (§8.6) and overlaps Home Assistant's control lane,
   so it is deliberately excluded, not merely unbuilt.
 
+### Barcode Scanning — In-Shop Ticking
+
+Phase 14 (§10) scans products **into the pantry** while unpacking. Scanning at
+the shelf to tick a `ShoppingListItem` bought reuses most of the same plumbing —
+camera, decoder, the barcode→`Item` resolution endpoint — but it is a genuinely
+different feature, so it is sequenced after rather than bundled in:
+
+- It **mutates** a shopping line rather than **creating** a pantry row.
+- The unknown-barcode case inverts. At home an unlinked code is fine — you're
+  holding the product, you link it, the scan still did its job. At the shelf
+  there is nothing to tick, so it fails exactly when it's needed, and the first
+  few shops would be useless against an empty library.
+- It raises a question the pantry flow never asks: scanning something that
+  **isn't on the list** — add it as bought, ignore, or warn?
+- Connectivity is worse in a supermarket than in the kitchen, and the API is
+  remote.
+
+Sequencing pantry-first is the point: the barcode library fills as a side effect
+of ordinary unpacking, which is what makes in-shop ticking viable later.
+
 ### Other Down-the-Line Features
 
 - Budget & bill tracking
@@ -2630,6 +2777,8 @@ Choices intentionally left open, to revisit when the need is real:
 | **Instance**          | An occurrence of a recurring entity (e.g., this Saturday's hoover chore)                          |
 | **Rollover**          | Moving an unbought shopping item from an archived list to a new one                               |
 | **Storage Location**  | A user-defined place where pantry items live (Main Fridge, Garage Freezer)                        |
+| **Shop**              | A user-defined shop; set on an Item only when it's buyable _nowhere else_                         |
+| **Open Food Facts**   | Free, key-less open product database; turns an unseen barcode into a product name                 |
 | **PWA**               | Progressive Web App — installable from browser, no app store needed                               |
 | **HA / HAOS**         | Home Assistant / Home Assistant OS                                                                |
 | **Immich**            | Self-hosted photo library; Hame pulls from it for screensaver mode                                |

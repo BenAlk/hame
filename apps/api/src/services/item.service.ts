@@ -4,9 +4,10 @@ import { QUICK_ADD_TAG } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { toTag } from './tag.service.js'
+import { toShop } from './shop.service.js'
 
-/** Always load an item with its tags expanded — the only public shape. */
-export const itemInclude = { tags: { orderBy: { name: 'asc' } } } as const
+/** Always load an item with its tags and shop expanded — the only public shape. */
+export const itemInclude = { tags: { orderBy: { name: 'asc' } }, shop: true } as const
 type ItemWithTags = Prisma.ItemGetPayload<{ include: typeof itemInclude }>
 
 export function toItem(item: ItemWithTags): Item {
@@ -21,6 +22,7 @@ export function toItem(item: ItemWithTags): Item {
     isStaple: item.isStaple,
     isConsumable: item.isConsumable,
     reorderIntervalDays: item.reorderIntervalDays,
+    shop: item.shop ? toShop(item.shop) : null,
     tags: item.tags.map(toTag),
     createdById: item.createdById,
     createdAt: item.createdAt,
@@ -57,6 +59,7 @@ export async function createItem(input: CreateItemInput, userId: string): Promis
       isStaple: input.isStaple ?? false,
       isConsumable: input.isConsumable ?? false,
       reorderIntervalDays: input.reorderIntervalDays ?? null,
+      shopId: input.shopId ?? null,
       createdById: userId,
       ...(input.tagIds && { tags: { connect: input.tagIds.map((id) => ({ id })) } }),
     },
@@ -82,6 +85,8 @@ export async function updateItem(id: string, input: UpdateItemInput): Promise<It
       ...(input.reorderIntervalDays !== undefined && {
         reorderIntervalDays: input.reorderIntervalDays,
       }),
+      // null is meaningful here — it clears the shop back to "buy anywhere".
+      ...(input.shopId !== undefined && { shopId: input.shopId }),
       // `tagIds` fully replaces the item's tag set when present.
       ...(input.tagIds && { tags: { set: input.tagIds.map((tid) => ({ id: tid })) } }),
     },

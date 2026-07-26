@@ -23,6 +23,7 @@ export const BACKUP_MODELS = [
   'Tag',
   'Pet',
   'StorageLocation',
+  'Shop',
   'BinCollection',
   'CalendarSource',
   // Reference the roots above.

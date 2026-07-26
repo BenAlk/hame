@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
 import { format } from 'date-fns'
 import { Trash2 } from 'lucide-react'
-import type { PantryEntry } from '@hame/shared'
+import type { PantryEntry, Shop } from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
+import { ShopChip } from '@/components/features/shop-chip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
-import { useItems } from '@/api/items'
+import { useItems, useUpdateItem } from '@/api/items'
 import { useCreatePantryEntry, useDeletePantryEntry, usePantry } from '@/api/pantry'
+import { useCreateShop, useDeleteShop, useShops } from '@/api/shops'
 import {
   useCreateStorageLocation,
   useDeleteStorageLocation,
@@ -21,7 +24,10 @@ import { isOverdueOrToday, quantityLabel, relativeDay } from '@/lib/format'
 export function PantryPage() {
   const { data: locations } = useStorageLocations()
   const { data: entries, isPending } = usePantry()
-  const [detail, setDetail] = useState<PantryEntry | null>(null)
+  // Hold the id, not the row: editing the item from the modal refetches the
+  // pantry, and a captured object would keep showing the pre-edit values.
+  const [detailId, setDetailId] = useState<string | null>(null)
+  const detail = entries?.find((e) => e.id === detailId) ?? null
 
   const grouped = useMemo(() => {
     const map = new Map<string, PantryEntry[]>()
@@ -50,7 +56,7 @@ export function PantryPage() {
               <WidgetCard key={location} title={location} action={<span>{rows.length}</span>}>
                 <div className="divide-y divide-line">
                   {rows.map((entry) => (
-                    <EntryRow key={entry.id} entry={entry} onOpen={() => setDetail(entry)} />
+                    <EntryRow key={entry.id} entry={entry} onOpen={() => setDetailId(entry.id)} />
                   ))}
                 </div>
               </WidgetCard>
@@ -58,10 +64,13 @@ export function PantryPage() {
           )}
         </div>
 
-        <LocationsPanel />
+        <div className="flex flex-col gap-6">
+          <LocationsPanel />
+          <ShopsPanel />
+        </div>
       </div>
 
-      <EntryDetailModal entry={detail} onClose={() => setDetail(null)} />
+      <EntryDetailModal entry={detail} onClose={() => setDetailId(null)} />
     </main>
   )
 }
@@ -81,6 +90,7 @@ function EntryRow({ entry, onOpen }: { entry: PantryEntry; onOpen: () => void })
         style={{ backgroundColor: entry.addedBy.colour }}
       />
       <span className="min-w-0 flex-1 truncate text-ink">{entry.item.name}</span>
+      {entry.item.shop && <ShopChip shop={entry.item.shop} />}
       <span className="shrink-0 text-xs text-muted-foreground">
         {quantityLabel(entry.quantity, entry.unit)}
       </span>
@@ -103,6 +113,8 @@ function EntryRow({ entry, onOpen }: { entry: PantryEntry; onOpen: () => void })
 /** Detail view for a single pantry instance — quantity, location and crucially its use-by date. */
 function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClose: () => void }) {
   const removeEntry = useDeletePantryEntry()
+  const { data: shops } = useShops()
+  const updateItem = useUpdateItem()
   const urgent = entry?.expiryDate ? isOverdueOrToday(entry.expiryDate) : false
 
   async function onRemove() {
@@ -121,6 +133,33 @@ function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClo
 
             <dt className="text-muted-foreground">Location</dt>
             <dd className="text-ink">{entry.location.name}</dd>
+
+            <dt className="text-muted-foreground">
+              <label htmlFor="entry-shop">Shop</label>
+            </dt>
+            <dd>
+              {/* Set on the Item, not this jar — "only buyable at Lidl" is a
+                  property of the product (spec §8.3). */}
+              <select
+                id="entry-shop"
+                value={entry.item.shop?.id ?? ''}
+                disabled={updateItem.isPending}
+                onChange={(e) =>
+                  void updateItem.mutateAsync({
+                    id: entry.item.id,
+                    shopId: e.target.value || null,
+                  })
+                }
+                className="h-10 w-full rounded-control border border-input bg-surface px-2 text-sm text-ink"
+              >
+                <option value="">Any shop</option>
+                {shops?.map((shop) => (
+                  <option key={shop.id} value={shop.id}>
+                    Only at {shop.name}
+                  </option>
+                ))}
+              </select>
+            </dd>
 
             <dt className="text-muted-foreground">Expiry</dt>
             <dd className={cn(urgent ? 'font-medium text-warning' : 'text-ink')}>
@@ -276,6 +315,109 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
         </Button>
       </form>
       {error && <p className="mt-2 text-sm text-warning">{error}</p>}
+    </WidgetCard>
+  )
+}
+
+/**
+ * Shops an item can be exclusive to (spec §8.3). Deleting one is deliberately
+ * allowed even while items reference it — the FK is `SetNull`, so they fall back
+ * to "buy anywhere" — hence the confirm naming what will happen.
+ */
+function ShopsPanel() {
+  const { data: shops } = useShops()
+  const { data: items } = useItems()
+  const createShop = useCreateShop()
+  const deleteShop = useDeleteShop()
+  const [name, setName] = useState('')
+  const [colour, setColour] = useState('#6f8169')
+  const [pendingDelete, setPendingDelete] = useState<Shop | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const affected = items?.filter((i) => i.shop?.id === pendingDelete?.id).length ?? 0
+
+  async function onAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    setError(null)
+    try {
+      await createShop.mutateAsync({ name: name.trim(), colour })
+      setName('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not add shop.')
+    }
+  }
+
+  async function onDelete() {
+    if (!pendingDelete) return
+    setError(null)
+    try {
+      await deleteShop.mutateAsync(pendingDelete.id)
+      setPendingDelete(null)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not remove shop.')
+    }
+  }
+
+  return (
+    <WidgetCard title="Shops">
+      <form onSubmit={onAdd} className="mb-3 flex gap-2">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Lidl"
+          aria-label="New shop name"
+          className="min-w-0"
+        />
+        <input
+          type="color"
+          value={colour}
+          onChange={(e) => setColour(e.target.value)}
+          aria-label="Shop colour"
+          className="h-10 w-10 shrink-0 cursor-pointer rounded-control border border-input bg-surface p-1"
+        />
+        <Button type="submit" className="shrink-0" disabled={createShop.isPending}>
+          Add
+        </Button>
+      </form>
+      {error && <p className="mb-2 text-sm text-warning">{error}</p>}
+      <ul className="flex flex-col gap-1">
+        {shops?.length === 0 && (
+          <li className="text-sm text-muted-foreground">
+            No shops yet. Add one to mark items that are only buyable in a single place.
+          </li>
+        )}
+        {shops?.map((shop) => (
+          <li
+            key={shop.id}
+            className="group flex items-center justify-between rounded-control px-2 py-1.5 text-sm hover:bg-muted"
+          >
+            <ShopChip shop={shop} />
+            <button
+              type="button"
+              onClick={() => setPendingDelete(shop)}
+              aria-label={`Remove ${shop.name}`}
+              className="rounded-control p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove shop"
+        pending={deleteShop.isPending}
+        error={error}
+        onConfirm={() => void onDelete()}
+        onCancel={() => setPendingDelete(null)}
+      >
+        Remove <strong>{pendingDelete?.name}</strong>?{' '}
+        {affected > 0
+          ? `${affected} item${affected === 1 ? '' : 's'} will go back to "buy anywhere". Nothing is deleted.`
+          : 'No items are using it.'}
+      </ConfirmDialog>
     </WidgetCard>
   )
 }
