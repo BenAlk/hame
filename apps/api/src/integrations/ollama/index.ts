@@ -19,8 +19,34 @@ import {
 } from '@hame/shared'
 import { logger } from '../../lib/logger.js'
 
-const OLLAMA_TIMEOUT_MS = 30_000
+/**
+ * The batch call is bounded by a budget that grows with the list, because the
+ * timeout covers the whole recipe rather than a single line — a 40-ingredient
+ * import on a CPU-only server takes several times as long as a short one, and a
+ * flat ceiling would abandon exactly the imports the model helps most with.
+ */
+const TIMEOUT_BASE_MS = 30_000
+const TIMEOUT_PER_LINE_MS = 1_500
+const TIMEOUT_MAX_MS = 120_000
 const WARMUP_TIMEOUT_MS = 60_000
+
+/**
+ * How long Ollama should hold the model in memory after a warm-up. Its default
+ * is 5 minutes, which routinely expires while the user is still finding and
+ * pasting a URL — the preload would then pay the load cost for nothing and the
+ * import pay it again. This spans a realistic dwell in the import modal.
+ */
+const WARMUP_KEEP_ALIVE = '15m'
+
+/**
+ * Context window for the batch call. Ollama applies a small default (2–4k
+ * depending on build) whatever the model supports, and **silently truncates**
+ * the prompt rather than erroring — which would drop the tail of a long
+ * ingredient list and read as "the model ignored the last few lines". The
+ * output counts against this too, so this leaves headroom for a long recipe
+ * plus its JSON reply.
+ */
+const NUM_CTX = 8_192
 
 /** One ingredient as the model is asked to return it. */
 export interface LlmIngredient {
@@ -78,7 +104,23 @@ export class LlmNormaliser implements IngredientNormaliser {
         overrides.find((o) => o.index === i),
       ),
     )
-    return { ingredients, warnings: base.warnings }
+
+    // A reply that parsed but carried nothing usable — or covered only some of
+    // the lines — degrades to the fallback just as surely as an unreachable
+    // server, so it is reported the same way. Silence here would hand back
+    // dictionary-quality output with no hint that the model added nothing.
+    const applied = ingredients.filter((line) => line.source === 'LLM').length
+    const warnings = [...base.warnings]
+    const fallback = describe(this.fallback.strategy)
+    if (applied === 0) {
+      warnings.push(`The language model returned nothing usable — used the ${fallback} instead.`)
+    } else if (applied < ingredients.length) {
+      warnings.push(
+        `The language model normalised ${applied} of ${ingredients.length} lines — ` +
+          `the rest used the ${fallback}.`,
+      )
+    }
+    return { ingredients, warnings }
   }
 
   /**
@@ -91,7 +133,8 @@ export class LlmNormaliser implements IngredientNormaliser {
    *
    * Ollama loads a model when sent a `/api/generate` request with no prompt; we
    * never wait on the response beyond the timeout that bounds the in-flight
-   * fetch.
+   * fetch. {@link WARMUP_KEEP_ALIVE} is what makes the preload worth doing — the
+   * default eviction is shorter than the modal is realistically open.
    */
   async warmUp(): Promise<void> {
     const controller = new AbortController()
@@ -101,7 +144,11 @@ export class LlmNormaliser implements IngredientNormaliser {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         signal: controller.signal,
-        body: JSON.stringify({ model: this.settings.model, stream: false }),
+        body: JSON.stringify({
+          model: this.settings.model,
+          stream: false,
+          keep_alive: WARMUP_KEEP_ALIVE,
+        }),
       })
     } catch (err) {
       logger.debug({ err }, 'Ollama warm-up failed (ignored)')
@@ -112,7 +159,7 @@ export class LlmNormaliser implements IngredientNormaliser {
 
   private async callOllama(rawLines: string[]): Promise<LlmIngredient[]> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS)
+    const timeout = setTimeout(() => controller.abort(), timeoutFor(rawLines.length))
     try {
       const res = await fetch(`${trimSlash(this.settings.url)}/api/chat`, {
         method: 'POST',
@@ -120,9 +167,9 @@ export class LlmNormaliser implements IngredientNormaliser {
         signal: controller.signal,
         body: JSON.stringify({
           model: this.settings.model,
-          format: 'json',
+          format: RESPONSE_FORMAT,
           stream: false,
-          options: { temperature: 0 },
+          options: { temperature: 0, num_ctx: NUM_CTX },
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: buildNormalisePrompt(rawLines) },
@@ -141,6 +188,47 @@ export class LlmNormaliser implements IngredientNormaliser {
 const SYSTEM_PROMPT =
   'You are a culinary data normaliser. You convert messy recipe ingredient lines ' +
   'into clean structured data. Always reply with strict JSON only.'
+
+/**
+ * The response contract, as a JSON Schema handed to Ollama's `format` (0.5+),
+ * which constrains decoding to this shape rather than merely to valid JSON.
+ * `baseUnit`'s enum is derived from {@link BASE_UNITS}, so the grammar the model
+ * generates under and the {@link BaseUnitSchema} that validates everything else
+ * cannot drift — the model becomes one more consumer of the shared source of
+ * truth instead of the one component free-handing its contract.
+ *
+ * Only `index` and `canonicalName` are required. The rest stay optional on
+ * purpose: {@link applyOverride} distinguishes "the model said nothing" from
+ * "the model said none", and forcing every field would turn every silence into
+ * an explicit `null` that nulls out a value the deterministic parser got right.
+ *
+ * {@link parseLlmResponse} still validates the reply. An Ollama older than 0.5
+ * ignores an object `format`, so the tolerant parse remains the real guarantee.
+ */
+const RESPONSE_FORMAT = {
+  type: 'object',
+  properties: {
+    ingredients: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          index: { type: 'integer' },
+          canonicalName: { type: 'string' },
+          quantity: { type: ['number', 'null'] },
+          unit: { type: ['string', 'null'] },
+          baseUnit: { enum: [...BASE_UNITS, null] },
+          isStaple: { type: 'boolean' },
+          typicalUnitGrams: { type: ['number', 'null'] },
+        },
+        required: ['index', 'canonicalName'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['ingredients'],
+  additionalProperties: false,
+} as const
 
 /** Build the user prompt for a batch of ingredient lines. Pure. */
 export function buildNormalisePrompt(rawLines: string[]): string {
@@ -250,6 +338,11 @@ export async function fetchOllamaModels(url: string): Promise<string[]> {
 
 function trimSlash(url: string): string {
   return url.replace(/\/+$/, '')
+}
+
+/** Budget for one batch call, scaled by list length and capped. Pure. */
+export function timeoutFor(lineCount: number): number {
+  return Math.min(TIMEOUT_BASE_MS + lineCount * TIMEOUT_PER_LINE_MS, TIMEOUT_MAX_MS)
 }
 
 /** Turn an Ollama error response into a human-readable reason, reading its body. */
