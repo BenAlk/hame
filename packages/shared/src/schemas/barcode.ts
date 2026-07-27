@@ -25,14 +25,27 @@ export type BarcodeSuggestion = z.infer<typeof BarcodeSuggestionSchema>
 /**
  * The answer to "what is this code?". Exactly one of these outcomes matters to
  * the UI, in order: a linked `item` (instant, nothing left the network), else a
- * `suggestion` to confirm, else neither — type the name and the code is still
- * learned. `lookupEnabled` lets the UI explain a missing suggestion rather than
- * look broken.
+ * `match` to confirm, else a `suggestion` to name, else nothing — type the name
+ * and the code is still learned. `lookupEnabled` lets the UI explain a missing
+ * suggestion rather than look broken.
  */
 export const BarcodeResolutionSchema = z.object({
   code: BarcodeSchema,
   item: ItemSchema.nullable(),
   suggestion: BarcodeSuggestionSchema.nullable(),
+  /**
+   * The generic shopping name behind a branded product — "Tesco British Semi
+   * Skimmed Milk 2.272L" reduced to "semi skimmed milk". This is what keeps a
+   * growing barcode library from fragmenting one concept into a row per brand
+   * (§9.2). Null when there was no suggestion to reduce.
+   */
+  canonicalName: z.string().nullable(),
+  /**
+   * An existing item that name matched, which the scan review offers **before**
+   * creating anything — the "suggest and match, never auto-create" half of §8.4
+   * that the first cut left to the user's typing.
+   */
+  match: ItemSchema.nullable(),
   lookupEnabled: z.boolean(),
 })
 export type BarcodeResolution = z.infer<typeof BarcodeResolutionSchema>

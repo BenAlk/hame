@@ -39,6 +39,14 @@ const WARMUP_TIMEOUT_MS = 60_000
 const EXTRACT_TIMEOUT_MS = 90_000
 
 /**
+ * Tag suggestion and product canonicalisation are both a handful of tokens in
+ * and a handful out, and both sit in front of someone waiting — a name being
+ * typed, a barcode just scanned. They get a short budget and simply give up.
+ */
+const TAG_TIMEOUT_MS = 15_000
+const CANONICAL_TIMEOUT_MS = 15_000
+
+/**
  * How long Ollama should hold the model in memory after a warm-up. Its default
  * is 5 minutes, which routinely expires while the user is still finding and
  * pasting a URL — the preload would then pay the load cost for nothing and the
@@ -190,6 +198,56 @@ export class LlmNormaliser implements IngredientNormaliser {
       return parseExtractedRecipe(content)
     } catch (err) {
       logger.warn({ err }, 'Ollama recipe extraction failed')
+      return null
+    }
+  }
+
+  /**
+   * Suggest tags for an item name, drawn from `pool` (spec §12). The pool is
+   * compiled straight into the reply schema's enum, so choosing a tag the
+   * household does not have is not merely discouraged by the prompt — the
+   * grammar cannot emit it. That turns the classic failure of this feature,
+   * a model inventing a plausible near-duplicate of an existing tag, into an
+   * impossibility rather than something to filter out afterwards.
+   *
+   * Returns an empty list on any failure: a suggestion is a convenience, and
+   * an unreachable model must never block naming an item.
+   */
+  async suggestTags(itemName: string, pool: string[]): Promise<string[]> {
+    if (pool.length === 0) return []
+    try {
+      const content = await this.chat(
+        TAG_SYSTEM_PROMPT,
+        buildTagPrompt(itemName, pool),
+        tagFormat(pool),
+        TAG_TIMEOUT_MS,
+      )
+      return parseSuggestedTags(content, pool)
+    } catch (err) {
+      logger.warn({ err, itemName }, 'Ollama tag suggestion failed')
+      return []
+    }
+  }
+
+  /**
+   * Reduce a branded supermarket product name to the generic shopping name an
+   * `Item` should carry (spec §8.4) — "Tesco British Semi Skimmed Milk 2.272L"
+   * to "milk". This is what keeps a barcode library from fragmenting one
+   * concept into a row per brand (§9.2).
+   *
+   * Null on any failure, leaving the caller its deterministic result.
+   */
+  async canonicaliseProduct(productName: string): Promise<string | null> {
+    try {
+      const content = await this.chat(
+        CANONICAL_SYSTEM_PROMPT,
+        buildCanonicalPrompt(productName),
+        CANONICAL_FORMAT,
+        CANONICAL_TIMEOUT_MS,
+      )
+      return parseCanonicalName(content)
+    } catch (err) {
+      logger.warn({ err, productName }, 'Ollama product canonicalisation failed')
       return null
     }
   }
@@ -371,6 +429,101 @@ export function parseExtractedRecipe(content: string): ExtractedRecipe | null {
     ingredientLines,
     steps: toTrimmedStrings(o.steps),
   }
+}
+
+const TAG_SYSTEM_PROMPT =
+  'You label household grocery items with tags from a fixed list. You only ever ' +
+  'choose from the list given. Always reply with strict JSON only.'
+
+/** The tag schema is built per call, because the enum *is* the household's pool. */
+function tagFormat(pool: string[]) {
+  return {
+    type: 'object',
+    properties: { tags: { type: 'array', items: { enum: pool } } },
+    required: ['tags'],
+    additionalProperties: false,
+  }
+}
+
+/** Build the tag-suggestion prompt for an item name and the available pool. Pure. */
+export function buildTagPrompt(itemName: string, pool: string[]): string {
+  return [
+    `Which of these tags apply to the grocery item "${itemName}"?`,
+    '',
+    `Available tags: ${pool.join(', ')}`,
+    '',
+    'Rules:',
+    '- Choose only from the available tags. Never invent one.',
+    '- Choose only tags that clearly apply. Returning none is a valid answer.',
+    '- Reply as {"tags":["dairy","chilled"]}.',
+  ].join('\n')
+}
+
+/**
+ * Parse a tag reply, keeping only real pool members and mapping each back to
+ * the pool's own spelling so a case difference can't create a near-duplicate.
+ * Order follows the pool, not the model, and repeats collapse. Pure.
+ */
+export function parseSuggestedTags(content: string, pool: string[]): string[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return []
+  }
+  const raw =
+    parsed && typeof parsed === 'object' && Array.isArray((parsed as { tags?: unknown }).tags)
+      ? (parsed as { tags: unknown[] }).tags
+      : Array.isArray(parsed)
+        ? parsed
+        : []
+
+  const chosen = new Set(
+    raw.filter((t): t is string => typeof t === 'string').map((t) => t.trim().toLowerCase()),
+  )
+  return pool.filter((tag) => chosen.has(tag.toLowerCase()))
+}
+
+const CANONICAL_SYSTEM_PROMPT =
+  'You convert branded supermarket product names into the generic name a ' +
+  'shopping list would use. Always reply with strict JSON only.'
+
+const CANONICAL_FORMAT = {
+  type: 'object',
+  properties: { canonicalName: { type: 'string' } },
+  required: ['canonicalName'],
+  additionalProperties: false,
+} as const
+
+/** Build the canonicalisation prompt for one product name. Pure. */
+export function buildCanonicalPrompt(productName: string): string {
+  return [
+    `Give the generic shopping name for this product: "${productName}"`,
+    '',
+    'Rules:',
+    '- Drop the brand, the pack size and any marketing words.',
+    '- Keep the distinction a shopper actually cares about ("semi skimmed milk",',
+    '  "smoked streaky bacon"), but not the packaging ("500ml bottle").',
+    '- Singular, lower case, no punctuation.',
+    '- Reply as {"canonicalName":"semi skimmed milk"}.',
+  ].join('\n')
+}
+
+/** Parse a canonicalisation reply. Null unless it is a usable name. Pure. */
+export function parseCanonicalName(content: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const name = (parsed as { canonicalName?: unknown }).canonicalName
+  if (typeof name !== 'string') return null
+  const trimmed = name.trim()
+  // A model that echoes the whole packet name has not canonicalised anything,
+  // and an empty answer is not one either.
+  return trimmed && trimmed.length <= 80 ? trimmed : null
 }
 
 /**

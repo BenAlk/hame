@@ -35,9 +35,19 @@ export async function getNormaliser(): Promise<IngredientNormaliser> {
  * when there is something to run it on.
  */
 export async function getRecipeExtractor(): Promise<RecipeExtractor | null> {
+  const llm = await getLlm()
+  return llm ? (pageText) => llm.extractRecipe(pageText) : null
+}
+
+/**
+ * The configured Ollama normaliser, or null when the household isn't running
+ * one. For the jobs that are *only* worth doing with a model — tag suggestion,
+ * product canonicalisation — where there is no deterministic layer to fall back
+ * to and the caller simply does without.
+ */
+export async function getLlm(): Promise<LlmNormaliser | null> {
   const normaliser = await getNormaliser()
-  if (!(normaliser instanceof LlmNormaliser)) return null
-  return (pageText) => normaliser.extractRecipe(pageText)
+  return normaliser instanceof LlmNormaliser ? normaliser : null
 }
 
 /**

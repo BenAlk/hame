@@ -348,7 +348,11 @@ secure context, so scanning works over your HTTPS domain but not over a plain `h
 A code Hame has seen before is resolved on your own server and never leaves your network. The first
 time a code appears, Hame asks [Open Food Facts](https://world.openfoodfacts.org) — a free, open
 product database needing no account — for the product name, so you can match it to an existing item
-instead of typing it. That sends the barcode and nothing else. Turn it off under
+instead of typing it. Packet names are reduced towards the generic name a shopping list would use
+("Tesco British Semi Skimmed Milk 2.272L" → "semi skimmed milk") and offered against what you
+already have, so a new brand of milk stocks your existing **Milk** rather than becoming a second
+item — the brand name is still kept on the barcode itself. That reduction is sharper with a
+[language model configured](#ingredient-normalisation-llm), but works without one. That sends the barcode and nothing else. Turn it off under
 **Settings → Pantry** to keep every scan local; scanning still works, you just name new products
 yourself. Either way the code is remembered, so the library fills up as you shop.
 

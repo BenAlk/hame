@@ -20,6 +20,8 @@ function resolution(over: Partial<BarcodeResolution> = {}): BarcodeResolution {
     code: '5000112637922',
     item: null,
     suggestion: null,
+    canonicalName: null,
+    match: null,
     lookupEnabled: true,
     ...over,
   }
@@ -54,6 +56,43 @@ describe('rowFromResolution', () => {
     )
     expect(result).toMatchObject({ itemId: null, itemName: 'Oat Milk', label: 'Oat Milk' })
     expect(result.linked).toBe(false)
+  })
+
+  it('offers a matched existing item without treating it as already linked', () => {
+    const result = rowFromResolution(
+      resolution({
+        suggestion: {
+          name: 'Tesco British Semi Skimmed Milk 2.272L',
+          brand: 'Tesco',
+          quantity: null,
+        },
+        canonicalName: 'semi skimmed milk',
+        match: milk,
+      }),
+      'k1',
+    )
+    // The existing item wins over the canonical name, so a second brand of milk
+    // stocks the milk already there rather than minting a near-duplicate.
+    expect(result).toMatchObject({ itemId: 'i1', itemName: 'Milk', quantity: 2 })
+    // Still unlinked, so committing teaches this code against that item.
+    expect(result.linked).toBe(false)
+    // The packet name is kept as the label, so a multi-barcode item stays legible.
+    expect(result.label).toBe('Tesco British Semi Skimmed Milk 2.272L')
+  })
+
+  it('pre-fills the canonical name over the packet name when nothing matched', () => {
+    const result = rowFromResolution(
+      resolution({
+        suggestion: {
+          name: 'Tesco British Semi Skimmed Milk 2.272L',
+          brand: 'Tesco',
+          quantity: null,
+        },
+        canonicalName: 'semi skimmed milk',
+      }),
+      'k1',
+    )
+    expect(result).toMatchObject({ itemId: null, itemName: 'semi skimmed milk' })
   })
 
   it('leaves the name blank when nothing is known', () => {

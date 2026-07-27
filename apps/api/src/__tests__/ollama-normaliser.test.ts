@@ -3,8 +3,15 @@ import { DictionaryNormaliser } from '@hame/shared'
 
 vi.mock('../lib/logger.js', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 
-const { LlmNormaliser, buildNormalisePrompt, parseLlmResponse, timeoutFor, parseExtractedRecipe } =
-  await import('../integrations/ollama/index.js')
+const {
+  LlmNormaliser,
+  buildNormalisePrompt,
+  parseLlmResponse,
+  timeoutFor,
+  parseExtractedRecipe,
+  parseSuggestedTags,
+  parseCanonicalName,
+} = await import('../integrations/ollama/index.js')
 
 const settings = { url: 'http://ollama.test', model: 'llama3.1' }
 
@@ -257,5 +264,79 @@ describe('LlmNormaliser.extractRecipe', () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'))
     const out = await new LlmNormaliser(settings, new DictionaryNormaliser()).extractRecipe('…')
     expect(out).toBeNull()
+  })
+})
+
+describe('parseSuggestedTags', () => {
+  const pool = ['baking', 'chilled', 'dairy']
+
+  it('keeps only real pool members, in pool order', () => {
+    expect(parseSuggestedTags('{"tags":["dairy","baking"]}', pool)).toEqual(['baking', 'dairy'])
+  })
+
+  it('maps a case difference back to the pool spelling', () => {
+    // Returning "Dairy" must not become a second tag alongside "dairy".
+    expect(parseSuggestedTags('{"tags":["DAIRY"]}', pool)).toEqual(['dairy'])
+  })
+
+  it('drops anything not in the pool', () => {
+    expect(parseSuggestedTags('{"tags":["frozen","dairy"]}', pool)).toEqual(['dairy'])
+  })
+
+  it('collapses repeats', () => {
+    expect(parseSuggestedTags('{"tags":["dairy","dairy"]}', pool)).toEqual(['dairy'])
+  })
+
+  it('returns nothing for malformed or empty replies', () => {
+    expect(parseSuggestedTags('not json {', pool)).toEqual([])
+    expect(parseSuggestedTags('{"tags":[]}', pool)).toEqual([])
+  })
+})
+
+describe('parseCanonicalName', () => {
+  it('reads the canonical name', () => {
+    expect(parseCanonicalName('{"canonicalName":"semi skimmed milk"}')).toBe('semi skimmed milk')
+  })
+
+  it('rejects blank, missing, over-long or malformed answers', () => {
+    expect(parseCanonicalName('{"canonicalName":"  "}')).toBeNull()
+    expect(parseCanonicalName('{}')).toBeNull()
+    expect(parseCanonicalName(`{"canonicalName":"${'x'.repeat(81)}"}`)).toBeNull()
+    expect(parseCanonicalName('not json {')).toBeNull()
+  })
+})
+
+describe('LlmNormaliser.suggestTags', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('compiles the pool into the reply schema so an invented tag is impossible', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: { content: '{"tags":["dairy"]}' } }),
+    } as Response)
+
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    const out = await normaliser.suggestTags('milk', ['dairy', 'chilled'])
+
+    expect(out).toEqual(['dairy'])
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0]?.[1]?.body as string)
+    expect(body.format.properties.tags.items.enum).toEqual(['dairy', 'chilled'])
+  })
+
+  it('never calls out for an empty pool', async () => {
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    expect(await normaliser.suggestTags('milk', [])).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('returns nothing when the model is unreachable', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'))
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    expect(await normaliser.suggestTags('milk', ['dairy'])).toEqual([])
   })
 })

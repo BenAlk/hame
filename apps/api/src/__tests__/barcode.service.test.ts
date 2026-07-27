@@ -5,9 +5,11 @@ const barcodeUpsert = vi.fn()
 const barcodeDelete = vi.fn()
 const itemFindUnique = vi.fn()
 const itemFindFirst = vi.fn()
+const itemFindMany = vi.fn()
 const itemCreate = vi.fn()
 const settingsUpsert = vi.fn()
 const lookupBarcode = vi.fn()
+const getLlm = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
@@ -16,11 +18,22 @@ vi.mock('../lib/prisma.js', () => ({
       upsert: barcodeUpsert,
       delete: barcodeDelete,
     },
-    item: { findUnique: itemFindUnique, findFirst: itemFindFirst, create: itemCreate },
+    item: {
+      findUnique: itemFindUnique,
+      findFirst: itemFindFirst,
+      findMany: itemFindMany,
+      create: itemCreate,
+    },
     householdSettings: { upsert: settingsUpsert },
   },
 }))
-vi.mock('../integrations/open-food-facts/index.js', () => ({ lookupBarcode }))
+// The real `stripBrand` is kept: it's the deterministic floor under the model,
+// so these tests should exercise it rather than a stand-in.
+vi.mock('../integrations/open-food-facts/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../integrations/open-food-facts/index.js')>()),
+  lookupBarcode,
+}))
+vi.mock('../services/normaliser.service.js', () => ({ getLlm }))
 
 const { resolveBarcode, linkBarcode, unlinkBarcode } =
   await import('../services/barcode.service.js')
@@ -64,13 +77,18 @@ beforeEach(() => {
     barcodeDelete,
     itemFindUnique,
     itemFindFirst,
+    itemFindMany,
     itemCreate,
     settingsUpsert,
     lookupBarcode,
+    getLlm,
   ]) {
     m.mockReset()
   }
   settingsUpsert.mockResolvedValue(settings(true))
+  // No model configured is the default: everything below must work without one.
+  getLlm.mockResolvedValue(null)
+  itemFindMany.mockResolvedValue([])
 })
 
 describe('resolveBarcode', () => {
@@ -118,6 +136,80 @@ describe('resolveBarcode', () => {
     expect(result.item).toBeNull()
     expect(result.suggestion).toBeNull()
     expect(result.lookupEnabled).toBe(true)
+  })
+})
+
+describe('resolveBarcode — canonical name and match', () => {
+  const branded = { name: 'Tesco British Semi Skimmed Milk 2.272L', brand: 'Tesco', quantity: null }
+
+  it('strips the brand and pack size without a model', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(branded)
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(result.canonicalName).toBe('British Semi Skimmed Milk')
+    // The packet name survives untouched for the label.
+    expect(result.suggestion?.name).toBe(branded.name)
+  })
+
+  it('prefers the model canonical name over the deterministic strip', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(branded)
+    const canonicaliseProduct = vi.fn().mockResolvedValue('semi skimmed milk')
+    getLlm.mockResolvedValue({ canonicaliseProduct })
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(canonicaliseProduct).toHaveBeenCalledWith(branded.name)
+    expect(result.canonicalName).toBe('semi skimmed milk')
+  })
+
+  it('falls back to the strip when the model gives nothing', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(branded)
+    getLlm.mockResolvedValue({ canonicaliseProduct: vi.fn().mockResolvedValue(null) })
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(result.canonicalName).toBe('British Semi Skimmed Milk')
+  })
+
+  /** The whole point: a second brand of milk stocks the milk already there. */
+  it('matches an existing item so a brand does not become a new one', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(branded)
+    getLlm.mockResolvedValue({ canonicaliseProduct: vi.fn().mockResolvedValue('milk') })
+    itemFindMany.mockResolvedValue([item])
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(result.match?.name).toBe('Milk')
+    // Offered, not applied — nothing is linked until the batch is committed.
+    expect(result.item).toBeNull()
+  })
+
+  it('ranks a canonical match above a packet-name one', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(branded)
+    getLlm.mockResolvedValue({ canonicaliseProduct: vi.fn().mockResolvedValue('milk') })
+    // Both exist; the order the database returns them in must not decide.
+    itemFindMany.mockResolvedValue([{ ...item, id: 'i2', name: branded.name }, item])
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(result.match?.id).toBe('i1')
+  })
+
+  it('leaves both null when there was no suggestion to work from', async () => {
+    barcodeFindUnique.mockResolvedValue(null)
+    lookupBarcode.mockResolvedValue(null)
+
+    const result = await resolveBarcode('5000112637922')
+
+    expect(result.canonicalName).toBeNull()
+    expect(result.match).toBeNull()
+    expect(itemFindMany).not.toHaveBeenCalled()
   })
 })
 

@@ -1,8 +1,9 @@
 import type { Prisma } from '@prisma/client'
-import type { CreateItemInput, Item, UpdateItemInput } from '@hame/shared'
+import type { CreateItemInput, Item, SuggestedTags, UpdateItemInput } from '@hame/shared'
 import { QUICK_ADD_TAG } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
+import { getLlm } from './normaliser.service.js'
 import { toTag } from './tag.service.js'
 import { toShop } from './shop.service.js'
 
@@ -134,6 +135,61 @@ export async function findOrCreateItemByName(
     },
   })
   return created.id
+}
+
+/**
+ * Suggest tags for an item name from the household's existing pool (spec §12).
+ *
+ * The pool is the whole point: suggestions are a *choice* from the tags that
+ * exist, never new vocabulary, so this can't quietly grow a second set of
+ * near-duplicates alongside the ones in use. An empty pool, or no configured
+ * model, is reported as `UNAVAILABLE` rather than as "no tags apply" — the same
+ * empty list, but not the same situation for a caller to explain.
+ */
+export async function suggestTags(name: string): Promise<SuggestedTags> {
+  const llm = await getLlm()
+  if (!llm) return { tags: [], source: 'UNAVAILABLE' }
+
+  const pool = await prisma.tag.findMany({ orderBy: { name: 'asc' } })
+  if (pool.length === 0) return { tags: [], source: 'UNAVAILABLE' }
+
+  const chosen = await llm.suggestTags(
+    name.trim(),
+    pool.map((t) => t.name),
+  )
+  const byName = new Map(pool.map((t) => [t.name, t]))
+  return {
+    tags: chosen.flatMap((tagName) => {
+      const tag = byName.get(tagName)
+      return tag ? [toTag(tag)] : []
+    }),
+    source: 'LLM',
+  }
+}
+
+/**
+ * Find an item matching any of `names`, case-insensitively, returning the one
+ * whose name appears **earliest** in the list. Callers pass candidates in
+ * best-first order, so the priority is theirs to state rather than the
+ * database's to guess — and one query answers all of them.
+ */
+export async function findItemByNames(names: string[]): Promise<Item | null> {
+  const candidates = names.map((n) => n.trim()).filter(Boolean)
+  if (candidates.length === 0) return null
+
+  const found = await prisma.item.findMany({
+    where: { OR: candidates.map((name) => ({ name: { equals: name, mode: 'insensitive' } })) },
+    include: itemInclude,
+  })
+  if (found.length === 0) return null
+
+  const rank = new Map(candidates.map((name, i) => [name.toLowerCase(), i]))
+  const best = found.reduce((a, b) =>
+    (rank.get(a.name.toLowerCase()) ?? Infinity) <= (rank.get(b.name.toLowerCase()) ?? Infinity)
+      ? a
+      : b,
+  )
+  return toItem(best)
 }
 
 // ── internals ──────────────────────────────────────────────────────────────

@@ -62,6 +62,32 @@ export function toSuggestion(body: unknown): BarcodeSuggestion | null {
   }
 }
 
+/**
+ * Reduce a packet name towards a generic one without asking anything of a
+ * model: drop the brand where the name simply repeats it, and drop a trailing
+ * pack size, which OFF reports separately anyway. Deliberately conservative —
+ * it only removes what it is certain about, so "Tesco British Semi Skimmed
+ * Milk" becomes "British Semi Skimmed Milk" rather than guessing further.
+ *
+ * This is the floor the LLM improves on, and the answer when there is no model.
+ * Pure.
+ */
+export function stripBrand(name: string, brand: string | null): string {
+  let out = name.trim()
+  if (brand) {
+    const escaped = brand.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Only at the ends, where a brand actually sits — never mid-name, or
+    // "Tesco" would be cut out of a product genuinely called after it.
+    out = out
+      .replace(new RegExp(`^${escaped}\\b[\\s'’-]*`, 'i'), '')
+      .replace(new RegExp(`[\\s'’-]*\\b${escaped}$`, 'i'), '')
+      .trim()
+  }
+  // A trailing pack size: "2.272L", "500 g", "6 x 330ml".
+  out = out.replace(/[\s,]*\b[\d.]+\s*(?:x\s*[\d.]+\s*)?(?:kg|g|mg|l|ml|cl|pk|pack)\b\.?$/i, '')
+  return out.trim() || name.trim()
+}
+
 /** Look a barcode up. Returns `null` for miss, timeout, or any failure. */
 export async function lookupBarcode(code: string): Promise<BarcodeSuggestion | null> {
   const controller = new AbortController()

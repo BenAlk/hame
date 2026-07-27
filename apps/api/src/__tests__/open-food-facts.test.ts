@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toSuggestion } from '../integrations/open-food-facts/index.js'
+import { toSuggestion, stripBrand } from '../integrations/open-food-facts/index.js'
 
 describe('toSuggestion', () => {
   it('maps a found product', () => {
@@ -42,5 +42,34 @@ describe('toSuggestion', () => {
     expect(toSuggestion(null)).toBeNull()
     expect(toSuggestion('nope')).toBeNull()
     expect(toSuggestion({ status: 1, product: { product_name: 42, brands: [] } })).toBeNull()
+  })
+})
+
+describe('stripBrand', () => {
+  it('drops a leading brand and a trailing pack size', () => {
+    expect(stripBrand('Tesco British Semi Skimmed Milk 2.272L', 'Tesco')).toBe(
+      'British Semi Skimmed Milk',
+    )
+    expect(stripBrand('Alpro Oat Drink 1 l', 'Alpro')).toBe('Oat Drink')
+    expect(stripBrand('Coca-Cola Zero 6 x 330ml', 'Coca-Cola')).toBe('Zero')
+  })
+
+  it('drops a trailing brand too', () => {
+    expect(stripBrand('Baked Beans Heinz', 'Heinz')).toBe('Baked Beans')
+  })
+
+  it('leaves a brand alone in the middle of a name', () => {
+    // Cutting mid-name would mangle a product genuinely named after its brand.
+    expect(stripBrand('Made with Tesco Milk', 'Tesco')).toBe('Made with Tesco Milk')
+  })
+
+  it('works with no brand, and never strips a name down to nothing', () => {
+    expect(stripBrand('Semi Skimmed Milk', null)).toBe('Semi Skimmed Milk')
+    expect(stripBrand('Tesco', 'Tesco')).toBe('Tesco')
+    expect(stripBrand('500g', null)).toBe('500g')
+  })
+
+  it('is case-insensitive about the brand', () => {
+    expect(stripBrand('TESCO Semi Skimmed Milk', 'Tesco')).toBe('Semi Skimmed Milk')
   })
 })

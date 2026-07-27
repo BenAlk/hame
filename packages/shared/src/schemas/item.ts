@@ -30,6 +30,29 @@ export type CreateItemInput = z.infer<typeof CreateItemSchema>
 export const UpdateItemSchema = ItemFields.partial().refine(atLeastOneField, atLeastOneFieldMessage)
 export type UpdateItemInput = z.infer<typeof UpdateItemSchema>
 
+/**
+ * Ask for tag suggestions for an item name (spec §12 LLM auto-tagging). Takes a
+ * bare name rather than an item id, so the suggestion can be had while a new
+ * item is still being typed and has nothing to look up.
+ */
+export const SuggestTagsSchema = z.object({
+  name: z.string().min(1, 'Item name is required').max(80, 'Item name is too long'),
+})
+export type SuggestTagsInput = z.infer<typeof SuggestTagsSchema>
+
+/**
+ * Suggested tags, always drawn from the household's **existing** pool — the
+ * model chooses from what is there rather than inventing vocabulary, so this
+ * can never quietly grow a second set of near-duplicate tags. `source` lets a
+ * caller tell "the model had no suggestions" from "there is no model", which are
+ * the same empty list but not the same situation.
+ */
+export const SuggestedTagsSchema = z.object({
+  tags: z.array(TagSchema),
+  source: z.enum(['LLM', 'UNAVAILABLE']),
+})
+export type SuggestedTags = z.infer<typeof SuggestedTagsSchema>
+
 /** Public representation of an item, with its tags expanded. */
 export const ItemSchema = z.object({
   id: z.string().uuid(),

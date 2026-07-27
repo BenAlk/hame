@@ -29,7 +29,7 @@ export interface ScannedRow {
  * second and later shops fast.
  */
 export function rowFromResolution(resolution: BarcodeResolution, key: string): ScannedRow {
-  const { code, item, suggestion } = resolution
+  const { code, item, suggestion, canonicalName, match } = resolution
   if (item) {
     return {
       key,
@@ -43,14 +43,31 @@ export function rowFromResolution(resolution: BarcodeResolution, key: string): S
       expiry: '',
     }
   }
+  // An existing item the product name matched: offered rather than applied, so
+  // it is still `linked: false` and the code is taught on commit. This is what
+  // stops a second brand of milk becoming a second "milk" item.
+  if (match) {
+    return {
+      key,
+      code,
+      label: suggestion?.name ?? null,
+      itemId: match.id,
+      itemName: match.name,
+      linked: false,
+      quantity: match.defaultQuantity ?? 1,
+      unit: match.defaultUnit,
+      expiry: '',
+    }
+  }
   return {
     key,
     code,
     label: suggestion?.name ?? null,
     itemId: null,
-    // A suggestion pre-fills the name to confirm or correct; a miss leaves it
-    // blank for typing. Either way the code is learned on commit.
-    itemName: suggestion?.name ?? '',
+    // The generic name where one could be worked out, else the packet name to
+    // correct; a miss leaves it blank for typing. Either way the code is
+    // learned on commit.
+    itemName: canonicalName ?? suggestion?.name ?? '',
     linked: false,
     quantity: 1,
     unit: null,

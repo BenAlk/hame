@@ -2751,6 +2751,79 @@ about the real path.
 
 ---
 
+### Phase 16 — The model as a chooser ✅ Complete (27-07-2026)
+
+Phase 15 made the model's output a constrained shape. Phase 16 uses that
+constraint for something it makes newly safe: giving the model a **fixed set to
+choose from** rather than a blank page. Both jobs here are ones where a free
+answer would be actively harmful — an invented tag, or a branded product name
+taken literally — and both are cases where the schema does the enforcing.
+
+**Goal**: Let the model pick from what the household already has, so it can
+tidy up rather than proliferate.
+
+**Design**:
+
+- **Tag suggestion, from the pool only.** `POST /api/items/suggest-tags` takes a
+  bare item name (not an id, so it can answer while an item is still being
+  typed) and returns tags from the household's existing pool. The pool is
+  compiled straight into the reply schema's **enum**, so a tag that does not
+  exist is not merely discouraged by the prompt — the grammar cannot emit it.
+  That turns this feature's classic failure, a model inventing a plausible
+  near-duplicate of a tag already in use, from something to filter afterwards
+  into something structurally impossible. `source` distinguishes "the model
+  chose none" from "there is no model", which are the same empty list but not
+  the same situation to explain.
+- **Barcode names, reduced before they fragment the pantry.** Phase 14 designed
+  for "suggest and match, never auto-create" but only half-delivered it: an
+  Open Food Facts hit pre-filled the **packet** name, and matching it to an
+  existing `Item` was left to the user's typing. So "Tesco British Semi Skimmed
+  Milk 2.272L" was one careless commit away from becoming its own item,
+  breaking recipe linking and low-stock aggregation (§9.2) exactly as that
+  phase warned. The name is now reduced first and looked up against what the
+  household has.
+- **Deterministic floor, model on top.** `stripBrand` removes a leading or
+  trailing brand and a trailing pack size — conservative, pure, and enough to
+  be useful with no model at all. The LLM improves on it when configured. The
+  candidates are then tried **most-canonical first**, so a household that
+  already has "milk" matches that rather than minting "British Semi Skimmed
+  Milk".
+
+**Delivered**: `LlmNormaliser` gained `suggestTags` and `canonicaliseProduct`,
+both on the shared schema-constrained `chat` helper, both returning empty/null
+on any failure — these sit in front of someone waiting (a name being typed, a
+barcode just scanned), so they get a short budget and simply give up rather than
+stall the interaction. `parseSuggestedTags` maps each choice back to the pool's
+own spelling, so even a case difference cannot become a second tag.
+
+`BarcodeResolution` grew `canonicalName` and `match`. `match` is **offered, not
+applied**: the row stays unlinked so committing still teaches the code, which
+means a second brand of milk stocks the milk already there instead of creating a
+near-duplicate. `findItemByNames` answers all candidates in one query and ranks
+by the caller's order rather than the database's — the priority is the caller's
+to state. The packet name survives untouched as the row's label, so a
+multi-barcode item stays legible.
+
+**Not built: the item-tag editing UI.** `Item.tags` and `tagIds` exist on the
+model and API, but nothing in `apps/web` sets them — items are tagged by the
+seed alone. The suggest-tags endpoint therefore has no caller yet, which was a
+deliberate choice (§12): the LLM plumbing lands now, and auto-tagging is
+correctly sized later as "build the tag-editing surface, then wire suggestions
+into it" rather than as a button.
+
+**Verified**: typecheck / lint / format green, **578 API + 73 web + 15
+bin-scraper tests** (26 new), all builds clean. Coverage includes the pool
+appearing as the schema enum, the case-folding that prevents duplicate tags, the
+deterministic strip against real packet names (leading brand, trailing brand,
+mid-name brand left alone, never stripping a name to nothing), the model's
+canonical name winning over the strip and the strip surviving a model that
+returns nothing, candidate ranking when several items match, and the scan row
+preferring a matched item over a canonical name while staying unlinked. **Not
+yet exercised against a live Ollama** — as with Phase 15, the prompts are Ben's
+check against his own server.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -2796,7 +2869,15 @@ about the real path.
 - Self-hosted **Ollama** on TrueNAS
 - On new Item creation, prompt LLM with item name → suggested tags from existing tag pool
 - User confirms/edits before save
-- Endpoint: `POST /api/items/suggest-tags`
+- Endpoint: `POST /api/items/suggest-tags` — **built** (§10 Phase 16). The pool is
+  compiled into the reply schema's enum, so the model chooses from the household's
+  tags and cannot invent a near-duplicate of one.
+- **Outstanding prerequisite: there is no item-tag editing UI.** `Item.tags` and
+  `tagIds` exist on the model and API, but nothing in `apps/web` sets them — items
+  are tagged only by the seed, and `quick-add` is the sole tag doing work. So the
+  endpoint has no caller yet. Auto-tagging is not "wire up a suggestion button";
+  it needs the tag-editing surface first (the pantry item-detail modal is the
+  natural home), and should be sized as such.
 
 ### Ingredient Normalisation
 
