@@ -2670,6 +2670,87 @@ exercised from a LAN-IP dev URL.
 
 ---
 
+### Phase 15 — A stricter contract with the model ✅ Complete (27-07-2026)
+
+Phase 4.5 put a language model behind ingredient normalisation but asked it for
+JSON on trust, and gave up entirely on a page with no structured data. Phase 15
+tightens what is asked of the model, is honest about what comes back, and puts
+the model to work on the one import case that previously just failed.
+
+**Goal**: Make the LLM path predictable, and let it rescue an import the parser
+cannot do at all.
+
+**Design**:
+
+- **A schema, not a hope.** The call sent `format: 'json'`, which guarantees
+  syntactically valid JSON and nothing about its shape — the tolerant parser
+  existed to absorb that. Ollama 0.5+ accepts a **JSON Schema** in `format` and
+  constrains decoding to it. `baseUnit`'s enum is spread from `BASE_UNITS`, so
+  the grammar the model generates under and the `BaseUnitSchema` that validates
+  every other layer cannot drift: the model becomes one more consumer of the
+  shared source of truth (§9.1) rather than the one component free-handing its
+  contract. Only `index` and `canonicalName` are required — requiring every
+  field would force an explicit `null` for each silence, and the merge reads
+  "said nothing" differently from "said none", so a required field would let the
+  model null out a value the deterministic parser got right.
+- **Say when it didn't work.** An unreachable server already warned; a reply
+  that parsed but carried nothing usable did not, so the draft showed
+  dictionary-quality output labelled as the model's. Coverage is now counted
+  after the merge — none applied and partially applied each get their own
+  warning, in the same plain language as the existing ones.
+- **A warm-up that survives the modal.** The preload didn't set `keep_alive`, so
+  Ollama's 5-minute default routinely evicted the model while the user was still
+  finding a URL — paying the load cost twice and saving nothing.
+- **An explicit context window.** Ollama applies a small default whatever the
+  model supports and **silently truncates** past it, which drops the tail of a
+  long ingredient list and reads as the model ignoring the last few lines. The
+  batch timeout is likewise scaled by list length, since it bounds a whole
+  recipe rather than one line.
+- **Extraction as a last resort, never a first.** A page with no schema.org
+  Recipe node failed outright. The structured-data path stays first — it is
+  exact, instant and free — but when there is nothing to parse, the configured
+  model reads the page text instead. It returns ingredient lines **verbatim**
+  and the ordinary normalisation pass then runs on them, so extraction and
+  normalisation stay two simple prompts rather than one hard one.
+
+**Delivered**: Both prompts share one schema-constrained, non-streaming `chat`
+helper. `RESPONSE_FORMAT` and `EXTRACT_FORMAT` are JSON Schemas; the tolerant
+parsers remain as defence in depth, since an Ollama older than 0.5 ignores an
+object `format` and degrades with a visible warning rather than a broken import.
+
+The extractor is **injected**, not imported: `recipe-import` defines a
+`RecipeExtractor` type and stays dependency-free and testable without a model,
+while `getRecipeExtractor()` supplies the Ollama-backed one only when the
+household actually runs the LLM strategy — so the fallback is opt-in by
+configuration, exactly like normalisation itself. What can be recovered
+deterministically is: the page's `og:image` is read by regex rather than asked
+of the model, and the source URL is the module's own. A draft that came from
+extraction says so in its warnings, because a recipe read off page text is a
+draft to check rather than a record to trust.
+
+`toPageText` reduces a page to readable text — scripts, styles, nav, header,
+footer and comments stripped, block boundaries kept as newlines so ingredient
+lines survive as lines, and the entities that actually appear in recipe text
+(`&frac12;`, `&nbsp;`) decoded. `focusOnRecipe` then narrows it to a window
+**anchored on the last "ingredient" mention** rather than taking the first N
+characters: the sites this fallback exists for are food blogs, where the recipe
+sits below several thousand words of story, and a naive truncation reliably
+keeps the story and drops the recipe. It anchors on the last mention because a
+page often names the word in its nav or intro long before the recipe card.
+
+**Verified**: typecheck / lint / format green, **552 API + 71 web + 15
+bin-scraper tests** (20 new), all builds clean. The new tests cover the schema
+and options actually sent, both coverage warnings, the timeout curve, the
+extraction parser's refusal to draft a recipe with no ingredients, and the four
+import paths — structured data never calling the extractor, extraction filling a
+bare page, and the unchanged hard failure both when no extractor is configured
+and when the extractor finds nothing. **Not yet exercised against a live
+Ollama**: the schema `format` and the extraction prompt are Ben's check against
+his own server, and the repo's own lesson applies — host-side green says nothing
+about the real path.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security

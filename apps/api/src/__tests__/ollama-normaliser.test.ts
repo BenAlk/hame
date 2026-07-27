@@ -3,7 +3,7 @@ import { DictionaryNormaliser } from '@hame/shared'
 
 vi.mock('../lib/logger.js', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 
-const { LlmNormaliser, buildNormalisePrompt, parseLlmResponse, timeoutFor } =
+const { LlmNormaliser, buildNormalisePrompt, parseLlmResponse, timeoutFor, parseExtractedRecipe } =
   await import('../integrations/ollama/index.js')
 
 const settings = { url: 'http://ollama.test', model: 'llama3.1' }
@@ -187,5 +187,75 @@ describe('LlmNormaliser', () => {
     expect(ingredients[0]).toMatchObject({ canonicalName: 'onion', source: 'DICTIONARY' })
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toMatch(/language model/i)
+  })
+})
+
+describe('parseExtractedRecipe', () => {
+  const good = {
+    title: 'Pancakes',
+    description: 'Fluffy.',
+    servings: 2,
+    prepTimeMinutes: 10,
+    cookTimeMinutes: null,
+    ingredientLines: ['200g plain flour', '2 eggs'],
+    steps: ['Mix.', 'Fry.'],
+  }
+
+  it('reads a well-formed extraction', () => {
+    expect(parseExtractedRecipe(JSON.stringify(good))).toEqual(good)
+  })
+
+  it('defaults servings to 4 when the page states no yield', () => {
+    const out = parseExtractedRecipe(JSON.stringify({ ...good, servings: null }))
+    expect(out?.servings).toBe(4)
+  })
+
+  it('rejects a reply with no ingredients rather than drafting an empty recipe', () => {
+    expect(parseExtractedRecipe(JSON.stringify({ ...good, ingredientLines: [] }))).toBeNull()
+    expect(parseExtractedRecipe(JSON.stringify({ ...good, title: '  ' }))).toBeNull()
+  })
+
+  it('returns null for malformed JSON', () => {
+    expect(parseExtractedRecipe('not json {')).toBeNull()
+  })
+
+  it('drops blank and non-string lines', () => {
+    const out = parseExtractedRecipe(
+      JSON.stringify({ ...good, ingredientLines: ['2 eggs', '', 7, '  '] }),
+    )
+    expect(out?.ingredientLines).toEqual(['2 eggs'])
+  })
+})
+
+describe('LlmNormaliser.extractRecipe', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('returns the extracted recipe', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        message: {
+          content: JSON.stringify({
+            title: 'Pancakes',
+            ingredientLines: ['2 eggs'],
+            steps: ['Fry.'],
+          }),
+        },
+      }),
+    } as Response)
+
+    const out = await new LlmNormaliser(settings, new DictionaryNormaliser()).extractRecipe('…')
+    expect(out).toMatchObject({ title: 'Pancakes', ingredientLines: ['2 eggs'] })
+  })
+
+  it('returns null when the model is unreachable, so the import fails as before', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'))
+    const out = await new LlmNormaliser(settings, new DictionaryNormaliser()).extractRecipe('…')
+    expect(out).toBeNull()
   })
 })

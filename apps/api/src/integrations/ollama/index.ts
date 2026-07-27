@@ -18,6 +18,7 @@ import {
   type NormaliserStrategy,
 } from '@hame/shared'
 import { logger } from '../../lib/logger.js'
+import type { ExtractedRecipe } from '../recipe-import/index.js'
 
 /**
  * The batch call is bounded by a budget that grows with the list, because the
@@ -29,6 +30,13 @@ const TIMEOUT_BASE_MS = 30_000
 const TIMEOUT_PER_LINE_MS = 1_500
 const TIMEOUT_MAX_MS = 120_000
 const WARMUP_TIMEOUT_MS = 60_000
+
+/**
+ * Extraction reads a page of text and writes a whole recipe back, so it is a
+ * bigger job than the per-line normalisation batch and gets a flat, generous
+ * budget. It only ever runs on a page that would otherwise have failed outright.
+ */
+const EXTRACT_TIMEOUT_MS = 90_000
 
 /**
  * How long Ollama should hold the model in memory after a warm-up. Its default
@@ -157,9 +165,54 @@ export class LlmNormaliser implements IngredientNormaliser {
     }
   }
 
+  /**
+   * Last-resort recipe extraction for a page with no schema.org data (spec §8.5).
+   * The structured-data path is always preferred — it is exact, free and
+   * instant; this runs only when there is nothing to parse, turning a hard
+   * "no recipe data found" into a draft the user was going to review anyway.
+   *
+   * Returns the lines **verbatim** rather than pre-normalised: the caller feeds
+   * them through the ordinary {@link normalise} pass, so extraction and
+   * normalisation stay two simple prompts instead of one hard one, and the
+   * well-tested normalisation path is reused rather than duplicated.
+   *
+   * Null on anything unusable — an unreachable model, an unparseable reply, or a
+   * page that simply is not a recipe. The caller then fails as it did before.
+   */
+  async extractRecipe(pageText: string): Promise<ExtractedRecipe | null> {
+    try {
+      const content = await this.chat(
+        EXTRACT_SYSTEM_PROMPT,
+        buildExtractPrompt(pageText),
+        EXTRACT_FORMAT,
+        EXTRACT_TIMEOUT_MS,
+      )
+      return parseExtractedRecipe(content)
+    } catch (err) {
+      logger.warn({ err }, 'Ollama recipe extraction failed')
+      return null
+    }
+  }
+
   private async callOllama(rawLines: string[]): Promise<LlmIngredient[]> {
+    const content = await this.chat(
+      SYSTEM_PROMPT,
+      buildNormalisePrompt(rawLines),
+      RESPONSE_FORMAT,
+      timeoutFor(rawLines.length),
+    )
+    return parseLlmResponse(content)
+  }
+
+  /** One non-streaming, schema-constrained chat turn. Returns the raw content. */
+  private async chat(
+    system: string,
+    user: string,
+    format: unknown,
+    timeoutMs: number,
+  ): Promise<string> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutFor(rawLines.length))
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const res = await fetch(`${trimSlash(this.settings.url)}/api/chat`, {
         method: 'POST',
@@ -167,18 +220,18 @@ export class LlmNormaliser implements IngredientNormaliser {
         signal: controller.signal,
         body: JSON.stringify({
           model: this.settings.model,
-          format: RESPONSE_FORMAT,
+          format,
           stream: false,
           options: { temperature: 0, num_ctx: NUM_CTX },
           messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: buildNormalisePrompt(rawLines) },
+            { role: 'system', content: system },
+            { role: 'user', content: user },
           ],
         }),
       })
       if (!res.ok) throw new Error(await describeOllamaError(res, this.settings.model))
       const body = (await res.json()) as { message?: { content?: string } }
-      return parseLlmResponse(body.message?.content ?? '')
+      return body.message?.content ?? ''
     } finally {
       clearTimeout(timeout)
     }
@@ -248,6 +301,76 @@ export function buildNormalisePrompt(rawLines: string[]): string {
     '',
     numbered,
   ].join('\n')
+}
+
+const EXTRACT_SYSTEM_PROMPT =
+  'You read a web page and report the recipe printed on it. You never invent ' +
+  'ingredients, steps or quantities. Always reply with strict JSON only.'
+
+/** The extraction contract (see {@link RESPONSE_FORMAT} on why it is a schema). */
+const EXTRACT_FORMAT = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    description: { type: ['string', 'null'] },
+    servings: { type: ['integer', 'null'] },
+    prepTimeMinutes: { type: ['integer', 'null'] },
+    cookTimeMinutes: { type: ['integer', 'null'] },
+    ingredientLines: { type: 'array', items: { type: 'string' } },
+    steps: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['title', 'ingredientLines', 'steps'],
+  additionalProperties: false,
+} as const
+
+/** Build the extraction prompt for a page's readable text. Pure. */
+export function buildExtractPrompt(pageText: string): string {
+  return [
+    'Below is the readable text of a web page. Report the recipe it contains.',
+    '',
+    'Rules:',
+    '- ingredientLines must be copied VERBATIM as written, one string per line,',
+    '  including quantities and units ("200g plain flour", "2 large onions").',
+    '- steps are the method, in order, one string per step. Drop step numbering.',
+    '- Times are whole minutes. Use null for anything the page does not state.',
+    '- Ignore navigation, adverts, comments, and any story before the recipe.',
+    '- If the page contains no recipe, reply with an empty ingredientLines array.',
+    '',
+    '---',
+    pageText,
+  ].join('\n')
+}
+
+/**
+ * Parse an extraction reply. Tolerant in the same spirit as
+ * {@link parseLlmResponse}, but returns null unless there is a real recipe —
+ * a title and at least one ingredient. An empty or shapeless reply must fail
+ * the import rather than hand back a convincing but empty draft. Pure.
+ */
+export function parseExtractedRecipe(content: string): ExtractedRecipe | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const o = parsed as Record<string, unknown>
+
+  const title = typeof o.title === 'string' ? o.title.trim() : ''
+  const ingredientLines = toTrimmedStrings(o.ingredientLines)
+  if (!title || ingredientLines.length === 0) return null
+
+  return {
+    title,
+    description: stringOrNull(o.description) ?? null,
+    // Mirrors the JSON-LD path's default when a page states no yield.
+    servings: positiveInt(o.servings) ?? 4,
+    prepTimeMinutes: positiveInt(o.prepTimeMinutes) ?? null,
+    cookTimeMinutes: positiveInt(o.cookTimeMinutes) ?? null,
+    ingredientLines,
+    steps: toTrimmedStrings(o.steps),
+  }
 }
 
 /**
@@ -383,4 +506,15 @@ function positiveOrNull(value: unknown): number | null | undefined {
 function stringOrNull(value: unknown): string | null | undefined {
   if (value === null) return null
   return typeof value === 'string' ? value.trim() || null : undefined
+}
+
+function positiveInt(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.round(value) : null
+}
+
+function toTrimmedStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter((v): v is string => v.length > 0)
 }

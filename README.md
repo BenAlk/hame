@@ -307,7 +307,14 @@ parser (and an optional bundled dictionary) — no setup required. For best resu
 at a self-hosted [Ollama](https://ollama.com) server: in the app, go to **Settings → Ingredient
 normalisation**, choose **Language model**, enter the server URL (its installed models load into a
 dropdown), and save. If Ollama is unreachable, imports fall back to the dictionary/parser
-automatically — it's never required.
+automatically — it's never required. When the model does run but can't normalise some or all of a
+list, the import draft says so rather than quietly handing back parser output.
+
+Choosing a model also unlocks a fallback for pages that **don't** publish structured recipe data —
+personal blogs, older sites, anything without a schema.org block. Those imports used to fail with
+"No recipe data found at that URL"; with a model configured, Hame gives it the page's text and asks
+it to read the recipe off the page. Structured data is always preferred where it exists (it's exact
+and instant), and a draft that came from the page text is flagged as one to check before saving.
 
 #### Suggested model
 

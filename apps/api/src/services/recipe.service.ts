@@ -14,7 +14,7 @@ import { HttpError } from '../lib/http-error.js'
 import { itemInclude, findOrCreateItemByName, toItem } from './item.service.js'
 import { toTag } from './tag.service.js'
 import { importRecipeFromUrl } from '../integrations/recipe-import/index.js'
-import { getNormaliser } from './normaliser.service.js'
+import { getNormaliser, getRecipeExtractor } from './normaliser.service.js'
 
 const ingredientInclude = { item: { include: itemInclude } } as const
 
@@ -183,8 +183,8 @@ export async function deleteRecipe(id: string): Promise<void> {
 
 /** Import a recipe draft from a URL (spec §8.5) — not persisted until saved. */
 export async function importRecipe(url: string): Promise<ImportedRecipeDraft> {
-  const normaliser = await getNormaliser()
-  return importRecipeFromUrl(url, normaliser)
+  const [normaliser, extractor] = await Promise.all([getNormaliser(), getRecipeExtractor()])
+  return importRecipeFromUrl(url, normaliser, extractor ?? undefined)
 }
 
 // ── internals ──────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@
  */
 import { BasicNormaliser, DictionaryNormaliser, type IngredientNormaliser } from '@hame/shared'
 import { LlmNormaliser } from '../integrations/ollama/index.js'
+import type { RecipeExtractor } from '../integrations/recipe-import/index.js'
 import { getHouseholdSettings } from './household-settings.service.js'
 import { getOllamaConfig } from './ollama-config.service.js'
 
@@ -25,6 +26,18 @@ export async function getNormaliser(): Promise<IngredientNormaliser> {
     return new LlmNormaliser({ url: ollama.url, model: ollama.model }, new DictionaryNormaliser())
   }
   return new DictionaryNormaliser()
+}
+
+/**
+ * The recipe extractor to fall back on when a page carries no structured data
+ * (spec §8.5), or null when the household isn't running a model. Bound to the
+ * same configured Ollama the normaliser uses, so the fallback exists exactly
+ * when there is something to run it on.
+ */
+export async function getRecipeExtractor(): Promise<RecipeExtractor | null> {
+  const normaliser = await getNormaliser()
+  if (!(normaliser instanceof LlmNormaliser)) return null
+  return (pageText) => normaliser.extractRecipe(pageText)
 }
 
 /**
