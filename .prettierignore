@@ -9,6 +9,7 @@ apps/api/prisma/migrations
 # scraper's fixture tests reflect reality; never reformat.
 **/__fixtures__/**
 
-# Hand-aligned design docs — keep manual table formatting
-hame-specification.md
-hame-specification-public.md
+# Hand-aligned design docs — keep manual table formatting. A glob, so every
+# variant of the spec is covered: formatting only one of them silently drifts
+# them apart (emphasis markers get rewritten), and they are meant to stay in sync.
+hame-specification*.md

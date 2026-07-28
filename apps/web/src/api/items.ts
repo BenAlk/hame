@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CreateItemInput, Item, UpdateItemInput } from '@hame/shared'
+import type {
+  CreateItemInput,
+  Item,
+  SuggestTagsInput,
+  SuggestedTags,
+  UpdateItemInput,
+} from '@hame/shared'
 import { apiFetch } from './client'
 
 const ITEMS_KEY = ['items'] as const
@@ -33,6 +39,22 @@ export function useUpdateItem() {
       void qc.invalidateQueries({ queryKey: ['pantry'] })
       void qc.invalidateQueries({ queryKey: ['shopping-lists'] })
     },
+  })
+}
+
+/**
+ * Ask the model for tags, drawn from the household's existing pool (spec §12).
+ * A mutation rather than a query because it takes a bare **name**, so it also
+ * answers for an item that doesn't exist yet — there is no id to key a cache on,
+ * and the answer is wanted on demand rather than on render.
+ */
+export function useSuggestTags() {
+  return useMutation({
+    mutationFn: (body: SuggestTagsInput) =>
+      apiFetch<SuggestedTags>('/api/items/suggest-tags', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   })
 }
 

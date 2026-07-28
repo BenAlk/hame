@@ -110,6 +110,8 @@ describe('item shop assignment', () => {
     reorderIntervalDays: null,
     shopId: null,
     shop: null,
+    sectionId: null,
+    section: null,
     tags: [],
     createdById: 'u1',
     createdAt: new Date(),

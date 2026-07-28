@@ -88,6 +88,8 @@ model Item {
   reorderIntervalDays Int? // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (spec §12)
   shopId          String? // the one shop this is only buyable at (spec §8.3); null = buy anywhere
   shop            Shop?              @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  sectionId       String? // which part of the shop it's in (spec §8.3); null = groups under "Other"
+  section         Section?           @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
   tags            Tag[]              @relation("ItemTags")
@@ -822,4 +824,29 @@ model ItemBarcode {
   addedAt DateTime @default(now())
 
   @@index([itemId])
+}
+
+// ── Phase 18: Sections (which part of the shop an item is in) ────────────────
+
+/// The part of the shop an item is found in (spec §8.3) — the thing that
+/// sections a shopping list while you walk round it.
+///
+/// A **field, not a tag**, for the same two reasons `Shop` is: an item is in
+/// exactly one section, and a tag cannot stop it claiming both `dairy` and
+/// `frozen`; and a field earns a real picker plus `position`, which is what lets
+/// the list read in the order you actually walk rather than alphabetically.
+/// Retiring the old aisle tags also un-mixes the shared tag pool, so a tag
+/// suggestion for a recipe stops being offered supermarket vocabulary.
+///
+/// Deleting a section is `SetNull` — its items fall back to the "Other" group,
+/// never cascade into deleting products.
+model Section {
+  id        String   @id @default(uuid())
+  name      String   @unique // "Produce", "Dairy", "Frozen"
+  colour    String? // hex for chip display
+  position  Int // walking order through the shop; ties break on name
+  items     Item[]
+  createdAt DateTime @default(now())
+
+  @@index([position])
 }

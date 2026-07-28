@@ -306,6 +306,8 @@ model Item {
   reorderIntervalDays Int?                             // rough re-order cadence (days); drives the "probably due" highlight (§8.3)
   shopId          String?                          // the one shop this is only buyable at (§8.3); null = buy anywhere
   shop            Shop?               @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  sectionId       String?                          // which part of the shop it's in (§8.3); null = groups under "Other"
+  section         Section?            @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   tags            Tag[]               @relation("ItemTags")
@@ -319,7 +321,8 @@ model Item {
 
 model Tag {
   id        String   @id @default(uuid())
-  name      String   @unique             // "dairy", "frozen", "quick-add", "baking"
+  name      String   @unique             // "chilled", "vegetarian", "quick-add", "italian"
+                                       // NB shop aisles are Section, not Tag (§8.3, Phase 18)
   colour    String?                      // hex for chip display
   items     Item[]   @relation("ItemTags")
   recipes   Recipe[] @relation("RecipeTags")
@@ -335,6 +338,21 @@ model Shop {
   colour    String?                      // hex for chip display
   items     Item[]
   createdAt DateTime @default(now())
+}
+
+// Which part of the shop an Item is found in (§8.3, §10 Phase 18) — the thing
+// that sections a shopping list while you walk round it. A field rather than a
+// tag for the same two reasons as Shop: an item is in exactly one, and `position`
+// gives the list a walking order that a shared tag pool could never hold.
+model Section {
+  id        String   @id @default(uuid())
+  name      String   @unique             // "Produce", "Dairy", "Frozen"
+  colour    String?                      // hex for chip display
+  position  Int                          // walking order through the shop; ties break on name
+  items     Item[]
+  createdAt DateTime @default(now())
+
+  @@index([position])
 }
 
 // A scanned barcode linked to an Item (§8.4, §10 Phase 14). Many-to-one: "Milk"
@@ -898,7 +916,8 @@ enum NoteAudience {
 - **Tick to mark bought** — `isBought=true`, `boughtAt=now()`. Items remain visible during shop
 - **Show who added what** — display user's colour beside each item
 - **Show categories** — visual grouping by tags during shop (dairy, frozen, etc.)
-- **Shops** — an `Item` optionally carries a single `Shop` (§7.2), meaning "only buyable here". **One shop or none**: an item stocked in several places stays generic, because maintaining a full availability matrix per item is work nobody does and the shopping value is identical either way. A `null` shop therefore reads as "buy anywhere". This is a **field, not a tag** — a tag can't stop an item claiming both `lidl` and `tesco`, which the rule forbids, and a field earns a real picker and sane sorting. The payoff is on the list, not the pantry: the Shopping page toggles its grouping between **by category** (tags, today) and **by shop**, so standing in Aldi shows just the Aldi lines. Deleting a shop is `onDelete: SetNull` — its items fall back to generic, never cascade-delete
+- **Shops** — an `Item` optionally carries a single `Shop` (§7.2), meaning "only buyable here". **One shop or none**: an item stocked in several places stays generic, because maintaining a full availability matrix per item is work nobody does and the shopping value is identical either way. A `null` shop therefore reads as "buy anywhere". This is a **field, not a tag** — a tag can't stop an item claiming both `lidl` and `tesco`, which the rule forbids, and a field earns a real picker and sane sorting. The payoff is on the list, not the pantry: the Shopping page toggles its grouping between **by section** and **by shop**, so standing in Aldi shows just the Aldi lines. Deleting a shop is `onDelete: SetNull` — its items fall back to generic, never cascade-delete
+- **Sections** — an `Item` optionally carries a single `Section` (§7.2): which part of the shop it's found in. The **same field-not-a-tag reasoning as Shops**, applied a second time (§10 Phase 18) — an item is in exactly one aisle, and a tag couldn't stop it claiming both `dairy` and `frozen`. What a tag especially couldn't hold is **order**: a section carries a `position`, so the list sections in the order you walk the shop rather than alphabetically, which is the whole point. `null` groups under **"Other"**, which sorts last. Managed on the Pantry page (add, recolour, reorder, remove); deleting one is `onDelete: SetNull`, so its items fall back to "Other" rather than being deleted with it. This replaced the old aisle _tags_, which also took supermarket vocabulary out of the tag pool that `suggest-tags` draws from
 - **Archive flow** (the key UX moment):
   1. User clicks "Archive shopping list"
   2. Modal shows ticked items — per-item: storage location dropdown + optional expiry date → creates `PantryEntry` rows
@@ -2824,6 +2843,143 @@ check against his own server.
 
 ---
 
+### Phase 17 — The tag-editing surface ✅ Complete (28-07-2026)
+
+Phase 16 shipped `POST /api/items/suggest-tags` with no caller, and named the
+reason: `Item.tags` had no editing surface anywhere in `apps/web`, so items were
+tagged by the seed alone. Auto-tagging was never "wire up a suggestion button" —
+it needed the surface first (§12). This is that surface, and the endpoint's first
+caller.
+
+**Goal**: Let the household tag its own items, and let the model help without
+ever deciding.
+
+**Design**:
+
+- **One control, two lifecycles.** `ItemTagsEditor` is controlled: it takes the
+  tag set and hands back a replacement, leaving persistence to the caller. That
+  is what lets one control serve both a saved item — each change written
+  straight through, as the pantry already does for an item's shop — and an item
+  that does not exist yet, whose tags are staged locally and applied once
+  stocking resolves a name to an id. It matters that this is the caller's
+  business: `tagIds` **replaces** rather than merges, so a control that guessed
+  at persistence would eventually clobber a set it had never shown.
+- **Reachable where the gap shows.** The natural home is the pantry item-detail
+  modal (§12), where tags join `shopId` as a property of the _product_ rather
+  than of one jar. But an untagged item is _noticed_ on the shopping list, where
+  it sections under "Other" (§8.3), and the pantry only holds what is currently
+  stocked — so the item you most want to file would be unreachable exactly when
+  it matters. A shopping line therefore gets its own way in. It is a separate
+  affordance rather than a tap on the row, because a tap there already means
+  "bought".
+- **Suggestions offered, never applied.** The model's picks arrive as dashed
+  chips that take a tap to accept — the same "suggest and match, never
+  auto-create" stance Phase 16 took with barcode names, and for the same reason.
+  Nothing the model says changes an item on its own.
+- **`UNAVAILABLE` split back into two situations.** The endpoint returns one
+  source for "no model configured" and for "empty tag pool", because the server
+  has no reason to tell them apart. The client does: one is a settings trip, the
+  other is "make a tag first", and the wrong message sends someone to the wrong
+  place. The pool is already loaded client-side, so the note distinguishes them.
+- **A pool that can grow, without growing duplicates.** Typing a name the pool
+  lacks offers to create it — the seed always assumed the long tail would be
+  "created on the fly when tagging items" — but only when no case-insensitive
+  match exists, so the client cannot mint the near-duplicate the reply schema's
+  enum exists to prevent. A tag that appeared in the pool since it was cached is
+  applied rather than colliding on the unique name.
+
+**Delivered**: `ItemTagsEditor` (a combobox over the pool, removable chips,
+inline create, and the suggest affordance) plus `ItemTagsModal` for surfaces with
+no detail view of their own. `TagChip` gained a removable variant, so a tag reads
+the same wherever it appears rather than becoming a different control when
+edited. Wired into the pantry item-detail modal, the pantry's "Add stock" form
+(revealed once there is a name, which is both when tags start meaning something
+and when there is something for the model to reason from), and shopping lines via
+a per-row affordance. The add-stock form prefills from the item a typed name
+already matches, keyed on the matched id rather than the text, so editing a free
+name mid-typing does not discard tags already chosen for it. `useSuggestTags` is
+a mutation rather than a query: it takes a bare name, so there is no id to key a
+cache on.
+
+**Known wrinkle, found here, fixed in Phase 18**: category grouping keyed on
+`tags[0]` and tags load alphabetically, so an item tagged `chilled` + `dairy`
+sectioned under "chilled". Harmless while items carried one tag, wrong as soon as
+this phase made several easy. Recorded as a deferred cosmetic fix at the time;
+Phase 18 concluded it was not cosmetic and made the aisle a field.
+
+**Verified**: typecheck / lint / format green, **578 API + 98 web + 15
+bin-scraper tests** (25 new), all builds clean. Coverage includes case-insensitive
+pool matching, refusing to offer creation of a case variant of an existing tag,
+substring search, excluding already-applied tags from the dropdown, the
+`UNAVAILABLE` split, and — as a component test — that a suggestion renders
+without `onChange` firing until it is tapped. **The suggestion path is not yet
+exercised against a live Ollama**; as with Phases 15 and 16, that is Ben's check
+against his own server.
+
+---
+
+### Phase 18 — Sections (which part of the shop an item is in) ✅ Complete (28-07-2026)
+
+Phase 17 made an item's tags editable, and immediately exposed what the tag pool
+had been quietly doing wrong. Category grouping keyed on `tags[0]` with tags
+loading alphabetically, so an item tagged `chilled` + `dairy` sectioned under
+"chilled" — harmless while items carried one tag, wrong as soon as tagging was
+easy. Phase 17 recorded this as a deferred cosmetic fix. It isn't cosmetic, and
+the spec had already made this exact decision once.
+
+**Goal**: Make "which part of the shop" a real field, ordered the way you walk.
+
+**Design**:
+
+- **A field, not a tag** — the §8.3 rule, applied a second time. An item is in
+  exactly one section, and a tag cannot stop it claiming both `dairy` and
+  `frozen`; a field earns a real picker and sane sorting. `Shop` reached the same
+  conclusion for the same two reasons, so `Section` follows its mould exactly:
+  user-defined rows rather than an enum, `onDelete: SetNull` so rearranging a shop
+  never deletes the products in it.
+- **`position`, which is the actual prize.** Groups used to sort alphabetically —
+  Bakery, Dairy, Drinks, Meat, Produce — which is nobody's route round a shop. A
+  section carries its walking order, the list sorts by it, and the "Other" group
+  still sinks last. A tag could not have held this: `Tag` is one pool shared with
+  recipes and chores, where a global ordering means nothing.
+- **The tag pool comes out cleaner.** Retiring the twelve aisle tags takes
+  supermarket vocabulary out of the pool that `suggest-tags` compiles into its
+  reply enum (§10 Phase 16), so asking for tags on a _recipe_ stops being offered
+  `dry-goods`.
+- **A backfill that is conservative about a shared pool.** Every item moves off
+  its aisle tag and onto the matching section, taking the **earliest section in
+  walking order** where it carried two, so the result is deterministic rather than
+  whichever row the planner reached first. The tags are then detached from items
+  and dropped — but only where no recipe or chore still references them. This
+  migration owns the aisle concept, not the whole word: a household that also
+  tagged a recipe "dairy" keeps that tag.
+
+**Delivered**: A single Phase 18 migration adding `Section` (name, colour,
+position) and `Item.sectionId`, the thirteen default sections in walking order,
+and the backfill above. `Section` joins `BACKUP_MODELS` (§9.8) among the FK-less
+roots, so items restore pointing at sections that already exist. A section
+service/controller/routes following `Shop`, plus `PATCH /api/sections/reorder`
+which takes the whole new sequence and rewrites positions from 1 in one
+transaction — order is only meaningful as a sequence, and one transaction means
+the list never renders with two sections claiming the same place. Web: grouping
+re-keyed from `tags[0]` to the section's position; a **Shop sections** panel on
+the Pantry page to add, recolour, reorder and remove; a section picker in the
+pantry item-detail modal and the add-stock form; and Phase 17's shopping-line
+affordance widened from tags to filing — section *and* tags, since the line is
+where both get noticed. The grouping toggle now reads **Section / Shop**.
+
+**Verified**: typecheck / lint / format green, **593 API + 99 web + 15
+bin-scraper tests** (16 new), all builds clean. The migration was exercised on a
+throwaway database seeded with pre-Phase-18 data, not just on an empty one: an
+item with one aisle tag files correctly and keeps its storage tag, an item with
+*_two_* aisle tags takes the earlier section in the walk, a hyphenated
+`dry-goods` maps to "Dry goods", an untagged item stays unsectioned, and a tag a
+recipe still used survived while genuinely orphaned ones were dropped. Applied to
+the dev database it filed 5 items and kept `condiments`, which a recipe still
+uses — the conservative branch firing on real data.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -2872,12 +3028,12 @@ check against his own server.
 - Endpoint: `POST /api/items/suggest-tags` — **built** (§10 Phase 16). The pool is
   compiled into the reply schema's enum, so the model chooses from the household's
   tags and cannot invent a near-duplicate of one.
-- **Outstanding prerequisite: there is no item-tag editing UI.** `Item.tags` and
-  `tagIds` exist on the model and API, but nothing in `apps/web` sets them — items
-  are tagged only by the seed, and `quick-add` is the sole tag doing work. So the
-  endpoint has no caller yet. Auto-tagging is not "wire up a suggestion button";
-  it needs the tag-editing surface first (the pantry item-detail modal is the
-  natural home), and should be sized as such.
+- **Prerequisite met** (§10 Phase 17): the item-tag editing surface exists, so the
+  endpoint has its first caller. Tags are editable from the pantry item-detail
+  modal, the pantry's add-stock form (before the item exists) and a shopping line,
+  and the model's picks are offered as chips that take a tap to accept. What
+  remains of this entry is taste rather than plumbing — whether a suggestion should
+  ever be pre-applied, which today it deliberately is not.
 
 ### Ingredient Normalisation
 
@@ -2992,6 +3148,7 @@ Choices intentionally left open, to revisit when the need is real:
 | **Rollover**          | Moving an unbought shopping item from an archived list to a new one                               |
 | **Storage Location**  | A user-defined place where pantry items live (Main Fridge, Garage Freezer)                        |
 | **Shop**              | A user-defined shop; set on an Item only when it's buyable _nowhere else_                         |
+| **Section**           | Which part of a shop an Item is in; carries a `position`, so the list reads in walking order       |
 | **Open Food Facts**   | Free, key-less open product database; turns an unseen barcode into a product name                 |
 | **PWA**               | Progressive Web App — installable from browser, no app store needed                               |
 | **HA / HAOS**         | Home Assistant / Home Assistant OS                                                                |

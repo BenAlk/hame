@@ -71,8 +71,10 @@ async function main() {
   // A curated starter palette grouped by purpose. Colours follow the Hearth
   // tokens (design-specification.md §3) and are assigned per *group*, not per
   // tag, so chips stay calm and scan by category. Recipe tags drive library
-  // browsing; ingredient tags drive shopping-list grouping (§8.3) and the pantry
-  // storage hint. `quick-add` is the one tag that also drives UI behaviour (§8.2).
+  // browsing; ingredient tags drive the pantry storage hint. Shop *sections* are
+  // no longer tags at all — they are a field on Item (§8.3, Phase 18), because an
+  // item is in exactly one and the list needs them ordered. `quick-add` is the one
+  // tag that still drives UI behaviour (§8.2).
   // This is a strong default, not exhaustive — the long tail (more cuisines,
   // dish types, occasions) is created on the fly when tagging items/recipes.
   const tagGroups: { colour: string; names: string[] }[] = [
@@ -112,24 +114,6 @@ async function main() {
     },
     // Ingredient — storage type (drives the pantry default + expiry hint)
     { colour: '#2f6fb0', names: ['fresh', 'chilled', 'frozen', 'ambient'] },
-    // Ingredient — shop section / aisle (drives shopping-list grouping, §8.3)
-    {
-      colour: '#9aa0a6',
-      names: [
-        'produce',
-        'dairy',
-        'meat',
-        'fish',
-        'bakery',
-        'tinned',
-        'dry-goods',
-        'condiments',
-        'snacks',
-        'drinks',
-        'household',
-        'pet',
-      ],
-    },
   ]
   const tags: Record<string, string> = {}
   for (const group of tagGroups) {
@@ -154,6 +138,36 @@ async function main() {
     reorderIntervalDays?: number
     /** Only when the item is buyable nowhere else (spec §8.3); omit = anywhere. */
     shop?: string
+    /** Which part of the shop it's in (spec §8.3); omit = the "Other" group. */
+    section?: string
+  }
+
+  // ── Sections (spec §8.3) ─────────────────────────────────────────────────—
+  // Ordered as you walk a typical shop, which is the whole reason this is a field
+  // with a position rather than a tag: the list reads in walking order.
+  const sectionSpecs = [
+    { name: 'Produce', colour: '#6f8169' },
+    { name: 'Bakery', colour: '#9aa0a6' },
+    { name: 'Meat', colour: '#7d2b3e' },
+    { name: 'Fish', colour: '#2f6fb0' },
+    { name: 'Dairy', colour: '#9aa0a6' },
+    { name: 'Frozen', colour: '#2f6fb0' },
+    { name: 'Tinned', colour: '#9aa0a6' },
+    { name: 'Dry goods', colour: '#857a6c' },
+    { name: 'Condiments', colour: '#857a6c' },
+    { name: 'Snacks', colour: '#d16a6a' },
+    { name: 'Drinks', colour: '#d16a6a' },
+    { name: 'Household', colour: '#9aa0a6' },
+    { name: 'Pet', colour: '#9aa0a6' },
+  ]
+  const sections: Record<string, string> = {}
+  for (const [index, spec] of sectionSpecs.entries()) {
+    const section = await prisma.section.upsert({
+      where: { name: spec.name },
+      update: { colour: spec.colour, position: index + 1 }, // keep the walk authoritative on re-seed
+      create: { ...spec, position: index + 1 },
+    })
+    sections[spec.name] = section.id
   }
 
   // ── Shops (spec §8.3) ────────────────────────────────────────────────────—
@@ -176,36 +190,53 @@ async function main() {
       baseUnit: 'ml',
       minimumQuantity: 2000,
       defaultUnit: 'bottle',
-      tags: ['quick-add', 'dairy', 'chilled'],
+      tags: ['quick-add', 'chilled'],
+      section: 'Dairy',
     },
     {
       name: 'Bread',
       baseUnit: 'unit',
       minimumQuantity: 1,
       defaultUnit: 'loaf',
-      tags: ['quick-add', 'bakery', 'fresh'],
+      tags: ['quick-add', 'fresh'],
+      section: 'Bakery',
     },
     {
       name: 'Eggs',
       baseUnit: 'unit',
       minimumQuantity: 6,
       defaultUnit: 'box',
-      tags: ['quick-add', 'dairy', 'chilled'],
+      tags: ['quick-add', 'chilled'],
+      section: 'Dairy',
     },
-    { name: 'Butter', baseUnit: 'g', minimumQuantity: 250, tags: ['dairy', 'chilled'] },
+    {
+      name: 'Butter',
+      baseUnit: 'g',
+      minimumQuantity: 250,
+      tags: ['chilled'],
+      section: 'Dairy',
+    },
     {
       name: 'Bananas',
       baseUnit: 'unit',
       defaultUnit: 'bunch',
-      tags: ['quick-add', 'produce', 'fresh'],
+      tags: ['quick-add', 'fresh'],
+      section: 'Produce',
     },
-    { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen', 'meat'] },
-    { name: 'Pasta', baseUnit: 'g', minimumQuantity: 500, tags: ['dry-goods', 'ambient'] },
+    { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen'], section: 'Meat' },
+    {
+      name: 'Pasta',
+      baseUnit: 'g',
+      minimumQuantity: 500,
+      tags: ['ambient'],
+      section: 'Dry goods',
+    },
     {
       name: 'Coffee',
       baseUnit: 'g',
       minimumQuantity: 200,
       tags: ['quick-add', 'ambient'],
+      section: 'Drinks',
       shop: 'Lidl',
     },
     // Consumables (spec §8.3): household re-order goods, not recipe/expiry tracked.
@@ -215,6 +246,7 @@ async function main() {
       defaultUnit: 'pack',
       isConsumable: true,
       reorderIntervalDays: 21,
+      section: 'Household',
     },
     {
       name: 'Kitchen roll',
@@ -222,6 +254,7 @@ async function main() {
       defaultUnit: 'pack',
       isConsumable: true,
       reorderIntervalDays: 30,
+      section: 'Household',
     },
     {
       name: 'Dishwasher tablets',
@@ -229,10 +262,23 @@ async function main() {
       defaultUnit: 'box',
       isConsumable: true,
       reorderIntervalDays: 45,
+      section: 'Household',
       shop: 'Aldi',
     },
-    { name: 'Washing-up liquid', baseUnit: 'ml', defaultUnit: 'bottle', isConsumable: true },
-    { name: 'Kitchen foil', baseUnit: 'unit', defaultUnit: 'roll', isConsumable: true },
+    {
+      name: 'Washing-up liquid',
+      baseUnit: 'ml',
+      defaultUnit: 'bottle',
+      isConsumable: true,
+      section: 'Household',
+    },
+    {
+      name: 'Kitchen foil',
+      baseUnit: 'unit',
+      defaultUnit: 'roll',
+      isConsumable: true,
+      section: 'Household',
+    },
   ]
 
   const items: Record<string, string> = {}
@@ -248,6 +294,7 @@ async function main() {
         isConsumable: spec.isConsumable ?? false,
         reorderIntervalDays: spec.reorderIntervalDays ?? null,
         shopId: spec.shop ? shops[spec.shop] : null,
+        sectionId: spec.section ? sections[spec.section] : null,
         createdById: admin.id,
         tags: { connect: spec.tags?.map((name) => ({ id: tags[name] })) ?? [] },
       },
@@ -452,6 +499,8 @@ async function main() {
       name: string
       baseUnit?: string
       isStaple?: boolean
+      /** Filed on creation so a generated list groups by aisle, not "Other". */
+      section?: string
     }
     async function ensureItem(spec: RecipeItemSpec): Promise<string> {
       const existing = await prisma.item.findFirst({
@@ -463,6 +512,7 @@ async function main() {
           name: spec.name,
           baseUnit: spec.baseUnit ?? null,
           isStaple: spec.isStaple ?? false,
+          sectionId: spec.section ? sections[spec.section] : null,
           createdById: admin.id,
         },
       })
@@ -491,11 +541,24 @@ async function main() {
         prepTimeMinutes: 15,
         cookTimeMinutes: 40,
         ingredients: [
-          { name: 'Spaghetti', baseUnit: 'g', quantity: 400, unit: 'g' },
-          { name: 'Beef mince', baseUnit: 'g', quantity: 500, unit: 'g' },
-          { name: 'Onion', baseUnit: 'unit', quantity: 1, unit: 'unit' },
-          { name: 'Chopped tomatoes', baseUnit: 'unit', quantity: 2, unit: 'can' },
-          { name: 'Salt', baseUnit: 'g', isStaple: true, quantity: null, notes: 'to taste' },
+          { name: 'Spaghetti', baseUnit: 'g', quantity: 400, unit: 'g', section: 'Dry goods' },
+          { name: 'Beef mince', baseUnit: 'g', quantity: 500, unit: 'g', section: 'Meat' },
+          { name: 'Onion', baseUnit: 'unit', quantity: 1, unit: 'unit', section: 'Produce' },
+          {
+            name: 'Chopped tomatoes',
+            baseUnit: 'unit',
+            quantity: 2,
+            unit: 'can',
+            section: 'Tinned',
+          },
+          {
+            name: 'Salt',
+            baseUnit: 'g',
+            isStaple: true,
+            quantity: null,
+            notes: 'to taste',
+            section: 'Condiments',
+          },
         ],
         steps: [
           'Brown the mince in a large pan over medium-high heat.',
@@ -511,9 +574,15 @@ async function main() {
         prepTimeMinutes: 10,
         cookTimeMinutes: 10,
         ingredients: [
-          { name: 'Rice', baseUnit: 'g', quantity: 200, unit: 'g' },
-          { name: 'Mixed vegetables', baseUnit: 'g', quantity: 400, unit: 'g' },
-          { name: 'Soy sauce', baseUnit: 'ml', quantity: 30, unit: 'ml' },
+          { name: 'Rice', baseUnit: 'g', quantity: 200, unit: 'g', section: 'Dry goods' },
+          {
+            name: 'Mixed vegetables',
+            baseUnit: 'g',
+            quantity: 400,
+            unit: 'g',
+            section: 'Frozen',
+          },
+          { name: 'Soy sauce', baseUnit: 'ml', quantity: 30, unit: 'ml', section: 'Condiments' },
         ],
         steps: [
           'Cook the rice to packet instructions.',

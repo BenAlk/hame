@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { CheckRow } from '@/components/features/shopping/check-row'
 import { ArchiveDialog } from '@/components/features/shopping/archive-dialog'
 import { AddConsumablesPanel } from '@/components/features/shopping/add-consumables-panel'
+import { ItemFilingModal } from '@/components/features/item-filing-modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { groupItems, type Grouping } from '@/lib/shopping-groups'
@@ -188,7 +189,7 @@ function GroupingToggle({
   onChange: (next: Grouping) => void
 }) {
   const options: [Grouping, string][] = [
-    ['category', 'Category'],
+    ['section', 'Section'],
     ['shop', 'Shop'],
   ]
   return (
@@ -232,9 +233,13 @@ function ListDetail({
   const removeItem = useRemoveShoppingItem(list.id)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [grouping, setGrouping] = useState<Grouping>('category')
+  const [grouping, setGrouping] = useState<Grouping>('section')
+  // Hold the row id, not the item: filing it refetches the list, and a captured
+  // item would keep showing its pre-edit section and tags.
+  const [filingRowId, setFilingRowId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupItems(list.items, grouping), [list.items, grouping])
+  const filingItem = list.items.find((row) => row.id === filingRowId)?.item ?? null
   // Only worth offering once something on the list is actually shop-specific.
   const hasShops = list.items.some((i) => i.item.shop)
 
@@ -307,12 +312,13 @@ function ListDetail({
                   <CheckRow
                     key={row.id}
                     row={row}
-                    showShop={grouping === 'category'}
+                    showShop={grouping === 'section'}
                     disabled={!isActive}
                     onToggle={() =>
                       void updateItem.mutateAsync({ itemId: row.id, isBought: !row.isBought })
                     }
                     onRemove={() => void removeItem.mutateAsync(row.id)}
+                    onEditFiling={() => setFilingRowId(row.id)}
                   />
                 ))}
               </div>
@@ -320,6 +326,8 @@ function ListDetail({
           ))}
         </div>
       )}
+
+      <ItemFilingModal item={filingItem} onClose={() => setFilingRowId(null)} />
     </section>
   )
 }

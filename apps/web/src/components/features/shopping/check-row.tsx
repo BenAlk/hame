@@ -1,4 +1,4 @@
-import { Check, X } from 'lucide-react'
+import { Check, Tag as TagIcon, X } from 'lucide-react'
 import type { ShoppingItemSource, ShoppingListItem } from '@hame/shared'
 import { cn } from '@/lib/utils'
 import { quantityLabel } from '@/lib/format'
@@ -11,6 +11,13 @@ interface CheckRowProps {
   disabled?: boolean
   /** Show the item's shop chip — redundant when the list is already grouped by shop. */
   showShop?: boolean
+  /**
+   * Edit where the underlying item is filed — its shop section and tags. A
+   * separate affordance rather than a tap on the row, because a tap here already
+   * means "bought" — and the line is where you notice a mis-filed item, since one
+   * with no section shows up under "Other".
+   */
+  onEditFiling?: () => void
 }
 
 const SOURCE_LABELS: Record<ShoppingItemSource, string> = {
@@ -45,7 +52,14 @@ function MergeBadge({ sources }: { sources: ShoppingItemSource[] }) {
  * trailing quantity and the member-colour dot. Ticked rows fill the box with a
  * white tick and strike through the label.
  */
-export function CheckRow({ row, onToggle, onRemove, disabled, showShop }: CheckRowProps) {
+export function CheckRow({
+  row,
+  onToggle,
+  onRemove,
+  disabled,
+  showShop,
+  onEditFiling,
+}: CheckRowProps) {
   const qty = quantityLabel(row.quantity, row.unit)
   return (
     <div className="group flex items-center gap-3 py-2">
@@ -88,6 +102,22 @@ export function CheckRow({ row, onToggle, onRemove, disabled, showShop }: CheckR
         className="inline-block size-2.5 shrink-0 rounded-pill"
         style={{ backgroundColor: row.addedBy.colour }}
       />
+
+      {onEditFiling && (
+        <button
+          type="button"
+          onClick={onEditFiling}
+          aria-label={`Edit section and tags on ${row.item.name}`}
+          title={
+            row.item.section
+              ? `Section: ${row.item.section.name}`
+              : 'No section — this line groups under “Other”'
+          }
+          className="shrink-0 rounded-control p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-muted hover:text-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
+        >
+          <TagIcon className="size-4" />
+        </button>
+      )}
 
       <button
         type="button"

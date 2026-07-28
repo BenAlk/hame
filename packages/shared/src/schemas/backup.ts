@@ -24,6 +24,7 @@ export const BACKUP_MODELS = [
   'Pet',
   'StorageLocation',
   'Shop',
+  'Section',
   'BinCollection',
   'CalendarSource',
   // Reference the roots above.

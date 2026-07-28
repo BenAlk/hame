@@ -23,11 +23,13 @@ surfaces, a dusty-rose accent, a reading serif for human moments._
 
 ## Features
 
-- **Shopping & pantry** — multi-list shopping with quick-add, tag-grouped aisles and an archive flow
+- **Shopping & pantry** — multi-list shopping with quick-add, aisle-grouped lists and an archive flow
   that rolls unbought items over and stocks the pantry; unit-aware low-stock and expiry tracking; a
-  household re-order checklist for consumables with an auto-cadence "probably due" hint. Items only
-  stocked in one supermarket can be tagged with a **shop**, so a single list regroups itself by shop
-  when you're standing in one. Unpacking the shop, **scan barcodes** with your phone camera to stock
+  household re-order checklist for consumables with an auto-cadence "probably due" hint. Each item is
+  filed in a **shop section** you can reorder, so the list groups in the order you actually walk round
+  — and items only stocked in one supermarket can be tagged with a **shop**, so a single list regroups
+  itself by shop when you're standing in one. Tags are yours to edit, and with a language model
+  configured Hame will **suggest them from the tags you already use** rather than inventing new ones. Unpacking the shop, **scan barcodes** with your phone camera to stock
   the pantry in one batch — codes are learned as you go, so scanning gets faster every week.
 - **Recipes & meal planning** — manual recipes or one-paste URL import (schema.org), a weekly plan
   with serving scaling, and the keystone: **generate a shopping list for the week** that scales each
