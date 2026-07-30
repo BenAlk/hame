@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   CreateItemInput,
   Item,
+  SuggestSectionInput,
   SuggestTagsInput,
+  SuggestedSection,
   SuggestedTags,
   UpdateItemInput,
 } from '@hame/shared'
@@ -56,6 +58,32 @@ export function useSuggestTags() {
         body: JSON.stringify(body),
       }),
   })
+}
+
+/**
+ * Ask the model which section an item belongs in (spec §8.3). A mutation for the
+ * same reason as {@link useSuggestTags}: it keys on a name, not an id, so it also
+ * answers for an item that doesn't exist yet.
+ */
+export function useSuggestSection() {
+  return useMutation({
+    mutationFn: (body: SuggestSectionInput) =>
+      apiFetch<SuggestedSection>('/api/items/suggest-section', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+/**
+ * Preload the model behind the suggest affordances (a no-op unless the household
+ * runs the LLM strategy). Fire-and-forget — call it when a page carrying one
+ * mounts, so Ollama's cold model-load overlaps with the user reading the page
+ * rather than swallowing their first tap. Failures are irrelevant: suggestion
+ * degrades gracefully either way.
+ */
+export function warmUpSuggestions() {
+  void apiFetch('/api/items/warm-suggestions', { method: 'POST' }).catch(() => {})
 }
 
 export function useDeleteItem() {

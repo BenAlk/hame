@@ -1,6 +1,12 @@
 import type { Prisma } from '@prisma/client'
-import type { CreateItemInput, Item, SuggestedTags, UpdateItemInput } from '@hame/shared'
-import { QUICK_ADD_TAG } from '@hame/shared'
+import type {
+  CreateItemInput,
+  Item,
+  SuggestedSection,
+  SuggestedTags,
+  UpdateItemInput,
+} from '@hame/shared'
+import { DIETARY_TAGS, QUICK_ADD_TAG } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLlm } from './normaliser.service.js'
@@ -159,13 +165,27 @@ export async function suggestTags(name: string): Promise<SuggestedTags> {
   const llm = await getLlm()
   if (!llm) return { tags: [], source: 'UNAVAILABLE' }
 
-  const pool = await prisma.tag.findMany({ orderBy: { name: 'asc' } })
+  // Dietary tags are withheld from the model: they assert what a product
+  // *contains*, which can only be read off a packet (see DIETARY_TAGS). They stay
+  // applicable by hand, which is where that claim belongs.
+  const withheld = new Set<string>(DIETARY_TAGS.map((tag) => tag.toLowerCase()))
+  const pool = (await prisma.tag.findMany({ orderBy: { name: 'asc' } })).filter(
+    (tag) => !withheld.has(tag.name.toLowerCase()),
+  )
   if (pool.length === 0) return { tags: [], source: 'UNAVAILABLE' }
 
-  const chosen = await llm.suggestTags(
-    name.trim(),
-    pool.map((t) => t.name),
-  )
+  let chosen: string[]
+  try {
+    chosen = await llm.suggestTags(
+      name.trim(),
+      pool.map((t) => t.name),
+    )
+  } catch {
+    // A call that never completed is not "nothing applies" — most often a cold
+    // model still loading, which is worth saying so it can simply be retried.
+    return { tags: [], source: 'FAILED' }
+  }
+
   const byName = new Map(pool.map((t) => [t.name, t]))
   return {
     tags: chosen.flatMap((tagName) => {
@@ -174,6 +194,44 @@ export async function suggestTags(name: string): Promise<SuggestedTags> {
     }),
     source: 'LLM',
   }
+}
+
+/**
+ * Suggest which section of the shop an item belongs in (spec §8.3).
+ *
+ * The sibling of {@link suggestTags}, and the easier of the two to make safe: a
+ * section is **single-valued**, so the model returns one choice from a closed
+ * list. Tags had to defend against a set containing an invented near-duplicate;
+ * here the only two outcomes are one of the household's sections or nothing.
+ *
+ * The pool goes down in **walking order**, not alphabetically — it is the order
+ * the household reads its own shop in, so it is the order to reason about.
+ * `source` separates "no model, or nothing to choose from" from "the model
+ * declined", which are the same null but not the same thing to explain.
+ */
+export async function suggestSection(name: string): Promise<SuggestedSection> {
+  const llm = await getLlm()
+  if (!llm) return { section: null, source: 'UNAVAILABLE' }
+
+  const pool = await prisma.section.findMany({ orderBy: [{ position: 'asc' }, { name: 'asc' }] })
+  if (pool.length === 0) return { section: null, source: 'UNAVAILABLE' }
+
+  let chosen: string | null
+  try {
+    chosen = await llm.suggestSection(
+      name.trim(),
+      pool.map((section) => section.name),
+    )
+  } catch {
+    // Distinct from the model declining: nothing was decided, so say so rather
+    // than claim it couldn't be placed.
+    return { section: null, source: 'FAILED' }
+  }
+
+  const match = chosen
+    ? pool.find((section) => section.name.toLowerCase() === chosen.toLowerCase())
+    : undefined
+  return { section: match ? toSection(match) : null, source: 'LLM' }
 }
 
 /**

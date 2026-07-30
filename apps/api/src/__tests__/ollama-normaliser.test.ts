@@ -10,6 +10,9 @@ const {
   timeoutFor,
   parseExtractedRecipe,
   parseSuggestedTags,
+  parseSuggestedSection,
+  buildSectionPrompt,
+  NO_SECTION,
   parseCanonicalName,
 } = await import('../integrations/ollama/index.js')
 
@@ -334,9 +337,101 @@ describe('LlmNormaliser.suggestTags', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('returns nothing when the model is unreachable', async () => {
+  /**
+   * Surfaced rather than swallowed, so the caller can tell an unfinished call from
+   * "the model chose none" — the two need different words in front of a user.
+   */
+  it('surfaces an unreachable model instead of reporting no tags', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'))
     const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
-    expect(await normaliser.suggestTags('milk', ['dairy'])).toEqual([])
+    await expect(normaliser.suggestTags('milk', ['dairy'])).rejects.toThrow(/ECONNREFUSED/)
+  })
+})
+
+describe('parseSuggestedSection', () => {
+  const pool = ['Produce', 'Dairy', 'Dry goods']
+
+  it('resolves a choice to the pool spelling', () => {
+    expect(parseSuggestedSection('{"section":"Dairy"}', pool)).toBe('Dairy')
+  })
+
+  /** A case difference must still land on the household's own section. */
+  it('matches case-insensitively', () => {
+    expect(parseSuggestedSection('{"section":"dry GOODS"}', pool)).toBe('Dry goods')
+  })
+
+  /** Declining is a first-class answer, not a parse failure to paper over. */
+  it('reads the decline sentinel as no section', () => {
+    expect(parseSuggestedSection(`{"section":"${NO_SECTION}"}`, pool)).toBeNull()
+  })
+
+  it('refuses a section outside the pool', () => {
+    expect(parseSuggestedSection('{"section":"Bakery"}', pool)).toBeNull()
+  })
+
+  it('survives malformed or wrongly-shaped replies', () => {
+    expect(parseSuggestedSection('not json {', pool)).toBeNull()
+    expect(parseSuggestedSection('{"section":["Dairy"]}', pool)).toBeNull()
+    expect(parseSuggestedSection('{}', pool)).toBeNull()
+  })
+
+  /**
+   * The sentinel is checked *after* the pool, so a household that really names a
+   * section "none" keeps it rather than having it read as a decline.
+   */
+  it('prefers a real section named like the sentinel', () => {
+    expect(parseSuggestedSection(`{"section":"${NO_SECTION}"}`, ['none'])).toBe('none')
+  })
+})
+
+describe('buildSectionPrompt', () => {
+  it('lists the pool and offers the decline sentinel', () => {
+    const prompt = buildSectionPrompt('milk', ['Produce', 'Dairy'])
+    expect(prompt).toContain('"milk"')
+    expect(prompt).toContain('Produce, Dairy')
+    expect(prompt).toContain('exactly one')
+    expect(prompt).toContain(NO_SECTION)
+  })
+})
+
+describe('LlmNormaliser.suggestSection', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /**
+   * The tighter constraint than tags: one value from a closed list, so the model
+   * cannot return two aisles for something that lives in one.
+   */
+  it('compiles the sections into a single-choice enum, plus the decline option', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ message: { content: '{"section":"Dairy"}' } }),
+    } as Response)
+
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    const out = await normaliser.suggestSection('milk', ['Produce', 'Dairy'])
+
+    expect(out).toBe('Dairy')
+    const body = JSON.parse(vi.mocked(fetch).mock.calls[0]?.[1]?.body as string)
+    expect(body.format.properties.section.enum).toEqual(['Produce', 'Dairy', NO_SECTION])
+    // An object, not an array: a section is single-valued.
+    expect(body.format.properties.section.type).toBeUndefined()
+  })
+
+  it('never calls out for an empty pool', async () => {
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    expect(await normaliser.suggestSection('milk', [])).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  /** A decline is null; a call that never completed throws. */
+  it('surfaces an unreachable model instead of reporting a decline', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'))
+    const normaliser = new LlmNormaliser(settings, new DictionaryNormaliser())
+    await expect(normaliser.suggestSection('milk', ['Dairy'])).rejects.toThrow(/ECONNREFUSED/)
   })
 })

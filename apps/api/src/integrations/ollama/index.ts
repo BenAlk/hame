@@ -44,6 +44,7 @@ const EXTRACT_TIMEOUT_MS = 90_000
  * typed, a barcode just scanned. They get a short budget and simply give up.
  */
 const TAG_TIMEOUT_MS = 15_000
+const SECTION_TIMEOUT_MS = 15_000
 const CANONICAL_TIMEOUT_MS = 15_000
 
 /**
@@ -210,8 +211,11 @@ export class LlmNormaliser implements IngredientNormaliser {
    * a model inventing a plausible near-duplicate of an existing tag, into an
    * impossibility rather than something to filter out afterwards.
    *
-   * Returns an empty list on any failure: a suggestion is a convenience, and
-   * an unreachable model must never block naming an item.
+   * **Throws** if the call does not complete. A suggestion is a convenience and
+   * must never block naming an item — but swallowing the failure here would make
+   * it indistinguishable from "the model chose none", and the two need different
+   * words in front of a user. The caller decides how to report it; it stays a
+   * convenience because the caller keeps going either way.
    */
   async suggestTags(itemName: string, pool: string[]): Promise<string[]> {
     if (pool.length === 0) return []
@@ -225,7 +229,36 @@ export class LlmNormaliser implements IngredientNormaliser {
       return parseSuggestedTags(content, pool)
     } catch (err) {
       logger.warn({ err, itemName }, 'Ollama tag suggestion failed')
-      return []
+      throw err
+    }
+  }
+
+  /**
+   * Suggest which section of the shop an item belongs in, from `pool` (§8.3).
+   *
+   * The tighter sibling of {@link suggestTags}: a section is single-valued, so
+   * the reply schema is one choice from a closed list rather than a set, and the
+   * grammar cannot return two aisles for something that lives in one. `pool` is
+   * passed in walking order, which is also the order the model reads it in.
+   *
+   * Null means the model **declined**. It sits in front of someone filling in a
+   * form, so it gets a short budget — and if that budget runs out this **throws**
+   * rather than returning null, because "still loading" and "can't place it" are
+   * not the same thing to tell someone.
+   */
+  async suggestSection(itemName: string, pool: string[]): Promise<string | null> {
+    if (pool.length === 0) return null
+    try {
+      const content = await this.chat(
+        SECTION_SYSTEM_PROMPT,
+        buildSectionPrompt(itemName, pool),
+        sectionFormat(pool),
+        SECTION_TIMEOUT_MS,
+      )
+      return parseSuggestedSection(content, pool)
+    } catch (err) {
+      logger.warn({ err, itemName }, 'Ollama section suggestion failed')
+      throw err
     }
   }
 
@@ -482,6 +515,68 @@ export function parseSuggestedTags(content: string, pool: string[]): string[] {
     raw.filter((t): t is string => typeof t === 'string').map((t) => t.trim().toLowerCase()),
   )
   return pool.filter((tag) => chosen.has(tag.toLowerCase()))
+}
+
+const SECTION_SYSTEM_PROMPT =
+  'You file household grocery items into the aisle of a shop where they are found. ' +
+  'You only ever choose from the list given. Always reply with strict JSON only.'
+
+/**
+ * The sentinel for "I can't place this one". A single choice needs a way to
+ * decline *inside* the grammar — otherwise the only representable answers are
+ * sections, and the model is forced to invent a filing for anything it doesn't
+ * recognise. That is the failure this feature would be judged on, so declining
+ * is made a first-class option rather than left to the parser to infer.
+ */
+export const NO_SECTION = 'none'
+
+/**
+ * The section schema, built per call because the enum *is* the household's
+ * sections. Unlike tags this is a **single** value, which is the tighter
+ * constraint: the model picks one of a closed list or declines, and cannot
+ * return two aisles for something that lives in one.
+ */
+function sectionFormat(pool: string[]) {
+  return {
+    type: 'object',
+    properties: { section: { enum: [...pool, NO_SECTION] } },
+    required: ['section'],
+    additionalProperties: false,
+  }
+}
+
+/** Build the section prompt for an item name and the household's sections. Pure. */
+export function buildSectionPrompt(itemName: string, pool: string[]): string {
+  return [
+    `Which aisle of a shop is the grocery item "${itemName}" found in?`,
+    '',
+    `Available sections: ${pool.join(', ')}`,
+    '',
+    'Rules:',
+    '- Choose exactly one, from the available sections only. Never invent one.',
+    `- Reply {"section":"${NO_SECTION}"} if none of them clearly fits.`,
+    '- Reply as {"section":"Dairy"}.',
+  ].join('\n')
+}
+
+/**
+ * Parse a section reply into a pool member, or null when the model declined or
+ * answered unusably. Resolves against the pool's own spelling so a case
+ * difference still matches, and checks the pool **before** the sentinel, so a
+ * household that really has a section named "none" keeps it. Pure.
+ */
+export function parseSuggestedSection(content: string, pool: string[]): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const choice = (parsed as { section?: unknown }).section
+  if (typeof choice !== 'string') return null
+  const wanted = choice.trim().toLowerCase()
+  return pool.find((section) => section.toLowerCase() === wanted) ?? null
 }
 
 const CANONICAL_SYSTEM_PROMPT =

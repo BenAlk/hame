@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ShoppingList } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,7 +10,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { groupItems, type Grouping } from '@/lib/shopping-groups'
 import { ApiError } from '@/api/client'
-import { useItems } from '@/api/items'
+import { useItems, warmUpSuggestions } from '@/api/items'
 import {
   useAddShoppingItem,
   useCreateShoppingList,
@@ -31,6 +31,10 @@ export function ShoppingPage() {
   const [archiving, setArchiving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // The filing modal on each line carries a suggest affordance, so warm the model
+  // while the list is being read rather than on the first tap (spec §10 Phase 19).
+  useEffect(() => warmUpSuggestions(), [])
 
   const active = lists?.filter((l) => l.status === 'ACTIVE') ?? []
   const archived = lists?.filter((l) => l.status === 'ARCHIVED') ?? []

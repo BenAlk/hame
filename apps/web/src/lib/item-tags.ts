@@ -68,6 +68,11 @@ export function suggestionNote(
       ? 'No tags to choose from yet — add one first, and suggestions can pick from it.'
       : 'No language model configured. Set one up under Settings → Ingredient normalisation.'
   }
+  // A call that never completed, most often a cold model still loading. Saying
+  // "no suggestions" here would report an answer that was never given.
+  if (result.source === 'FAILED') {
+    return 'The model didn’t answer in time — it may still be loading. Try again in a moment.'
+  }
   return result.tags.length > 0
     ? 'Those tags are already on this item.'
     : 'The model had no suggestions for that name.'

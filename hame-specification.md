@@ -917,7 +917,7 @@ enum NoteAudience {
 - **Show who added what** — display user's colour beside each item
 - **Show categories** — visual grouping by tags during shop (dairy, frozen, etc.)
 - **Shops** — an `Item` optionally carries a single `Shop` (§7.2), meaning "only buyable here". **One shop or none**: an item stocked in several places stays generic, because maintaining a full availability matrix per item is work nobody does and the shopping value is identical either way. A `null` shop therefore reads as "buy anywhere". This is a **field, not a tag** — a tag can't stop an item claiming both `lidl` and `tesco`, which the rule forbids, and a field earns a real picker and sane sorting. The payoff is on the list, not the pantry: the Shopping page toggles its grouping between **by section** and **by shop**, so standing in Aldi shows just the Aldi lines. Deleting a shop is `onDelete: SetNull` — its items fall back to generic, never cascade-delete
-- **Sections** — an `Item` optionally carries a single `Section` (§7.2): which part of the shop it's found in. The **same field-not-a-tag reasoning as Shops**, applied a second time (§10 Phase 18) — an item is in exactly one aisle, and a tag couldn't stop it claiming both `dairy` and `frozen`. What a tag especially couldn't hold is **order**: a section carries a `position`, so the list sections in the order you walk the shop rather than alphabetically, which is the whole point. `null` groups under **"Other"**, which sorts last. Managed on the Pantry page (add, recolour, reorder, remove); deleting one is `onDelete: SetNull`, so its items fall back to "Other" rather than being deleted with it. This replaced the old aisle _tags_, which also took supermarket vocabulary out of the tag pool that `suggest-tags` draws from
+- **Sections** — an `Item` optionally carries a single `Section` (§7.2): which part of the shop it's found in. The **same field-not-a-tag reasoning as Shops**, applied a second time (§10 Phase 18) — an item is in exactly one aisle, and a tag couldn't stop it claiming both `dairy` and `frozen`. What a tag especially couldn't hold is **order**: a section carries a `position`, so the list sections in the order you walk the shop rather than alphabetically, which is the whole point. `null` groups under **"Other"**, which sorts last. Managed on the Pantry page (add, recolour, reorder, remove); deleting one is `onDelete: SetNull`, so its items fall back to "Other" rather than being deleted with it. This replaced the old aisle _tags_, which also took supermarket vocabulary out of the tag pool that `suggest-tags` draws from. With a language model configured, `POST /api/items/suggest-section` will **place** an item for you (§10 Phase 19) — one choice from the household's own sections, offered as a chip rather than selected for you, and able to decline rather than guess
 - **Archive flow** (the key UX moment):
   1. User clicks "Archive shopping list"
   2. Modal shows ticked items — per-item: storage location dropdown + optional expiry date → creates `PantryEntry` rows
@@ -2980,6 +2980,103 @@ uses — the conservative branch firing on real data.
 
 ---
 
+### Phase 19 — The model as a placer ✅ Complete (28-07-2026)
+
+Phase 16 gave the model a fixed set to choose from; Phase 18 created a set that
+is genuinely single-valued. This is the pairing of the two, and it is the
+cleanest case for a schema-constrained model the project has: "which aisle is
+this in?" is **one** choice from a closed list.
+
+**Goal**: Let the model file an item, without ever letting it decide.
+
+**Design**:
+
+- **Single-valued is the tighter constraint.** Tag suggestion had to defend
+  against a _set_ that might contain an invented near-duplicate; a section reply
+  is one value, so the enum admits the household's sections and nothing else, and
+  the grammar cannot return two aisles for something that lives in one. There is
+  no post-filtering left to do — which is exactly why this feature was sequenced
+  after §10 Phase 18 rather than bolted onto the aisle tags it replaced.
+- **Declining is made representable.** A single choice needs a way to say "I
+  can't place this" _inside_ the grammar, or the only expressible answers are
+  sections and the model is forced to invent a filing for anything it does not
+  recognise — the failure this feature would be judged on. A sentinel joins the
+  enum, so declining is a first-class option rather than something the parser
+  infers from a bad answer. It is resolved **after** the pool, so a household
+  that really names a section "none" keeps it.
+- **Walking order goes down to the model.** The pool is passed in `position`
+  order (§8.3), which is the order the household reads its own shop in.
+- **Offered, never applied.** The answer arrives as a dashed chip that takes a tap,
+  the same stance as Phase 16's barcode matching and Phase 17's tag suggestion.
+  A select already shows a current value, so auto-selecting would be a silent
+  edit; and a suggestion matching the current filing is reported rather than
+  offered as a no-op chip.
+- **Four outcomes, four sentences.** `UNAVAILABLE` again covers "no model" and
+  "no sections", separated client-side by the pool it already holds. The two new
+  cases belong to a single choice: the model declining, and the model agreeing
+  with what is already there.
+
+**Delivered**: `LlmNormaliser.suggestSection` on the shared schema-constrained
+`chat` helper, with the same short budget and give-up-quietly behaviour as its
+siblings — it sits in front of someone filling in a form.
+`POST /api/items/suggest-section` takes a bare name, as tag suggestion does, so it
+answers for an item that does not exist yet. The affordance lives in
+`SectionSelect` itself, so all three places that pick a section — the pantry
+item-detail modal, the pantry add-stock form and the shopping-line filing modal —
+got it at once.
+
+**Verified**: typecheck / lint / format green, **615 API + 107 web + 15
+bin-scraper tests** (28 new), all builds clean. Coverage includes the pool
+compiled into a single-choice enum with the sentinel appended, case-insensitive
+resolution back to the household's own spelling, the sentinel read as a decline,
+a real section named like the sentinel still winning, an out-of-pool answer
+dropped even though the grammar should make it impossible, walking order reaching
+the model, and each note.
+
+#### Live-tested at last, and the two defects it caught
+
+Four phases of prompt work had shipped verified only by unit tests. Driven against
+the real server (`qwen2.5:7b`), section placement was **8 for 10** first time —
+Sourdough loaf → Bakery, Chicken thighs → Meat, Frozen peas → Frozen, Tin of
+chopped tomatoes → Tinned, Toilet roll → Household, Cat food → Pet, Basmati rice →
+Dry goods, Soy sauce → Condiments — at roughly 0.4s warm, with a deliberate
+nonsense name correctly declined. It also found two things no unit test would have.
+
+**A cold model made the first suggestion of a session lie.** "Semi skimmed milk"
+came back empty; warm, it answers Dairy in 0.4s every time. Ollama was cold-loading
+several GB and overrunning the 15s budget — and because the client swallowed the
+failure and returned the same empty answer as a decline, the UI said _"the model
+couldn't place that one"_ about a call that never happened. The swallow was at the
+wrong layer: `suggestTags` / `suggestSection` now let a failed call surface, the
+service maps it to a third `source` — `FAILED` — and the note says the model may
+still be loading and to try again. Prevention rather than just honesty: the
+warm-up already built for recipe import (§10 Phase 4.5) now fires from the Pantry
+and Shopping pages too, so the load overlaps with reading the page instead of
+being paid for by the first tap.
+
+**A real model suggested `dairy-free` for Cheddar cheese.** Structurally valid,
+factually wrong, and the sharper lesson: the enum guarantees a tag **exists**, not
+that it is **true**. Phase 18 made it likely without anyone noticing — retiring the
+aisle tags removed `dairy`, leaving `dairy-free` as the closest match in the pool
+for a dairy product. Dietary tags are now withheld from the model entirely
+(`DIETARY_TAGS`), because they assert what a product _contains_, which is readable
+only off a packet and which someone may rely on for medical reasons. They stay
+applicable by hand, where that claim belongs. Confirmed after the fix: Cheddar no
+longer draws it, and "Gluten free pasta" is not offered `gluten-free` even though
+its name says so.
+
+**Still open, and now twice-evidenced.** Item tag suggestion draws on a pool that
+is mostly _recipe_ vocabulary since Phase 18 — Cheddar now attracts `dinner`,
+`lunch`, `snack`. Harmless but noisy, and the same root cause as the `dairy-free`
+miss: `Tag` has no notion of what a tag is _for_. A `kind` on `Tag` would let
+suggestion draw only on the kinds that describe a product, and would retire the
+by-name `DIETARY_TAGS` list, whose honest limit is that a household inventing
+"lactose-free" is not covered (§12). The `FAILED` path is unit-tested but was not
+reproducible live once the model file sat in the OS page cache: an evicted model
+reloads in ~4s, well inside budget.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -3028,6 +3125,20 @@ uses — the conservative branch firing on real data.
 - Endpoint: `POST /api/items/suggest-tags` — **built** (§10 Phase 16). The pool is
   compiled into the reply schema's enum, so the model chooses from the household's
   tags and cannot invent a near-duplicate of one.
+- **A tighter sibling shipped** (§10 Phase 19): `POST /api/items/suggest-section`
+  answers "which aisle?", which is **single-valued** and therefore the cleanest fit
+  for the constrained-model pattern — one choice from a closed list, with declining
+  made representable, and nothing left to filter afterwards.
+- **A `kind` on `Tag` is the outstanding piece** (§10 Phase 19). Two separate
+  problems share one root cause: the model has no way to know what a tag is *for*.
+  It suggested `dairy-free` for Cheddar cheese (a claim about contents that only a
+  packet can settle), and it reaches for recipe vocabulary — `dinner`, `lunch` — when
+  tagging a grocery item, because since Phase 18 the shared pool is mostly recipe
+  tags. Dietary tags are withheld by name for now (`DIETARY_TAGS`), which closes the
+  harmful case but not the noisy one, and misses a household's own invention like
+  "lactose-free". A `kind` (dietary / storage / recipe / behavioural — the seed
+  already groups them this way informally by colour) would let suggestion draw only
+  on the kinds that describe a product, and retire the by-name list.
 - **Prerequisite met** (§10 Phase 17): the item-tag editing surface exists, so the
   endpoint has its first caller. Tags are editable from the pantry item-detail
   modal, the pantry's add-stock form (before the item exists) and a shopping line,

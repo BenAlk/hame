@@ -46,15 +46,45 @@ export type SuggestTagsInput = z.infer<typeof SuggestTagsSchema>
 /**
  * Suggested tags, always drawn from the household's **existing** pool — the
  * model chooses from what is there rather than inventing vocabulary, so this
- * can never quietly grow a second set of near-duplicate tags. `source` lets a
- * caller tell "the model had no suggestions" from "there is no model", which are
- * the same empty list but not the same situation.
+ * can never quietly grow a second set of near-duplicate tags.
+ *
+ * `source` separates three situations that are all an empty list: there is no
+ * model (`UNAVAILABLE`), the model considered it and chose none (`LLM`), or the
+ * call did not complete (`FAILED`). The last matters more than it looks — a cold
+ * Ollama loading several GB will exceed the short budget these calls get, and
+ * reporting that as "nothing applies" tells the user something untrue.
+ *
+ * Tags asserting what a product *contains* are withheld from the model entirely
+ * (see `DIETARY_TAGS`), so they never appear here.
  */
 export const SuggestedTagsSchema = z.object({
   tags: z.array(TagSchema),
-  source: z.enum(['LLM', 'UNAVAILABLE']),
+  source: z.enum(['LLM', 'UNAVAILABLE', 'FAILED']),
 })
 export type SuggestedTags = z.infer<typeof SuggestedTagsSchema>
+
+/** Ask which part of the shop an item belongs in. Takes a bare name, as tags do. */
+export const SuggestSectionSchema = z.object({
+  name: z.string().min(1, 'Item name is required').max(80, 'Item name is too long'),
+})
+export type SuggestSectionInput = z.infer<typeof SuggestSectionSchema>
+
+/**
+ * A suggested section, always one of the household's existing ones (§8.3).
+ *
+ * **Singular**, unlike tags, and that is the whole reason this is the better fit
+ * for a schema-constrained model: an item is in exactly one section, so the reply
+ * is one choice from a closed list rather than a set. There is no near-duplicate
+ * to defend against — the grammar admits the household's sections and nothing
+ * else. A `null` section with `source: 'LLM'` is a real answer: the model
+ * declined to place it, which beats inventing a filing — and `FAILED` keeps that
+ * genuine decline distinct from a call that never completed.
+ */
+export const SuggestedSectionSchema = z.object({
+  section: SectionSchema.nullable(),
+  source: z.enum(['LLM', 'UNAVAILABLE', 'FAILED']),
+})
+export type SuggestedSection = z.infer<typeof SuggestedSectionSchema>
 
 /** Public representation of an item, with its tags expanded. */
 export const ItemSchema = z.object({

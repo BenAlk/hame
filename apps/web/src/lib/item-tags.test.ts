@@ -99,6 +99,14 @@ describe('suggestionNote', () => {
     expect(note).toMatch(/No tags to choose from/)
   })
 
+  it('reports a call that never completed as still loading', () => {
+    const note = suggestionNote(result({ source: 'FAILED' }), {
+      poolEmpty: false,
+      freshCount: 0,
+    })
+    expect(note).toMatch(/still be loading/)
+  })
+
   it('distinguishes a model that had no ideas from a missing model', () => {
     const note = suggestionNote(result({ source: 'LLM' }), { poolEmpty: false, freshCount: 0 })
     expect(note).toBe('The model had no suggestions for that name.')

@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ApiError } from '@/api/client'
-import { useItems, useUpdateItem } from '@/api/items'
+import { useItems, useUpdateItem, warmUpSuggestions } from '@/api/items'
 import { useCreatePantryEntry, useDeletePantryEntry, usePantry } from '@/api/pantry'
 import { useCreateShop, useDeleteShop, useShops } from '@/api/shops'
 import { useCreateSection, useDeleteSection, useReorderSections, useSections } from '@/api/sections'
@@ -34,6 +34,10 @@ export function PantryPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const detail = entries?.find((e) => e.id === detailId) ?? null
+
+  // Overlap Ollama's cold model-load with reading the page, so the first tap of
+  // "Suggest" isn't the one that pays for it (spec §10 Phase 19).
+  useEffect(() => warmUpSuggestions(), [])
 
   const grouped = useMemo(() => {
     const map = new Map<string, PantryEntry[]>()
@@ -154,6 +158,7 @@ function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClo
                   product, and it's what groups the shopping list (spec §8.3). */}
               <SectionSelect
                 id="entry-section"
+                itemName={entry.item.name}
                 value={entry.item.section?.id ?? null}
                 disabled={updateItem.isPending}
                 onChange={(sectionId) =>
@@ -414,6 +419,7 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
               </Label>
               <SectionSelect
                 id="entry-section-new"
+                itemName={name}
                 value={shownSectionId}
                 onChange={setSectionId}
                 disabled={createEntry.isPending || updateItem.isPending}

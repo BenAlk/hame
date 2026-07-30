@@ -27,6 +27,7 @@ export function ItemFilingModal({ item, onClose }: { item: Item | null; onClose:
             <Label htmlFor="filing-section">Section</Label>
             <SectionSelect
               id="filing-section"
+              itemName={item.name}
               value={item.section?.id ?? null}
               disabled={updateItem.isPending}
               onChange={(sectionId) => void updateItem.mutateAsync({ id: item.id, sectionId })}

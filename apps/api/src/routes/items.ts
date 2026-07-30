@@ -1,5 +1,10 @@
 import { Router } from 'express'
-import { CreateItemSchema, SuggestTagsSchema, UpdateItemSchema } from '@hame/shared'
+import {
+  CreateItemSchema,
+  SuggestSectionSchema,
+  SuggestTagsSchema,
+  UpdateItemSchema,
+} from '@hame/shared'
 import { validateBody } from '../middleware/validate.js'
 import { requireAuth } from '../middleware/auth.js'
 import { verifyCsrf } from '../middleware/csrf.js'
@@ -8,8 +13,10 @@ import {
   deleteItemController,
   getItemController,
   listItemsController,
+  suggestSectionController,
   suggestTagsController,
   updateItemController,
+  warmUpSuggestionsController,
 } from '../controllers/items.controller.js'
 
 export const itemsRouter = Router()
@@ -23,6 +30,14 @@ itemsRouter.post(
   validateBody(SuggestTagsSchema),
   suggestTagsController,
 )
+itemsRouter.post(
+  '/suggest-section',
+  requireAuth,
+  verifyCsrf,
+  validateBody(SuggestSectionSchema),
+  suggestSectionController,
+)
+itemsRouter.post('/warm-suggestions', requireAuth, verifyCsrf, warmUpSuggestionsController)
 itemsRouter.get('/:id', requireAuth, getItemController)
 itemsRouter.post('/', requireAuth, verifyCsrf, validateBody(CreateItemSchema), createItemController)
 itemsRouter.patch(
