@@ -1,4 +1,13 @@
-import { memo, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { format } from 'date-fns'
 import type { HaEntityState, IdleModeSettings } from '@hame/shared'
 import { useIdlePhotos } from '@/api/idle'
@@ -14,6 +23,7 @@ import {
   type ScreensaverContext,
   type ScreensaverState,
 } from './screensaver'
+import { choosePhotoFit, type Size } from './photo-fit'
 import { selectDueBins, selectSlotMeal } from './idle-info'
 import { BinsScreen } from './bins-screen'
 import { MealsScreen } from './meals-screen'
@@ -26,19 +36,49 @@ function photoUrl(assetId: string): string {
   return `${API_BASE}/api/idle/photo/${encodeURIComponent(assetId)}`
 }
 
-/** One photo layer that fades in once loaded; stacking two gives a crossfade. */
-function FadeImage({ src }: { src: string }) {
-  const [loaded, setLoaded] = useState(false)
+/**
+ * One photo layer that fades in once loaded; stacking two gives a crossfade.
+ *
+ * A photo whose shape is far from the frame's is shown whole over a blurred,
+ * scaled copy of itself rather than cropped to fill (see `choosePhotoFit`) — the
+ * digital-photo-frame treatment, which keeps the display edge-to-edge without
+ * throwing away half a portrait shot. The fill is the same URL, so it is served
+ * from the browser cache rather than costing a second trip through the proxy.
+ *
+ * The fit isn't known until the browser reports the photo's dimensions, but the
+ * layer is transparent until exactly that moment, so nothing is ever painted at
+ * the wrong fit.
+ */
+function FadeImage({ src, frame }: { src: string; frame: Size | null }) {
+  const [natural, setNatural] = useState<Size | null>(null)
+  const fit = natural && frame ? choosePhotoFit(natural, frame) : 'cover'
   return (
-    <img
-      src={src}
-      alt=""
-      onLoad={() => setLoaded(true)}
+    <div
       className={cn(
-        'absolute inset-0 h-full w-full object-cover transition-opacity duration-1000',
-        loaded ? 'opacity-100' : 'opacity-0',
+        'absolute inset-0 transition-opacity duration-1000',
+        natural ? 'opacity-100' : 'opacity-0',
       )}
-    />
+    >
+      {fit === 'contain' && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-75"
+        />
+      )}
+      <img
+        src={src}
+        alt=""
+        onLoad={(e) =>
+          setNatural({ width: e.currentTarget.naturalWidth, height: e.currentTarget.naturalHeight })
+        }
+        className={cn(
+          'absolute inset-0 h-full w-full',
+          fit === 'cover' ? 'object-cover' : 'object-contain',
+        )}
+      />
+    </div>
   )
 }
 
@@ -46,17 +86,37 @@ function FadeImage({ src }: { src: string }) {
 function PhotoStack({ assetId }: { assetId: string | null }) {
   const [layers, setLayers] = useState<{ id: string; key: number }[]>([])
   const keyRef = useRef(0)
+  const [frame, frameRef] = useMeasuredSize()
   useEffect(() => {
     if (!assetId) return
     setLayers((prev) => [...prev, { id: assetId, key: keyRef.current++ }].slice(-2))
   }, [assetId])
   return (
-    <>
+    <div ref={frameRef} className="absolute inset-0">
       {layers.map((layer) => (
-        <FadeImage key={layer.key} src={photoUrl(layer.id)} />
+        <FadeImage key={layer.key} src={photoUrl(layer.id)} frame={frame} />
       ))}
-    </>
+    </div>
   )
+}
+
+/** The frame's own size, kept current so a rotated or resized display re-fits
+ *  its photos rather than holding a decision made at a shape it no longer is. */
+function useMeasuredSize(): [Size | null, (el: HTMLElement | null) => void] {
+  const [size, setSize] = useState<Size | null>(null)
+  const observerRef = useRef<ResizeObserver | null>(null)
+  const measure = useCallback((el: HTMLElement | null) => {
+    observerRef.current?.disconnect()
+    if (!el) return
+    setSize({ width: el.clientWidth, height: el.clientHeight })
+    observerRef.current = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setSize({ width, height })
+    })
+    observerRef.current.observe(el)
+  }, [])
+  useEffect(() => () => observerRef.current?.disconnect(), [])
+  return [size, measure]
 }
 
 /** A coarse clock used only for the date line (the hands animate separately). */
