@@ -90,9 +90,16 @@ class HomeAssistantClient {
    * §8.11, §10 Phase 6.3) and resolve once HA acknowledges it. Rejects if the
    * link is down or HA reports failure — the caller (control service) maps that
    * to a graceful `{ ok: false }`, never a thrown request. The (domain, service)
-   * pair is allowlisted by the schema before it reaches here.
+   * pair is allowlisted by the schema before it reaches here, and `data` — the
+   * arguments a setpoint-style service needs — has been re-parsed against that
+   * service's declared shape, so only known keys reach the socket.
    */
-  callService(domain: string, service: string, entityId: string): Promise<void> {
+  callService(
+    domain: string,
+    service: string,
+    entityId: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
     const socket = this.ws
     if (this.status !== 'connected' || !socket) {
       return Promise.reject(new Error('Home Assistant is not connected'))
@@ -111,6 +118,7 @@ class HomeAssistantClient {
             type: 'call_service',
             domain,
             service,
+            ...(data && Object.keys(data).length > 0 && { service_data: data }),
             target: { entity_id: entityId },
           }),
         )
@@ -167,6 +175,11 @@ class HomeAssistantClient {
   /** Current dashboard-relevant entity states (empty until connected). */
   getEntities(): HaEntityState[] {
     return [...this.entities.values()]
+  }
+
+  /** One entity's current state, or null if it isn't tracked (or HA is down). */
+  getEntity(entityId: string): HaEntityState | null {
+    return this.entities.get(entityId) ?? null
   }
 
   /** Subscribe to live entity changes; returns an unsubscribe fn. */

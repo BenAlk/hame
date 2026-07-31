@@ -23,6 +23,7 @@ export const WIDGET_TYPES = [
   'expiringSoon',
   'lowStock',
   'smartHome',
+  'heating',
   'wifiQr',
   'choreStats',
   'integrationStatus',
@@ -138,6 +139,7 @@ export const DASHBOARD_WIDGETS: Record<WidgetType, WidgetMeta> = {
   },
   lowStock: { label: 'Low stock', defaultW: 1, defaultH: 3, minW: 1, minH: 2, requiresHa: false },
   smartHome: { label: 'Smart home', defaultW: 1, defaultH: 2, minW: 1, minH: 2, requiresHa: true },
+  heating: { label: 'Heating', defaultW: 1, defaultH: 2, minW: 1, minH: 2, requiresHa: true },
   wifiQr: { label: 'WiFi QR code', defaultW: 1, defaultH: 3, minW: 1, minH: 3, requiresHa: false },
   choreStats: {
     label: 'Chore stats',
@@ -171,6 +173,7 @@ export const DEFAULT_WIDGET_ORDER: WidgetType[] = [
   'expiringSoon',
   'lowStock',
   'smartHome',
+  'heating',
   'wifiQr',
   'choreStats',
   'integrationStatus',

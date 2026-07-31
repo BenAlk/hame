@@ -9,12 +9,18 @@ import type {
   TestHomeAssistantInput,
   UpdateHomeAssistantConfigInput,
 } from '@hame/shared'
-import { isHaServiceAllowed } from '@hame/shared'
+import {
+  clampSetpoint,
+  haClimateView,
+  isHaServiceAllowed,
+  sanitiseHaServiceData,
+} from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { logger } from '../lib/logger.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { haClient } from '../integrations/home-assistant/client.js'
+import { entityDomain } from '../integrations/home-assistant/entities.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
 import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
 import {
@@ -119,6 +125,11 @@ export async function testHomeAssistant(
  * here as defence in depth, then run it over the live socket. Never throws — a
  * down link or an HA-side failure comes back as a structured `{ ok: false }`,
  * the same graceful-degrade contract as the other integrations.
+ *
+ * Services that take arguments (heating setpoints) get two further checks: the
+ * payload is re-parsed against that service's declared shape so only known keys
+ * travel, and a setpoint is then held inside the *device's* own advertised range
+ * rather than the schema's coarse envelope.
  */
 export async function callHomeAssistantService(
   input: HaServiceCallInput,
@@ -126,13 +137,49 @@ export async function callHomeAssistantService(
   if (!isHaServiceAllowed(input.domain, input.service)) {
     throw HttpError.badRequest('That Home Assistant service is not permitted.')
   }
+  // An allowlisted domain must not be aimed at another domain's entity — that
+  // would let one permitted (domain, service) pair act outside its allowlist row.
+  if (entityDomain(input.entityId) !== input.domain) {
+    throw HttpError.badRequest('That entity does not belong to that domain.')
+  }
+
+  let data: Record<string, unknown> | undefined
   try {
-    await haClient.callService(input.domain, input.service, input.entityId)
+    data = sanitiseHaServiceData(input.domain, input.service, input.data)
+  } catch {
+    throw HttpError.badRequest('Invalid arguments for that Home Assistant service.')
+  }
+  data = clampSetpointToDevice(input, data)
+
+  try {
+    await haClient.callService(input.domain, input.service, input.entityId, data)
     return { ok: true, message: 'Done.' }
   } catch (err) {
     logger.warn({ err, ...input }, 'Home Assistant service call failed')
     return { ok: false, message: err instanceof Error ? err.message : 'Command failed.' }
   }
+}
+
+/**
+ * Hold a target temperature inside the range the device itself advertises, and
+ * on its own step. The request schema can only enforce the absolute envelope
+ * (§11) because the device's range is live state, not a constant — so the real
+ * bound is applied here, where the registry is. An entity HA isn't currently
+ * tracking keeps the envelope's bound and is relayed anyway: HA is the final
+ * authority on its own device, and refusing would break the control whenever the
+ * registry is mid-reconnect.
+ */
+function clampSetpointToDevice(
+  input: HaServiceCallInput,
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (input.domain !== 'climate' || input.service !== 'set_temperature') return data
+  const temperature = data?.temperature
+  if (typeof temperature !== 'number') return data
+
+  const entity = haClient.getEntity(input.entityId)
+  if (!entity) return data
+  return { ...data, temperature: clampSetpoint(temperature, haClimateView(entity)) }
 }
 
 /**

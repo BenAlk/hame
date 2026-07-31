@@ -1065,6 +1065,9 @@ enum NoteAudience {
 - **Features exposed**:
   - Read entity states (lights, sensors, temperature, presence) for dashboard widgets
   - Control devices (toggle lights, run scenes, trigger automations)
+  - **Heating** — a climate entity's target temperature and on/off, on its own
+    dashboard widget (§10 Phase 20). The first control that carries an
+    *argument*, so the service allowlist gained a per-service payload schema
   - Send notifications via HA (HA handles phone push)
   - Read HA calendars (added as a `CalendarSource`)
 - **No state mirroring** — Hame queries HA live, doesn't duplicate entity data
@@ -3077,6 +3080,88 @@ reloads in ~4s, well inside budget.
 
 ---
 
+### Phase 20 — Heating (the first control with an argument) ✅ Complete (31-07-2026)
+
+`climate` had been in `HA_DASHBOARD_DOMAINS` since Phase 6.2, so a thermostat's
+state was already ingested and streamed to the browser — it simply could not be
+touched. Closing that gap turned out to need more than an allowlist row, because
+every control Hame had relayed until now was a verb with no argument.
+
+**Goal**: Set the heating from the wall tablet, without widening what Hame will
+relay to Home Assistant.
+
+**Design**:
+
+- **The allowlist learns to type its arguments.** `HA_CONTROL_SERVICES` was safe
+  precisely because `(domain, service)` fully determined the effect: "toggle the
+  kitchen light" needs no further checking. A setpoint breaks that — "set
+  temperature" is only meaningful, or safe, alongside *what* temperature. So each
+  service that takes a payload now declares its exact shape, `.strict()` so an
+  unknown key is refused rather than forwarded, and a service **absent** from that
+  map accepts no payload at all. Deny by default, extended rather than replaced.
+- **Two bounds, because they are two different facts.** The schema can only
+  enforce an absolute envelope (4–35 °C) — a constant, and therefore a backstop
+  against a crafted request. A thermostat's real range is *live state*, so the
+  binding clamp is applied in the service, against the entity's own `min_temp` /
+  `max_temp` and `target_temp_step` from the registry. The device is the authority
+  on itself; the constant only catches what could never be right for anything.
+- **Sanitise where the socket is, not where the schema was.** The request schema
+  validates `data` but cannot replace it — `data` is typed as an open record at
+  the top level, so the parsed body still carries whatever was sent. The service
+  therefore re-parses against the declared shape before relaying, which is what
+  actually guarantees only declared keys reach HA. The same defence-in-depth
+  stance as the allowlist re-check beside it.
+- **A narrower set of modes than HA has.** Only `off` and `heat` can be *set* —
+  the wall tablet controls heating, and cooling, drying and the auto blends are
+  left to HA. A mode Hame cannot set is still *displayed* faithfully, because the
+  widget reads the entity's real state rather than assuming its own vocabulary.
+- **Its own widget, not a third row type.** This was built first as a setpoint row
+  inside the smart-home widget — a thermostat is, after all, another curated
+  device. Seen on the dashboard it was clunky: a two-line control carrying a
+  number, a range and a room temperature sat awkwardly among single-line toggles,
+  and the widget stopped being about one kind of thing. Heating is therefore its
+  own widget, gated on HA exposing a `climate` entity at all. It draws on the
+  *same* curated per-owner selection (§10 Phase 6.3, 7.1b) — one list of "devices
+  I care about", presented in two widgets by kind — so joining
+  `HA_CONTROLLABLE_DOMAINS` still bought curation and the new-device prompt for
+  free, and no second selection model was needed.
+- **The tap answers before Home Assistant does.** Entity truth arrives over SSE,
+  so a setpoint driven straight from it would sit still after each tap, and 19° to
+  21° is four taps. A local value moves at once and only the *settled* value is
+  sent, which also spares the boiler the intermediate steps. It is given up as
+  soon as HA reports it, and abandoned after a timeout — an unconfirmed setpoint
+  snaps back rather than leaving the wall tablet quietly lying about the house.
+
+**Delivered**: `climate: ['set_temperature', 'set_hvac_mode']` on the allowlist;
+`HA_SERVICE_DATA_SCHEMAS` + `sanitiseHaServiceData`; `HA_SETPOINT_DOMAINS` as a
+third controllable kind; `haClimateView` / `clampSetpoint` as pure shared helpers
+over HA's loose attributes; `callService` carrying optional `service_data`;
+`haClient.getEntity` for the clamp; a **Heating** dashboard widget
+(`heating`, joining `WIDGET_TYPES` / `DASHBOARD_WIDGETS` / `DEFAULT_WIDGET_ORDER`)
+built from a `SetpointRow`, with the pill switch lifted into a shared
+`ToggleSwitch` so on/off reads identically there and on the smart-home widget; and
+a **Heating** group on the `/smart-home` picker. Existing dashboards aren't
+rewritten — the widget appears in the add-tray, like every other.
+
+**Found along the way**: an allowlisted domain could be aimed at *another*
+domain's entity (`domain: 'light'`, `entityId: 'climate.hallway'`), which would
+let one permitted row act outside itself. HA would likely have refused it, but
+Hame was relaying it. The service now requires the entity id's own domain to
+match the request's.
+
+**Verified**: typecheck / lint / format green, **646 API + 127 web + 15
+bin-scraper tests** (32 new), all builds clean. Coverage centres on the payload
+boundary — an out-of-envelope temperature, a non-numeric one, an unknown key
+smuggled beside a valid one, arguments given to an argument-less service, an HVAC
+mode outside the offered two, the device-range clamp beating the envelope, the
+step rounding, a device reporting its range backwards or claiming a zero step, and
+the domain-mismatch refusal. The widget's reconcile is tested on fake timers:
+rapid taps send once, the local value is given up when HA reports it, and it snaps
+back when HA never does. **Not yet exercised against the live thermostat** — as
+with the Ollama phases, that is Ben's check against his own house.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -3094,6 +3179,7 @@ reloads in ~4s, well inside budget.
 - **SSRF guard on outbound fetches**: user-supplied URLs (recipe import, iCal feeds) go through a shared `safeFetch` that refuses non-http(s) schemes and hosts resolving to loopback/private/link-local/reserved addresses, re-checking each redirect hop. Admin-configured integrations (HA/Immich/Ollama), which legitimately target the LAN, are exempt (Phase 8.6).
 - **Content-Security-Policy** and companion headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) on the served HTML; user URL fields are constrained to http(s) at the Zod schema to prevent `javascript:`-scheme stored XSS (Phase 8.6).
 - **Backups**: the logical export (§8.15) is **always** passphrase-encrypted — an argon2id-derived key + AES-256-GCM over the whole file — because it contains argon2 password hashes and the decrypted integration secrets. Import re-encrypts those secrets under the target instance's `ENCRYPTION_KEY`. Export/import are admin-only, CSRF-protected and rate-limited (Phase 8.8).
+- **Device-control payloads**: the HA service allowlist (§8.11) pairs each permitted `(domain, service)` with an exact, `.strict()` payload schema; a service not in that map accepts no payload at all, and an allowlisted domain must be aimed at its own domain's entity. A setpoint is additionally clamped server-side to the device's own advertised range, since the schema can only enforce a constant envelope (Phase 20).
 - **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
 - **httpOnly cookies** for JWT preferred over localStorage

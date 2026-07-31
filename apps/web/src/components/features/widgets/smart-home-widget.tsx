@@ -6,6 +6,7 @@ import { HA_ACTIVATE_DOMAINS, HA_ACTIVATE_SERVICE, HA_TOGGLE_DOMAINS } from '@ha
 import { WidgetCard } from '@/components/features/widget-card'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { useHaControl, useHaEntities, useSmartHomeControls } from '@/api/home-assistant'
+import { ToggleSwitch } from './toggle-switch'
 import { cn } from '@/lib/utils'
 
 const TOGGLE_DOMAINS = HA_TOGGLE_DOMAINS as readonly string[]
@@ -105,31 +106,18 @@ export function SmartHomeWidget() {
                       aria-hidden
                     />
                     <span className="min-w-0 flex-1 truncate text-ink">{label(entity)}</span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={on}
-                      aria-label={`Toggle ${label(entity)}`}
-                      disabled={busy}
-                      onClick={() =>
+                    <ToggleSwitch
+                      on={on}
+                      busy={busy}
+                      ariaLabel={`Toggle ${label(entity)}`}
+                      onToggle={() =>
                         void control.mutateAsync({
                           domain: entity.domain,
                           service: 'toggle',
                           entityId: entity.entityId,
                         })
                       }
-                      className={cn(
-                        'relative h-6 w-[42px] shrink-0 rounded-pill transition-colors disabled:opacity-50',
-                        on ? 'bg-accent' : 'bg-line',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'absolute top-0.5 size-5 rounded-pill bg-surface shadow-sm transition-all',
-                          on ? 'left-[19px]' : 'left-0.5',
-                        )}
-                      />
-                    </button>
+                    />
                   </li>
                 )
               })}

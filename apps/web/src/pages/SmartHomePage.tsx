@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Lightbulb, Play, Power, ToyBrick, type LucideIcon } from 'lucide-react'
+import { Lightbulb, Play, Power, Thermometer, ToyBrick, type LucideIcon } from 'lucide-react'
 import type { HaEntityState } from '@hame/shared'
-import { HA_ACTIVATE_DOMAINS, HA_TOGGLE_DOMAINS } from '@hame/shared'
+import { HA_ACTIVATE_DOMAINS, HA_SETPOINT_DOMAINS, HA_TOGGLE_DOMAINS } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { ApiError } from '@/api/client'
@@ -13,12 +13,17 @@ import {
 } from '@/api/home-assistant'
 import { cn } from '@/lib/utils'
 
-const CONTROLLABLE = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as readonly string[]
+const CONTROLLABLE = [
+  ...HA_TOGGLE_DOMAINS,
+  ...HA_ACTIVATE_DOMAINS,
+  ...HA_SETPOINT_DOMAINS,
+] as readonly string[]
 
 /** Display groups, in render order, with a label + icon per domain. */
 const GROUPS: { domain: string; label: string; Icon: LucideIcon }[] = [
   { domain: 'light', label: 'Lights', Icon: Lightbulb },
   { domain: 'switch', label: 'Switches', Icon: Power },
+  { domain: 'climate', label: 'Heating', Icon: Thermometer },
   { domain: 'fan', label: 'Fans', Icon: Power },
   { domain: 'scene', label: 'Scenes', Icon: Play },
   { domain: 'script', label: 'Scripts', Icon: ToyBrick },

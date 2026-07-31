@@ -114,6 +114,7 @@ export const HA_CONTROL_SERVICES: Record<string, readonly string[]> = {
   scene: ['turn_on'],
   script: ['turn_on'],
   automation: ['trigger', 'turn_on', 'turn_off'],
+  climate: ['set_temperature', 'set_hvac_mode'],
 }
 
 /** Domains the widget renders as on/off toggles (they carry an on/off state). */
@@ -122,8 +123,15 @@ export const HA_TOGGLE_DOMAINS = ['light', 'switch', 'fan'] as const
 /** Domains the widget renders as a momentary "run" button (no on/off state). */
 export const HA_ACTIVATE_DOMAINS = ['scene', 'script'] as const
 
-/** Every domain the smart-home widget can surface (toggles + run buttons). */
-export const HA_CONTROLLABLE_DOMAINS = [...HA_TOGGLE_DOMAINS, ...HA_ACTIVATE_DOMAINS] as const
+/** Domains the widget renders as a target-temperature control (spec §8.11 heating). */
+export const HA_SETPOINT_DOMAINS = ['climate'] as const
+
+/** Every domain the smart-home widget can surface (toggles, run buttons, setpoints). */
+export const HA_CONTROLLABLE_DOMAINS = [
+  ...HA_TOGGLE_DOMAINS,
+  ...HA_ACTIVATE_DOMAINS,
+  ...HA_SETPOINT_DOMAINS,
+] as const
 
 /** Whether an entity domain is one the smart-home widget can control. */
 export function isControllableDomain(domain: string): boolean {
@@ -142,15 +150,113 @@ export function isHaServiceAllowed(domain: string, service: string): boolean {
   return HA_CONTROL_SERVICES[domain]?.includes(service) ?? false
 }
 
+/**
+ * The HVAC modes Hame will set. Deliberately narrower than Home Assistant's own
+ * set: the wall tablet controls heating, so it offers "on" and "off" and leaves
+ * cooling, drying and the auto blends to HA itself. A mode Hame can't set is
+ * still *displayed* faithfully — the widget reads the entity's real state.
+ */
+export const HA_HVAC_MODES = ['off', 'heat'] as const
+export type HaHvacMode = (typeof HA_HVAC_MODES)[number]
+
+/**
+ * The absolute envelope any setpoint must fall inside, whatever a device claims.
+ * This is a backstop against a crafted request, not the range shown to anyone:
+ * the widget offers — and the API clamps to — the entity's own `min_temp` /
+ * `max_temp`, which is the device's truth. Chosen to span frost protection at the
+ * bottom and any plausible domestic thermostat at the top.
+ */
+export const HA_SETPOINT_FLOOR_C = 4
+export const HA_SETPOINT_CEILING_C = 35
+
+/**
+ * Payload schemas per allowlisted service, keyed `domain.service`.
+ *
+ * Until heating, every control Hame relayed was a verb with no argument, so
+ * allowlisting (domain, service) fully determined the effect. A setpoint breaks
+ * that: "set temperature" is only safe alongside *what* temperature. So each
+ * service that takes a payload declares its exact shape, `.strict()` so an
+ * unknown key is refused rather than quietly forwarded to Home Assistant — and a
+ * service absent from this map accepts no payload at all. Deny by default, the
+ * same stance as the service allowlist it extends.
+ */
+const HA_SERVICE_DATA_SCHEMAS: Record<string, z.ZodType<Record<string, unknown>>> = {
+  'climate.set_temperature': z
+    .object({
+      temperature: z.number().min(HA_SETPOINT_FLOOR_C).max(HA_SETPOINT_CEILING_C),
+    })
+    .strict(),
+  'climate.set_hvac_mode': z
+    .object({
+      hvac_mode: z.enum(HA_HVAC_MODES),
+    })
+    .strict(),
+}
+
+/** The payload schema for an allowlisted service, or null if it takes none. */
+export function haServiceDataSchema(
+  domain: string,
+  service: string,
+): z.ZodType<Record<string, unknown>> | null {
+  return HA_SERVICE_DATA_SCHEMAS[`${domain}.${service}`] ?? null
+}
+
+/**
+ * Re-derive a clean payload for an allowlisted service, throwing on anything the
+ * schema refuses. The API calls this rather than forwarding the request body: the
+ * request schema validates `data` but doesn't *replace* it (it's typed as an open
+ * record at the top level), so parsing again here is what guarantees only
+ * declared keys ever reach Home Assistant — defence in depth, as with the
+ * allowlist re-check beside it.
+ */
+export function sanitiseHaServiceData(
+  domain: string,
+  service: string,
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const schema = haServiceDataSchema(domain, service)
+  if (!schema) return undefined
+  return schema.parse(data ?? {})
+}
+
 /** A request to run one HA service against one entity (spec §10 Phase 6.3). */
 export const HaServiceCallSchema = z
   .object({
     domain: z.string().min(1).max(50),
     service: z.string().min(1).max(50),
     entityId: z.string().min(1).max(200),
+    /** Service arguments, for the services that take them (e.g. a setpoint). */
+    data: z.record(z.unknown()).optional(),
   })
-  .refine((c) => isHaServiceAllowed(c.domain, c.service), {
-    message: 'That Home Assistant service is not permitted.',
+  .superRefine((call, ctx) => {
+    if (!isHaServiceAllowed(call.domain, call.service)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'That Home Assistant service is not permitted.',
+      })
+      return
+    }
+    const schema = haServiceDataSchema(call.domain, call.service)
+    if (!schema) {
+      // An argument-less service given arguments is refused rather than ignored:
+      // silently dropping it would let a request appear to do something it can't.
+      if (call.data && Object.keys(call.data).length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['data'],
+          message: 'That Home Assistant service takes no arguments.',
+        })
+      }
+      return
+    }
+    const parsed = schema.safeParse(call.data ?? {})
+    if (!parsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['data'],
+        message: parsed.error.issues[0]?.message ?? 'Invalid arguments for that service.',
+      })
+    }
   })
 export type HaServiceCallInput = z.infer<typeof HaServiceCallSchema>
 
@@ -160,6 +266,60 @@ export const HaServiceCallResultSchema = z.object({
   message: z.string(),
 })
 export type HaServiceCallResult = z.infer<typeof HaServiceCallResultSchema>
+
+/**
+ * A climate entity read into the fields a thermostat control needs (spec §8.11).
+ * Home Assistant publishes these as loose attributes; this narrows them once, so
+ * neither the widget nor the API's clamp has to re-derive them.
+ *
+ * `min`/`max` are the device's own range, themselves held inside the absolute
+ * envelope so a misreporting integration can't widen what Hame will send. A
+ * climate entity's `state` *is* its HVAC mode, so "on" is simply "not off".
+ */
+export interface HaClimateView {
+  current: number | null
+  target: number | null
+  min: number
+  max: number
+  step: number
+  isOn: boolean
+}
+
+/** HA's own fallbacks when a climate entity declines to publish a range. */
+const DEFAULT_MIN_TEMP = 7
+const DEFAULT_MAX_TEMP = 35
+const DEFAULT_TEMP_STEP = 0.5
+
+export function haClimateView(entity: HaEntityState): HaClimateView {
+  const attrs = entity.attributes
+  const min = clampToEnvelope(numberAttr(attrs.min_temp) ?? DEFAULT_MIN_TEMP)
+  const max = clampToEnvelope(numberAttr(attrs.max_temp) ?? DEFAULT_MAX_TEMP)
+  return {
+    current: numberAttr(attrs.current_temperature),
+    target: numberAttr(attrs.temperature),
+    min: Math.min(min, max),
+    max: Math.max(min, max),
+    step: numberAttr(attrs.target_temp_step) ?? DEFAULT_TEMP_STEP,
+    isOn: entity.state !== 'off',
+  }
+}
+
+function numberAttr(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function clampToEnvelope(value: number): number {
+  return Math.min(Math.max(value, HA_SETPOINT_FLOOR_C), HA_SETPOINT_CEILING_C)
+}
+
+/** Round a setpoint to the device's step and hold it inside its own range —
+ *  what the widget offers and what the API enforces before relaying. */
+export function clampSetpoint(value: number, view: HaClimateView): number {
+  const stepped = view.step > 0 ? Math.round(value / view.step) * view.step : value
+  const bounded = Math.min(Math.max(stepped, view.min), view.max)
+  // Steps like 0.1 make binary fractions; round off the noise they leave behind.
+  return Math.round(bounded * 100) / 100
+}
 
 /**
  * A Home Assistant calendar entity (spec §8.10, §10 Phase 6.3). Listed so an

@@ -45,8 +45,9 @@ surfaces, a dusty-rose accent, a reading serif for human moments._
 
   ![Aggregated month calendar](docs/screenshots/calendar-month.png)
 
-- **Home Assistant** — live sensor data and device controls on the dashboard over a WebSocket, plus
-  HA as a calendar and bin-schedule source.
+- **Home Assistant** — live sensor data and device controls on the dashboard over a WebSocket:
+  lights, switches and scenes on the smart-home widget, and a **heating** widget carrying each
+  thermostat's room temperature, target and on/off. Plus HA as a calendar and bin-schedule source.
 - **Dashboard & idle mode** — per-user and shared wall-tablet layouts with drag-and-drop widgets;
   left idle, the tablet becomes a photo frame cycling your **Immich** library with a large clock.
 
