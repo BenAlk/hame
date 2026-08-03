@@ -10,6 +10,7 @@ import { startIntegrationSyncJob, stopIntegrationSyncJob } from './jobs/integrat
 import { startBackupJob, stopBackupJob } from './jobs/backup.job.js'
 import { startNoteSweepJob, stopNoteSweepJob } from './jobs/note-sweep.job.js'
 import { startHomeAssistant, stopHomeAssistant } from './integrations/home-assistant/index.js'
+import { flushPendingRestores } from './integrations/home-assistant/alert-escalation.js'
 
 const app = createApp()
 
@@ -57,6 +58,9 @@ async function shutdown(signal: string) {
   stopIntegrationSyncJob()
   stopBackupJob()
   stopNoteSweepJob()
+  // Put back any phone an alert turned up (§10 Phase 21) before the socket goes,
+  // so a deploy inside the restore window doesn't strand one at full volume.
+  await flushPendingRestores()
   stopHomeAssistant()
   server.close()
   await prisma.$disconnect()

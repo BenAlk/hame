@@ -641,6 +641,10 @@ model NotificationPreference {
   criticalAlerts       Boolean @default(false)
   // A direct QuickNote (§8.16) to this user pings them via the push above.
   directNoteAlerts     Boolean @default(true)
+  // Opt-in (§10 Phase 21): a household alert may briefly lift this phone's Do Not
+  // Disturb, ringer mode and volume, then put them straight back. Off by default —
+  // it writes settings on someone's device. Household alerts only, never the digest.
+  alertBreakThrough    Boolean @default(false)
 
   updatedAt DateTime @updatedAt
 }

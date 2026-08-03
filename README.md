@@ -391,7 +391,7 @@ up their phone" rather than failing silently.
 Two things get sent: a twice-daily **reminder digest** (bins, your chores, expiring food, low stock,
 today's events — each toggleable), and the **household alert** — the bell on the phone's top bar,
 which pings one member urgently and is deliberately sent as a _critical_ push so it rings through a
-silenced phone. Admins can turn the whole alert feature off under **Settings → Smart home → Household
+silenced phone (and, if the recipient opts in, by briefly turning their phone up — see below). Admins can turn the whole alert feature off under **Settings → Smart home → Household
 alerts**.
 
 #### Making critical alerts actually ring
@@ -400,13 +400,17 @@ This is the part worth reading, because whether a critical alert makes a noise i
 **receiving handset**, not by Hame. Each phone needs a one-time setup, and getting no sound is almost
 always a device setting rather than a bug.
 
-**Android.** Hame sends `channel: alarm_stream`, which plays the notification through the _alarm_
-audio stream so it sounds while the ringer is off. The channel is created on the phone by the first
-alert that arrives. Then:
+**Android — by default.** Hame sends `channel: alarm_stream`, which asks the phone to play the
+notification through the _alarm_ audio stream so it sounds while the ringer is off. The channel is
+created on the phone by the first alert that arrives, and:
 
 - **Android locks a channel's importance and sound the first time that channel is created**, and
   afterwards honours only a _lowering_ of them. If the channel ends up wrong, nothing Hame sends can
   repair it — it has to be fixed on the handset.
+- **Some manufacturers downgrade it deliberately.** Samsung in particular strips the alarm treatment,
+  so the alert arrives as an ordinary notification and obeys the ringer like anything else. This is a
+  manufacturer decision taken above the app; no payload can reach past it, which is what the opt-in
+  below exists for.
 - Check **Settings → Apps → Home Assistant → Notifications** and confirm the `alarm_stream` channel is
   set to **Alert** with a sound selected. Samsung calls channels _notification categories_ and has a
   per-app toggle for them that must be on, or every channel collapses into one.
@@ -418,9 +422,40 @@ alert that arrives. Then:
   deleted channel's settings so apps can't override a user's choice by recreating them. Clearing the
   Companion app's storage is the reliable reset.
 
+**Android — "let household alerts turn my phone up".** Because the above depends on your
+manufacturer's goodwill, each member can opt their _own_ phone into a stronger path under
+**Profile → Notifications**. Instead of asking the phone to treat a notification as an alarm, Hame
+briefly lifts whatever is silencing it — Do Not Disturb, vibrate/silent mode, and the notification and
+alarm volumes — sends the alert into that window, and **puts every one of them back a minute later**.
+It works the same on any Android handset, because it relies on none of the channel behaviour above.
+
+It is off by default and it is the _recipient's_ choice, never the sender's: it changes settings on
+your phone, so only you can turn it on. It applies to household alerts only — never the twice-daily
+reminder digest. Two one-time steps on the handset:
+
+1. **Grant the Do Not Disturb permission** to the Companion app. The first alert prompts for it
+   automatically (you'll get a notification asking), or set it in advance under
+   **Settings → Apps → Special access → Do Not Disturb access**.
+2. **Enable four sensors** in the Companion app under **Settings → Companion app → Manage sensors**:
+   _Do Not Disturb sensor_, _Ringer mode_, _Volume level notification_ and _Volume level alarm_. They
+   are off by default.
+
+Those sensors are how Hame knows what to put back, so it treats them as a precondition rather than a
+nicety: **anything it cannot read, it does not touch.** Enable none of them and nothing on your phone
+is changed — the alert simply falls back to the ordinary critical push above. That also means an
+alert never silently half-works: the alert dialog tells the sender which of the two paths a recipient
+will get before they send it.
+
+One caveat worth knowing: the restore is scheduled a minute after the alert. If the Hame server is
+shut down in that window it puts phones back on its way out, but a hard crash or power cut cannot —
+in which case the phone stays turned up until someone changes it back. That is the reason the window
+is a minute and not an hour.
+
 **iOS.** Hame sends `push.sound.critical`, which bypasses both the ring switch and Do Not Disturb.
 This needs the **Critical Alerts** permission granted to the Companion app — iOS prompts for it, and
-if it was declined it can be re-enabled from the app's notification settings.
+if it was declined it can be re-enabled from the app's notification settings. The Android opt-in above
+does not apply — iOS exposes no such device commands, and `push.sound.critical` already breaks
+through properly, so an iPhone is left entirely alone whether the toggle is on or not.
 
 To test a phone's setup independently of Hame, send the same payload straight from HA's
 **Developer Tools → Actions**:
@@ -434,6 +469,19 @@ data:
     ttl: 0
     priority: high
     channel: alarm_stream
+```
+
+And to check the break-through path is wired up, confirm the four sensors report real values in HA
+(`sensor.<device>_ringer_mode` and friends), then send a volume command by hand — the phone's volume
+slider should visibly move:
+
+```yaml
+action: notify.mobile_app_<device>
+data:
+  message: command_volume_level
+  data:
+    media_stream: alarm_stream
+    command: 7
 ```
 
 ### Automatic bin collection schedules

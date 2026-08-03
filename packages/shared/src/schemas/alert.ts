@@ -15,6 +15,15 @@ export const AlertRecipientSchema = z.object({
   colour: z.string(),
   /** True when the member has picked a phone (`haNotifyService`) in their Profile. */
   canReceive: z.boolean(),
+  /**
+   * True when this alert will actually turn their phone up (§10 Phase 21): they
+   * opted in *and* Home Assistant can currently read the settings the escalation
+   * would need to restore. False means the alert still sends — it just falls back
+   * to the plain critical push, which a handset may choose to silence. Surfaced so
+   * the sender knows which of the two they're getting *before* they send, rather
+   * than inferring it from a phone that never rang.
+   */
+  willBreakThrough: z.boolean(),
 })
 export type AlertRecipient = z.infer<typeof AlertRecipientSchema>
 

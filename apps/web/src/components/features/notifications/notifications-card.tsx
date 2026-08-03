@@ -31,6 +31,7 @@ interface Draft {
   haNotifyService: string
   criticalAlerts: boolean
   directNoteAlerts: boolean
+  alertBreakThrough: boolean
 }
 
 /**
@@ -61,6 +62,7 @@ export function NotificationsCard() {
       haNotifyService: prefs.haNotifyService ?? '',
       criticalAlerts: prefs.criticalAlerts,
       directNoteAlerts: prefs.directNoteAlerts,
+      alertBreakThrough: prefs.alertBreakThrough,
     })
   }, [prefs])
 
@@ -86,6 +88,7 @@ export function NotificationsCard() {
     draft.pushViaHA !== prefs.pushViaHA ||
     draft.criticalAlerts !== prefs.criticalAlerts ||
     draft.directNoteAlerts !== prefs.directNoteAlerts ||
+    draft.alertBreakThrough !== prefs.alertBreakThrough ||
     draft.haNotifyService !== (prefs.haNotifyService ?? '')
 
   // Keep the stored target selectable even if HA is currently unreachable.
@@ -104,6 +107,7 @@ export function NotificationsCard() {
       pushViaHA: draft.pushViaHA,
       criticalAlerts: draft.criticalAlerts,
       directNoteAlerts: draft.directNoteAlerts,
+      alertBreakThrough: draft.alertBreakThrough,
       haNotifyService: draft.haNotifyService === '' ? null : draft.haNotifyService,
     })
   }
@@ -178,6 +182,21 @@ export function NotificationsCard() {
                 disabled={draft.haNotifyService === ''}
                 onChange={(next) => set('directNoteAlerts', next)}
               />
+
+              <div className="flex flex-col gap-1.5">
+                <Toggle
+                  label="Let household alerts turn my phone up"
+                  checked={draft.alertBreakThrough}
+                  disabled={draft.haNotifyService === ''}
+                  onChange={(next) => set('alertBreakThrough', next)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Android only. A household alert briefly lifts Do Not Disturb, takes the phone off
+                  silent and turns the volume up, then puts all three back a minute later. Needs the
+                  Home Assistant app's Do Not Disturb permission and its volume, ringer and Do Not
+                  Disturb sensors switched on — without those, nothing on your phone is changed.
+                </p>
+              </div>
             </div>
           )}
         </div>

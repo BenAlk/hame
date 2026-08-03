@@ -36,6 +36,13 @@ export const NotificationPreferenceSchema = z.object({
   criticalAlerts: z.boolean(),
   /** A direct QuickNote (§8.16) addressed to this user pings them via the push. */
   directNoteAlerts: z.boolean(),
+  /**
+   * Opt-in (§10 Phase 21): let a household alert briefly turn this phone up —
+   * lifting Do Not Disturb, the ringer mode and the volume — and put it straight
+   * back afterwards. Off by default, because it changes settings on someone's
+   * device; household alerts only, never the scheduled reminder digest.
+   */
+  alertBreakThrough: z.boolean(),
 })
 export type NotificationPreference = z.infer<typeof NotificationPreferenceSchema>
 
@@ -54,6 +61,7 @@ export const UpdateNotificationPreferenceSchema = z
     haNotifyService: z.string().max(200).nullish(),
     criticalAlerts: z.boolean(),
     directNoteAlerts: z.boolean(),
+    alertBreakThrough: z.boolean(),
   })
   .partial()
 export type UpdateNotificationPreferenceInput = z.infer<typeof UpdateNotificationPreferenceSchema>

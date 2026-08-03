@@ -20,6 +20,7 @@ interface PrefRow {
   haNotifyService: string | null
   criticalAlerts: boolean
   directNoteAlerts: boolean
+  alertBreakThrough: boolean
 }
 
 function toPreference(row: PrefRow): NotificationPreference {
@@ -34,6 +35,7 @@ function toPreference(row: PrefRow): NotificationPreference {
     haNotifyService: row.haNotifyService,
     criticalAlerts: row.criticalAlerts,
     directNoteAlerts: row.directNoteAlerts,
+    alertBreakThrough: row.alertBreakThrough,
   }
 }
 
@@ -76,6 +78,9 @@ export async function updateNotificationPreference(
       ...(haNotifyService !== undefined && { haNotifyService }),
       ...(input.criticalAlerts !== undefined && { criticalAlerts: input.criticalAlerts }),
       ...(input.directNoteAlerts !== undefined && { directNoteAlerts: input.directNoteAlerts }),
+      ...(input.alertBreakThrough !== undefined && {
+        alertBreakThrough: input.alertBreakThrough,
+      }),
     },
     create: {
       userId,

@@ -111,6 +111,18 @@ function AlertModal({
           </div>
         )}
 
+        {/* What will actually happen on their handset (§10 Phase 21). Whether a
+            critical push makes a noise is the receiving phone's decision, so the
+            sender is told which of the two they're getting before they send —
+            rather than working it out from a phone that never rang. */}
+        {selected?.canReceive && (
+          <p className="text-xs text-muted-foreground">
+            {selected.willBreakThrough
+              ? `${selected.firstName}’s phone will be turned up for this, then put back.`
+              : `${selected.firstName}’s phone may stay quiet if it’s on silent or Do Not Disturb.`}
+          </p>
+        )}
+
         <div>
           <textarea
             autoFocus

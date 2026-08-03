@@ -1099,6 +1099,7 @@ enum NoteAudience {
 - **Push via Home Assistant** — HA already handles phone push; Hame just sends events to HA, no duplicated notification infra
 - **Per-user preferences** — `NotificationPreference` toggles each category
 - **Critical alerts are delivered, not guaranteed** — the household alert (§10 Phase 12) is sent as a critical push, but whether it *sounds* through a silenced phone is decided entirely by the receiving handset. Hame sends both platforms' keys — `push.sound.critical` (iOS) and `ttl: 0` / `priority: high` / `channel: alarm_stream` / `importance: high` (Android) — and there the app's control ends. Two consequences worth holding onto: **Android locks a notification channel's importance and sound the first time that channel is created**, honouring only a later *lowering*, so `importance` must be claimed on the first push or that device is permanently stuck at the weaker default; and overriding Do Not Disturb is a per-channel permission Android refuses to let an app self-grant. Both are therefore **per-device setup steps, documented for end users in the README**, not something a code change can fix.
+- **Break-through, the opt-in catch-all** (§10 Phase 21) — the channel path above is the *fallback*, not the mechanism, because several manufacturers (Samsung most visibly) downgrade the alarm attributes so an alert plays as an ordinary notification. So a recipient can opt their own phone into a stronger path that argues with nothing: Hame briefly **moves the phone into a state where an ordinary notification is already audible** — lifting Do Not Disturb, taking it off vibrate/silent and raising both the notification and alarm streams to that device's own maximum — sends the alert, and puts every one of them back a minute later. These are Companion-app **device commands**, so they ride the same `notify.*` path as the alert itself and the HA service allowlist (§8.11) is untouched. Two rules keep it honest, both enforced in the pure planner rather than at the call site: **read before write, or don't write** (a rung is planned only when its current value can be read back from HA, since that reading *is* the unwind), and **every rung is reversible** (`restore` is the exact inverse of `escalate`, reversed, built from the same reading). The first doubles as the **iOS guard** — those sensors exist only on the Android Companion app, so an iPhone has nothing readable, plans nothing, and correctly falls to `push.sound.critical`. It is the **recipient's** opt-in, never the sender's, because it writes settings on their device; it is off by default; and it applies to household alerts only, never the scheduled digest. The picker reports, before you send, which of the two paths a member will get.
 
 ### 8.14 Immich Screensaver / Idle Mode
 
@@ -3162,6 +3163,95 @@ with the Ollama phases, that is Ben's check against his own house.
 
 ---
 
+### Phase 21 — Alert break-through (making a phone actually ring) ✅ Complete (03-08-2026)
+
+The household alert (§10 Phase 12) had always been sent as a critical push, and
+the README carried a careful page explaining why it might still make no noise.
+That page was accurate and it was also an admission: the feature worked on some
+handsets and quietly didn't on others, which for a "come here now" affordance is
+close to not working at all.
+
+**Goal**: An urgent alert makes a noise on any Android phone in the household —
+without Hame keeping a setting it wasn't asked to keep.
+
+**Design**:
+
+- **Stop arguing with the notification channel.** `channel: alarm_stream` is
+  exact-string-matched by the Companion app, which then builds the channel with
+  `USAGE_ALARM` + `FLAG_AUDIBILITY_ENFORCED`. On Android 8+ *everything* then
+  hinges on those attributes at the moment the channel is **created**, which the
+  OS freezes permanently — and several manufacturers downgrade them, so the alert
+  arrives as an ordinary notification. No payload can reach past that, which is
+  why this phase does not try. (`alarm_stream_max` is not an alternative: it is a
+  TTS `media_stream` value, and as a *channel* it fails the exact-match and yields
+  an ordinary channel with that name — permanently, since channels lock.)
+- **Move the phone instead of the message.** Escalation lifts whatever is actually
+  suppressing sound — Do Not Disturb, then the ringer mode, then the notification
+  and alarm stream volumes — sends the alert into that window, and unwinds. It
+  needs no channel cooperation, so it behaves the same on every manufacturer.
+  Ordered by what blocks what: DND outranks the ringer, which outranks the volume,
+  so they are lifted outermost-first and restored innermost-first.
+- **Read before write, or don't write.** A rung is planned **only** when its
+  current value can be read back, because that reading *is* the unwind. An
+  unreadable setting is left alone and the alert falls back to the plain critical
+  push. This is what makes the feature safe to ship on by request rather than
+  by inspection: Hame can never leave a phone in a state it cannot undo, and a
+  half-finished setup degrades a rung at a time rather than failing whole.
+- **The same rule is the iOS guard.** These sensors exist only on the Android
+  Companion app, so an iPhone reads nothing, plans nothing, and takes
+  `push.sound.critical` — which is the right answer for iOS anyway. Without it,
+  a device command aimed at an iPhone would post a notification whose body read
+  "command_volume_level".
+- **Both streams, because the server cannot know which one.** A handset that
+  honoured the alarm channel plays the alert on the alarm stream; one that
+  downgraded it plays on the notification stream. Raising both costs two silent
+  commands and removes the guess.
+- **The recipient's opt-in, not the sender's.** It writes settings on someone
+  else's device, so it sits on their own `NotificationPreference`, defaults off,
+  and covers household alerts only — never the twice-daily digest, which shares
+  `criticalAlertData()` and would otherwise start lifting phones at 7am.
+- **Nothing new is polled.** `sensor` has been a dashboard domain since Phase 6.2,
+  so a phone's volume/ringer/DND sensors already stream into the in-memory entity
+  registry the moment the household enables them; the reads are `haClient.getEntity`,
+  the same call Phase 20's setpoint clamp uses. The sensor↔phone mapping is free
+  too: HA derives `notify.mobile_app_bens_phone` and `sensor.bens_phone_ringer_mode`
+  from the same slug, the correspondence Phase 8.2 already leans on for device names.
+- **Device commands are notifications, not service calls.** They ride `notify.*`,
+  so the Phase 6.3/20 `call_service` allowlist is deliberately untouched by this
+  feature — nothing here widens what Hame will relay to Home Assistant.
+
+**Delivered**: a pure `alert-escalation` engine in `@hame/shared` (`planEscalation`
+/ `isEscalationPossible` / `deviceSensorIds`) and its impure counterpart in
+`integrations/home-assistant/alert-escalation.ts` (`readDeviceAudioState`,
+`canBreakThrough`, `withBreakThrough`, `flushPendingRestores`) — the same
+pure/impure split as the reminder and recurrence engines. `NotificationPreference`
+gains `alertBreakThrough` (Phase 21 migration, default false) with a toggle and
+its setup caveats on Profile → Notifications; `sendHaNotification`'s `title`
+became optional so a device command carries only its `message` and `data`. The
+alert picker gained `willBreakThrough`, answered **live** from the registry rather
+than from the opt-in alone — a member can have it on and still be unreachable this
+second — so the compose modal says which of the two paths a recipient will get
+*before* the alert is sent.
+
+**Held onto**: the unwind is scheduled, not awaited, so the sender isn't held for
+a minute; shutdown runs any pending restore (`flushPendingRestores`) so a deploy
+inside the window doesn't strand a phone at full volume. A hard kill still can,
+which is why the window is a minute rather than an hour, and why the README says
+so plainly.
+
+**Verified**: typecheck / lint / format green, **677 API + 127 web + 15
+bin-scraper tests** (32 new), all builds clean. Coverage centres on the two
+invariants: nothing is planned that cannot be undone, a rung is skipped when its
+sensor is missing/unresolved/non-numeric, the unwind restores exactly the values
+read and in reverse, a phone with nothing readable receives **no** device command
+at all (the iOS case), the alert still goes out when a lift command is rejected,
+and the unwind still runs when the alert itself throws. The delay and the
+shutdown flush are tested on fake timers. **Not yet exercised against a live
+handset** — as with the Ollama and heating phases, that is Ben's check against his
+own phones, and the one that matters most here.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -3180,6 +3270,7 @@ with the Ollama phases, that is Ben's check against his own house.
 - **Content-Security-Policy** and companion headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) on the served HTML; user URL fields are constrained to http(s) at the Zod schema to prevent `javascript:`-scheme stored XSS (Phase 8.6).
 - **Backups**: the logical export (§8.15) is **always** passphrase-encrypted — an argon2id-derived key + AES-256-GCM over the whole file — because it contains argon2 password hashes and the decrypted integration secrets. Import re-encrypts those secrets under the target instance's `ENCRYPTION_KEY`. Export/import are admin-only, CSRF-protected and rate-limited (Phase 8.8).
 - **Device-control payloads**: the HA service allowlist (§8.11) pairs each permitted `(domain, service)` with an exact, `.strict()` payload schema; a service not in that map accepts no payload at all, and an allowlisted domain must be aimed at its own domain's entity. A setpoint is additionally clamped server-side to the device's own advertised range, since the schema can only enforce a constant envelope (Phase 20).
+- **Alert break-through commands**: the Companion-app device commands that lift a phone's Do Not Disturb, ringer mode and volume (§8.13, Phase 21) travel as `notify.*` payloads, not `call_service`, so they widen nothing in the allowlist above. Every payload is built server-side from a closed set in the pure planner — no user-supplied value reaches Home Assistant — the target service is the *recipient's own* stored `haNotifyService`, and the escalation is the recipient's opt-in, so a sender cannot elect to change another member's device settings.
 - **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
 - **httpOnly cookies** for JWT preferred over localStorage

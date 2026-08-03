@@ -136,12 +136,17 @@ export async function fetchNotifyTargets(url: string, token: string): Promise<Ha
  * Send one push to a member's phone via `notify.<service>`. Never throws — a down
  * HA or a rejected request becomes `false` and is logged, so a failed push never
  * breaks the cron run (the same graceful-degrade contract as the syncs).
+ *
+ * `title` is optional because the Companion app's device commands (§10 Phase 21)
+ * ride this same path and carry only a `message` (the command name) and `data`;
+ * a title on one of those would only ever be seen if the command were malformed
+ * enough to be posted as an ordinary notification.
  */
 export async function sendHaNotification(
   url: string,
   token: string,
   service: string,
-  payload: { title: string; message: string; data?: Record<string, unknown> },
+  payload: { title?: string; message: string; data?: Record<string, unknown> },
 ): Promise<boolean> {
   const base = url.replace(/\/+$/, '')
   const controller = new AbortController()
@@ -151,7 +156,7 @@ export async function sendHaNotification(
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        title: payload.title,
+        ...(payload.title !== undefined && { title: payload.title }),
         message: payload.message,
         ...(payload.data && { data: payload.data }),
       }),

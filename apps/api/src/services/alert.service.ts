@@ -8,6 +8,10 @@ import {
   criticalAlertData,
   sendHaNotification,
 } from '../integrations/home-assistant/notifications.js'
+import {
+  canBreakThrough,
+  withBreakThrough,
+} from '../integrations/home-assistant/alert-escalation.js'
 
 /**
  * Household critical-alert "poke" (spec §10 Phase 12). A member sends a short,
@@ -48,19 +52,28 @@ export async function listAlertRecipients(caller: Caller): Promise<AlertRecipien
       id: true,
       firstName: true,
       colour: true,
-      notificationPrefs: { select: { haNotifyService: true } },
+      notificationPrefs: { select: { haNotifyService: true, alertBreakThrough: true } },
     },
   })
 
   return {
     enabled: true,
     haConfigured,
-    recipients: members.map((m) => ({
-      id: m.id,
-      firstName: m.firstName,
-      colour: m.colour,
-      canReceive: !!m.notificationPrefs?.haNotifyService,
-    })),
+    recipients: members.map((m) => {
+      const service = m.notificationPrefs?.haNotifyService
+      return {
+        id: m.id,
+        firstName: m.firstName,
+        colour: m.colour,
+        canReceive: !!service,
+        // Answered live from the entity registry, not from the opt-in alone: a
+        // member can have turned it on and still not be reachable this second (HA
+        // down, sensors disabled again, phone off the network). The sender is told
+        // what will actually happen now, not what was configured once.
+        willBreakThrough:
+          !!service && !!m.notificationPrefs?.alertBreakThrough && canBreakThrough(service),
+      }
+    }),
   }
 }
 
@@ -89,7 +102,10 @@ export async function sendAlert(
   const [recipient, senderRow, settings] = await Promise.all([
     prisma.user.findUnique({
       where: { id: recipientId },
-      select: { role: true, notificationPrefs: { select: { haNotifyService: true } } },
+      select: {
+        role: true,
+        notificationPrefs: { select: { haNotifyService: true, alertBreakThrough: true } },
+      },
     }),
     prisma.user.findUnique({ where: { id: sender.id }, select: { firstName: true } }),
     getConnectionSettings(),
@@ -105,10 +121,19 @@ export async function sendAlert(
   const service = recipient.notificationPrefs?.haNotifyService
   if (!service) return { delivered: false }
 
-  const delivered = await sendHaNotification(settings.url, settings.token, service, {
-    title: `Alert from ${senderRow?.firstName ?? 'someone'}`,
-    message,
-    data: criticalAlertData(),
-  })
+  const push = () =>
+    sendHaNotification(settings.url, settings.token, service, {
+      title: `Alert from ${senderRow?.firstName ?? 'someone'}`,
+      message,
+      data: criticalAlertData(),
+    })
+
+  // Break-through is the recipient's own opt-in (§10 Phase 21) — it writes settings
+  // on their phone, so the sender can't elect it for them. Without it (or when the
+  // phone's state can't be read back) the critical push goes out exactly as before,
+  // which is the fallback the whole feature degrades to.
+  const delivered = recipient.notificationPrefs?.alertBreakThrough
+    ? await withBreakThrough(settings, service, push)
+    : await push()
   return { delivered }
 }
