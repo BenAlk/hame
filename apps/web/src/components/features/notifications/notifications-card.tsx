@@ -192,9 +192,9 @@ export function NotificationsCard() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Android only. A household alert briefly lifts Do Not Disturb, takes the phone off
-                  silent and turns the volume up, then puts all three back a minute later. Needs the
-                  Home Assistant app's Do Not Disturb permission and its volume, ringer and Do Not
-                  Disturb sensors switched on — without those, nothing on your phone is changed.
+                  silent and turns the volume up, then puts all three back 20 seconds later. Needs
+                  the Home Assistant app's Do Not Disturb permission and its volume, ringer and Do
+                  Not Disturb sensors switched on — without those, nothing on your phone is changed.
                 </p>
               </div>
             </div>

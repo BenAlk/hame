@@ -126,7 +126,7 @@ describe('withBreakThrough', () => {
       'ALERT',
     ])
 
-    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(20_000)
     expect(order.slice(4)).toEqual(['command_volume_level', 'command_ringer_mode'])
   })
 
@@ -135,7 +135,7 @@ describe('withBreakThrough', () => {
     registry({ [ids.ringer]: entity('vibrate') })
     await withBreakThrough(HA, PHONE, async () => true)
 
-    await vi.advanceTimersByTimeAsync(59_000)
+    await vi.advanceTimersByTimeAsync(19_000)
     expect(sentCommands()).toEqual(['command_ringer_mode', 'command_screen_on'])
   })
 
@@ -148,7 +148,7 @@ describe('withBreakThrough', () => {
     ).rejects.toThrow('HA rejected it')
 
     // A failed push must never strand a phone off silent.
-    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(20_000)
     expect(sentCommands().at(-1)).toBe('command_ringer_mode')
   })
 
@@ -179,7 +179,7 @@ describe('withBreakThrough', () => {
 
     // …and the timer doesn't then fire a second time.
     const afterFlush = vi.mocked(sendHaNotification).mock.calls.length
-    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(20_000)
     expect(vi.mocked(sendHaNotification).mock.calls.length).toBe(afterFlush)
   })
 

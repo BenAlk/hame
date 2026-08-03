@@ -426,7 +426,7 @@ created on the phone by the first alert that arrives, and:
 manufacturer's goodwill, each member can opt their _own_ phone into a stronger path under
 **Profile → Notifications**. Instead of asking the phone to treat a notification as an alarm, Hame
 briefly lifts whatever is silencing it — Do Not Disturb, vibrate/silent mode, and the notification and
-alarm volumes — sends the alert into that window, and **puts every one of them back a minute later**.
+alarm volumes — sends the alert into that window, and **puts every one of them back 20 seconds later**.
 It works the same on any Android handset, because it relies on none of the channel behaviour above.
 
 It is off by default and it is the _recipient's_ choice, never the sender's: it changes settings on
@@ -446,10 +446,10 @@ is changed — the alert simply falls back to the ordinary critical push above. 
 alert never silently half-works: the alert dialog tells the sender which of the two paths a recipient
 will get before they send it.
 
-One caveat worth knowing: the restore is scheduled a minute after the alert. If the Hame server is
+One caveat worth knowing: the restore is scheduled 20 seconds after the alert. If the Hame server is
 shut down in that window it puts phones back on its way out, but a hard crash or power cut cannot —
 in which case the phone stays turned up until someone changes it back. That is the reason the window
-is a minute and not an hour.
+is seconds and not minutes.
 
 **iOS.** Hame sends `push.sound.critical`, which bypasses both the ring switch and Do Not Disturb.
 This needs the **Critical Alerts** permission granted to the Companion app — iOS prompts for it, and

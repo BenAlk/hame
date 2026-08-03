@@ -24,8 +24,13 @@ import { sendHaNotification } from './notifications.js'
  * from the closed set in `planEscalation`, so nothing user-supplied reaches HA.
  */
 
-/** How long the phone stays turned up before it is put back. */
-const RESTORE_DELAY_MS = 60_000
+/**
+ * How long the phone stays turned up before it is put back. Long enough for the
+ * alert tone to play out and be noticed, and no longer — this window is the whole
+ * exposure of the one failure mode the unwind can't close (a hard kill, which
+ * `flushPendingRestores` can't catch), so it is deliberately kept short.
+ */
+const RESTORE_DELAY_MS = 20_000
 
 /** A scheduled unwind, kept so shutdown can run it rather than abandon it. */
 interface PendingRestore {
@@ -97,7 +102,7 @@ function readMax(entity: HaEntityState): number | null {
  * reports about delivery.
  *
  * The unwind is scheduled rather than awaited — the alert has already been sent
- * and the sender shouldn't wait a minute for a response. That does mean an API
+ * and the sender shouldn't be held for it. That does mean an API
  * restart inside the window leaves the phone turned up, so shutdown runs any
  * pending unwind on the way out (`flushPendingRestores`), and the household is
  * told plainly in the README that a crash mid-window is the one case that can
@@ -140,7 +145,7 @@ function scheduleRestore(
  * Run every pending unwind now — called on shutdown so a deploy or restart inside
  * the restore window doesn't strand a phone at full volume with DND lifted. Best
  * effort by nature: a hard kill still can't put a phone back, which is why the
- * window is a minute rather than an hour.
+ * window is 20 seconds rather than minutes.
  */
 export async function flushPendingRestores(): Promise<void> {
   const pending = [...pendingRestores]
