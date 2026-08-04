@@ -12,6 +12,11 @@ export interface SessionClaims {
   role: Role
   /** Token version — must match the user's current `tokenVersion` (§11). */
   tv: number
+  /**
+   * Device trusted at login — grants the long idle window off-LAN as well as on
+   * (§11). Absent on tokens minted before this claim existed, hence `false`.
+   */
+  trusted: boolean
   /** Issued-at, seconds since epoch — drives the network-aware idle check. */
   iat: number
 }
@@ -25,8 +30,9 @@ export function signSessionToken(payload: {
   sub: string
   role: Role
   tokenVersion: number
+  trusted: boolean
 }): Promise<string> {
-  return new SignJWT({ role: payload.role, tv: payload.tokenVersion })
+  return new SignJWT({ role: payload.role, tv: payload.tokenVersion, trusted: payload.trusted })
     .setProtectedHeader({ alg: ALG })
     .setSubject(payload.sub)
     .setIssuedAt()
@@ -37,7 +43,7 @@ export function signSessionToken(payload: {
 /** Verify signature + `exp`, returning typed claims. Throws on any invalid token. */
 export async function verifySessionToken(token: string): Promise<SessionClaims> {
   const { payload } = await jwtVerify(token, secret, { algorithms: [ALG] })
-  const { sub, role, tv, iat } = payload
+  const { sub, role, tv, trusted, iat } = payload
   if (
     typeof sub !== 'string' ||
     typeof iat !== 'number' ||
@@ -46,7 +52,9 @@ export async function verifySessionToken(token: string): Promise<SessionClaims> 
   ) {
     throw new Error('Malformed session token')
   }
-  return { sub, role, tv, iat }
+  // Tolerate a missing `trusted` (a session issued before the claim existed):
+  // treat it as untrusted rather than rejecting an otherwise valid token.
+  return { sub, role, tv, trusted: trusted === true, iat }
 }
 
 function isRole(value: unknown): value is Role {

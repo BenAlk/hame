@@ -4,6 +4,13 @@ import { CreateUserSchema, PublicUserSchema, TabletCredentialsSchema } from './u
 export const LoginSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
+  /**
+   * Opt in to the long (on-LAN) idle window on this device even when the
+   * request arrives from outside the network — for a personal phone whose PWA
+   * would otherwise be signed out after the short external window (spec §11).
+   * Off by default, so a shared or one-off browser keeps the strict window.
+   */
+  trustDevice: z.boolean().default(false),
 })
 export type LoginInput = z.infer<typeof LoginSchema>
 

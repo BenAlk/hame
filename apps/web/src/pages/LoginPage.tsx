@@ -21,7 +21,7 @@ export function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginInput>({
     resolver: zodResolver(LoginSchema),
-    defaultValues: { username: '', password: '' },
+    defaultValues: { username: '', password: '', trustDevice: false },
   })
 
   const onSubmit = handleSubmit(async (values) => {
@@ -48,6 +48,11 @@ export function LoginPage() {
             {...register('password')}
           />
         </FormField>
+
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" className="size-4 accent-accent" {...register('trustDevice')} />
+          Keep me signed in on this device
+        </label>
 
         {formError && <p className="text-sm text-warning">{formError}</p>}
 

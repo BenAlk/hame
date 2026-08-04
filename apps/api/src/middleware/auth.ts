@@ -30,7 +30,10 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       throw HttpError.unauthorized()
     }
 
-    const idleWindow = isLocalRequest(req) ? LOCAL_IDLE_SECONDS : EXTERNAL_IDLE_SECONDS
+    // A device trusted at login gets the long window wherever it connects from;
+    // everything else falls back to the network-aware choice.
+    const idleWindow =
+      isLocalRequest(req) || claims.trusted ? LOCAL_IDLE_SECONDS : EXTERNAL_IDLE_SECONDS
     const ageSeconds = Math.floor(Date.now() / 1000) - claims.iat
     if (ageSeconds > idleWindow) throw HttpError.unauthorized('Session expired')
 
@@ -47,6 +50,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       sub: user.id,
       role: user.role,
       tokenVersion: user.tokenVersion,
+      trusted: claims.trusted,
     })
     setSessionCookie(res, fresh)
 

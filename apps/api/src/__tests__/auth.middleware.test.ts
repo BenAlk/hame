@@ -18,9 +18,9 @@ const { SESSION_COOKIE } = await import('../lib/cookies.js')
 const secret = new TextEncoder().encode('test-secret-test-secret-test-secret')
 
 /** Sign a session token whose `iat` is `ageSeconds` in the past. */
-function tokenAged(ageSeconds: number, tv = 0): Promise<string> {
+function tokenAged(ageSeconds: number, tv = 0, trusted = false): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
-  return new SignJWT({ role: 'ADMIN', tv })
+  return new SignJWT({ role: 'ADMIN', tv, trusted })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject('user-1')
     .setIssuedAt(now - ageSeconds)
@@ -93,6 +93,28 @@ describe('requireAuth (network-aware sliding session)', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.id).toBe('user-1')
+  })
+
+  it('accepts an idle-too-long token from an external client when the device is trusted', async () => {
+    // Same age that 401s above — the trust flag lifts it to the local window.
+    const token = await tokenAged(30 * 60, 0, true)
+    const res = await request(buildApp())
+      .get('/protected')
+      .set('cf-connecting-ip', '8.8.8.8')
+      .set('Cookie', `${SESSION_COOKIE}=${token}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body.id).toBe('user-1')
+  })
+
+  it('still expires a trusted external session past the long window', async () => {
+    const token = await tokenAged(8 * 24 * 3600, 0, true) // 8d > 7d local window
+    const res = await request(buildApp())
+      .get('/protected')
+      .set('cf-connecting-ip', '8.8.8.8')
+      .set('Cookie', `${SESSION_COOKIE}=${token}`)
+
+    expect(res.status).toBe(401)
   })
 
   it('rejects a token whose version is behind the user (password/role changed)', async () => {
