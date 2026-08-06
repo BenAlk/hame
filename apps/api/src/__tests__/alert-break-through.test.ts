@@ -46,7 +46,22 @@ const ids = {
 const sentCommands = () =>
   vi.mocked(sendHaNotification).mock.calls.map((c) => c[3].message as string)
 
+/** The settle between the last lift command and the alert. */
+const SETTLE_MS = 1_500
+
+/**
+ * Start a break-through and advance past its settle wait, so a test doesn't sit
+ * on a timer. Returns the original promise, so rejection still surfaces.
+ */
+const breakThrough = async <T>(send: () => Promise<T>): Promise<T> => {
+  const result = withBreakThrough(HA, PHONE, send)
+  result.catch(() => {}) // the caller asserts on it; don't trip unhandled-rejection
+  await vi.advanceTimersByTimeAsync(SETTLE_MS)
+  return result
+}
+
 beforeEach(() => {
+  vi.useFakeTimers()
   getEntity.mockReset()
   getEntity.mockReturnValue(null)
   vi.mocked(sendHaNotification).mockReset()
@@ -103,7 +118,6 @@ describe('withBreakThrough', () => {
   })
 
   it('lifts the phone before the alert, and puts it back after the delay', async () => {
-    vi.useFakeTimers()
     registry({ [ids.ringer]: entity('silent'), [ids.volAlarm]: entity('1', { max: 7 }) })
 
     const order: string[] = []
@@ -116,7 +130,7 @@ describe('withBreakThrough', () => {
       return true
     })
 
-    await withBreakThrough(HA, PHONE, send)
+    await breakThrough(send)
 
     // Everything is lifted first; the alert lands on a phone that can hear it.
     expect(order).toEqual([
@@ -130,22 +144,44 @@ describe('withBreakThrough', () => {
     expect(order.slice(4)).toEqual(['command_volume_level', 'command_ringer_mode'])
   })
 
+  it('holds the alert back until the lift commands have had time to land', async () => {
+    // The rung most worth protecting: an alert that overtakes its own
+    // command_dnd is suppressed by the very filter it was meant to lift.
+    registry({ [ids.dnd]: entity('priority_only') })
+    const send = vi.fn().mockResolvedValue(true)
+
+    const result = withBreakThrough(HA, PHONE, send)
+    await vi.advanceTimersByTimeAsync(SETTLE_MS - 1)
+    expect(sentCommands()).toEqual(['command_dnd', 'command_screen_on'])
+    expect(send).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(1)
+    await result
+    expect(send).toHaveBeenCalledOnce()
+  })
+
+  it('does not delay an alert that never escalated', async () => {
+    // Nothing was lifted, so there is nothing to outrun — an iPhone or an
+    // un-set-up handset shouldn't pay the settle on an urgent message.
+    const send = vi.fn().mockResolvedValue(true)
+    await withBreakThrough(HA, PHONE, send)
+    expect(send).toHaveBeenCalledOnce()
+  })
+
   it('leaves the phone lifted until the delay elapses', async () => {
-    vi.useFakeTimers()
     registry({ [ids.ringer]: entity('vibrate') })
-    await withBreakThrough(HA, PHONE, async () => true)
+    await breakThrough(async () => true)
 
     await vi.advanceTimersByTimeAsync(19_000)
     expect(sentCommands()).toEqual(['command_ringer_mode', 'command_screen_on'])
   })
 
   it('still unwinds when the alert itself fails', async () => {
-    vi.useFakeTimers()
     registry({ [ids.ringer]: entity('vibrate') })
 
-    await expect(
-      withBreakThrough(HA, PHONE, () => Promise.reject(new Error('HA rejected it'))),
-    ).rejects.toThrow('HA rejected it')
+    await expect(breakThrough(() => Promise.reject(new Error('HA rejected it')))).rejects.toThrow(
+      'HA rejected it',
+    )
 
     // A failed push must never strand a phone off silent.
     await vi.advanceTimersByTimeAsync(20_000)
@@ -156,19 +192,18 @@ describe('withBreakThrough', () => {
     registry({ [ids.ringer]: entity('vibrate') })
     vi.mocked(sendHaNotification).mockResolvedValue(false)
     const send = vi.fn().mockResolvedValue(true)
-    await withBreakThrough(HA, PHONE, send)
+    await breakThrough(send)
     expect(send).toHaveBeenCalledOnce()
   })
 
   it('passes the alert’s own result straight back', async () => {
     registry({ [ids.ringer]: entity('vibrate') })
-    await expect(withBreakThrough(HA, PHONE, async () => false)).resolves.toBe(false)
+    await expect(breakThrough(async () => false)).resolves.toBe(false)
   })
 
   it('runs a pending unwind on shutdown rather than abandoning it', async () => {
-    vi.useFakeTimers()
     registry({ [ids.dnd]: entity('priority_only') })
-    await withBreakThrough(HA, PHONE, async () => true)
+    await breakThrough(async () => true)
     expect(sentCommands()).toEqual(['command_dnd', 'command_screen_on'])
 
     await flushPendingRestores()
@@ -185,7 +220,7 @@ describe('withBreakThrough', () => {
 
   it('sends device commands with no title, so a malformed one is obvious', async () => {
     registry({ [ids.ringer]: entity('vibrate') })
-    await withBreakThrough(HA, PHONE, async () => true)
+    await breakThrough(async () => true)
     expect(vi.mocked(sendHaNotification).mock.calls[0][3].title).toBeUndefined()
   })
 })

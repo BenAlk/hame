@@ -3206,6 +3206,14 @@ without Hame keeping a setting it wasn't asked to keep.
   honoured the alarm channel plays the alert on the alarm stream; one that
   downgraded it plays on the notification stream. Raising both costs two silent
   commands and removes the guess.
+- **The alert must not overtake the commands that made it audible.** Each rung is
+  a separate push, and Hame can only await *Home Assistant* accepting one, not the
+  handset applying it. FCM guarantees no ordering, and the states this exists for
+  — Do Not Disturb, doze — are exactly where delivery is throttled and reordered.
+  An alert that arrives before its own `command_dnd` is suppressed by the filter it
+  was meant to lift, failing precisely when it matters most, so a short settle sits
+  between the escalation and the alert. Only when something was actually lifted: a
+  phone that escalated nothing pays no latency on an urgent message.
 - **The recipient's opt-in, not the sender's.** It writes settings on someone
   else's device, so it sits on their own `NotificationPreference`, defaults off,
   and covers household alerts only — never the twice-daily digest, which shares
@@ -3239,14 +3247,16 @@ inside the window doesn't strand a phone at full volume. A hard kill still can,
 which is why the window is 20 seconds rather than minutes, and why the README says
 so plainly.
 
-**Verified**: typecheck / lint / format green, **677 API + 127 web + 15
-bin-scraper tests** (32 new), all builds clean. Coverage centres on the two
+**Verified**: typecheck / lint / format green, **682 API + 127 web + 15
+bin-scraper tests** (37 new), all builds clean. Coverage centres on the two
 invariants: nothing is planned that cannot be undone, a rung is skipped when its
 sensor is missing/unresolved/non-numeric, the unwind restores exactly the values
 read and in reverse, a phone with nothing readable receives **no** device command
 at all (the iOS case), the alert still goes out when a lift command is rejected,
-and the unwind still runs when the alert itself throws. The delay and the
-shutdown flush are tested on fake timers. **Not yet exercised against a live
+and the unwind still runs when the alert itself throws. The settle, the restore delay and the
+shutdown flush are tested on fake timers — including that the alert is held back
+until the lift commands have landed, and that a phone which escalated nothing is
+not delayed at all. **Not yet exercised against a live
 handset** — as with the Ollama and heating phases, that is Ben's check against his
 own phones, and the one that matters most here.
 

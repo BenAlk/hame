@@ -32,6 +32,20 @@ import { sendHaNotification } from './notifications.js'
  */
 const RESTORE_DELAY_MS = 20_000
 
+/**
+ * How long to wait after the last lift command before sending the alert itself.
+ *
+ * Each rung is a separate push, and Hame can only await *Home Assistant* accepting
+ * one — not the handset having applied it. FCM makes no ordering guarantee, and
+ * the states this feature exists for (Do Not Disturb, doze) are precisely the ones
+ * where delivery is throttled and reordered. An alert that overtakes its own
+ * `command_dnd` is suppressed by the filter it was meant to lift, and it fails
+ * exactly when it matters most, so the commands are given a moment to land.
+ *
+ * Deliberately short: this is latency on an urgent message, paid every time.
+ */
+const SETTLE_DELAY_MS = 1_500
+
 /** A scheduled unwind, kept so shutdown can run it rather than abandon it. */
 interface PendingRestore {
   timer: NodeJS.Timeout
@@ -97,9 +111,10 @@ function readMax(entity: HaEntityState): number | null {
  * Turn a phone up for one alert, then put it back.
  *
  * `send` is the caller's own delivery of the alert itself, run between the two
- * halves so the phone is loud at exactly the moment the notification lands. Its
- * result is passed straight back, so break-through never changes what the caller
- * reports about delivery.
+ * halves — after a short settle (`SETTLE_DELAY_MS`) so it cannot overtake the
+ * commands that made the phone audible — so the alert lands on a phone that is
+ * already loud. Its result is passed straight back, so break-through never
+ * changes what the caller reports about delivery.
  *
  * The unwind is scheduled rather than awaited — the alert has already been sent
  * and the sender shouldn't be held for it. That does mean an API
@@ -118,10 +133,18 @@ export async function withBreakThrough<T>(
 
   await runSteps(settings, notifyService, plan.escalate, 'escalate')
   try {
+    // Inside the try, so a phone that was lifted is always scheduled to be put
+    // back — even if the wait or the send throws.
+    await settle()
     return await send()
   } finally {
     scheduleRestore(settings, notifyService, plan.restore)
   }
+}
+
+/** Give the lift commands a moment to reach the handset (see SETTLE_DELAY_MS). */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, SETTLE_DELAY_MS))
 }
 
 function scheduleRestore(
