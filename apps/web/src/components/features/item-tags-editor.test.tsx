@@ -5,14 +5,18 @@ import { ItemTagsEditor } from './item-tags-editor'
 
 // Hoisted so the mock factories below (which are hoisted too) can reach them.
 const mocks = vi.hoisted(() => ({
-  dairy: { id: 't1', name: 'dairy', colour: null },
-  chilled: { id: 't2', name: 'chilled', colour: null },
+  dairy: { id: 't1', name: 'dairy', kind: 'ITEM', colour: null },
+  chilled: { id: 't2', name: 'chilled', kind: 'ITEM', colour: null },
+  // Kinds an *item* cannot carry, so the pool this component gets is deliberately
+  // wider than what it may show (spec §10 Phase 24).
+  dinner: { id: 't4', name: 'dinner', kind: 'RECIPE', colour: null },
+  vegan: { id: 't5', name: 'vegan', kind: 'DIETARY', colour: null },
   suggest: vi.fn(),
   create: vi.fn(),
 }))
 
 vi.mock('@/api/tags', () => ({
-  useTags: () => ({ data: [mocks.dairy, mocks.chilled] }),
+  useTags: () => ({ data: [mocks.dairy, mocks.chilled, mocks.dinner, mocks.vegan] }),
   useCreateTag: () => ({ mutateAsync: mocks.create, isPending: false }),
 }))
 
@@ -78,14 +82,15 @@ describe('ItemTagsEditor', () => {
   })
 
   it('offers to create a tag the pool does not have, and applies it once made', async () => {
-    const bakery = { id: 't3', name: 'bakery', colour: null }
+    const bakery = { id: 't3', name: 'bakery', kind: 'ITEM', colour: null }
     mocks.create.mockResolvedValue(bakery)
     const { onChange } = renderEditor()
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'bakery' } })
     await clickAndSettle(/Create/)
 
-    expect(mocks.create).toHaveBeenCalledWith({ name: 'bakery' })
+    // The surface states the kind; nobody is asked to classify a tag mid-flow.
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'bakery', kind: 'ITEM' })
     expect(onChange).toHaveBeenCalledWith([bakery])
   })
 
@@ -96,6 +101,37 @@ describe('ItemTagsEditor', () => {
 
     expect(screen.queryByRole('button', { name: /Create/ })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'dairy' })).toBeInTheDocument()
+  })
+
+  it('keeps recipe vocabulary out of the dropdown', () => {
+    renderEditor()
+    // Focus alone opens the list, so this is the whole item-offerable pool.
+    fireEvent.focus(screen.getByRole('combobox'))
+
+    expect(screen.getByRole('option', { name: 'chilled' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'dinner' })).not.toBeInTheDocument()
+  })
+
+  /** Dietary is the one kind both surfaces offer — withheld from the model, not from a person. */
+  it('still offers a dietary tag by hand', () => {
+    renderEditor()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'veg' } })
+
+    expect(screen.getByRole('option', { name: 'vegan' })).toBeInTheDocument()
+  })
+
+  /**
+   * The one dead end the kind split creates. The name is taken by a tag an item
+   * can't carry, so it can be neither applied nor created here — which has to be
+   * said, or the input silently does nothing.
+   */
+  it('explains a name held by a tag of another kind', () => {
+    renderEditor()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'dinner' } })
+
+    expect(screen.queryByRole('button', { name: /Create/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/is a recipe tag/)).toBeInTheDocument()
+    expect(screen.getByText(/Settings → Tags/)).toBeInTheDocument()
   })
 
   it('removes an applied tag', () => {

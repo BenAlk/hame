@@ -54,23 +54,9 @@ export type ListStatus = (typeof LIST_STATUSES)[number]
  */
 export const QUICK_ADD_TAG = 'quick-add'
 
-/**
- * Tags that assert something about what a product *contains*, which a language
- * model must never suggest (spec §12).
- *
- * These are withheld from the tag-suggestion enum. A dietary tag is a claim
- * someone may rely on for medical reasons, and it can only be read off a packet —
- * never inferred from a name. Left in the pool, the failure is not hypothetical:
- * with no `dairy` tag remaining after §10 Phase 18 retired the aisle tags,
- * `dairy-free` became the closest match in the pool for a dairy product, and
- * "Cheddar cheese" was duly suggested `dairy-free` by a real model.
- *
- * They stay fully applicable **by hand** — a person reading the label is exactly
- * the right source for this claim. The list is by name, which is the honest limit
- * of this fix: a household inventing "lactose-free" is not covered, and closing
- * that needs a `kind` on `Tag` (§12).
- */
-export const DIETARY_TAGS = ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'healthy'] as const
+// Tags asserting what a product *contains* used to be withheld from the model by
+// name here (`DIETARY_TAGS`). They are withheld by `kind` now — see `tag-kinds.ts`
+// and §10 Phase 24 — which covers a household's own "lactose-free" too.
 
 /** Items expiring within this many days surface in the "expiring soon" widget. */
 export const EXPIRY_SOON_DAYS = 3

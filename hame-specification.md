@@ -323,10 +323,20 @@ model Tag {
   id        String   @id @default(uuid())
   name      String   @unique             // "chilled", "vegetarian", "quick-add", "italian"
                                        // NB shop aisles are Section, not Tag (§8.3, Phase 18)
+  kind      TagKind  @default(ITEM)      // what the tag is *for* (§10 Phase 24)
   colour    String?                      // hex for chip display
   items     Item[]   @relation("ItemTags")
   recipes   Recipe[] @relation("RecipeTags")
   chores    Chore[]  @relation("ChoreTags")
+}
+
+// A tag's purpose (§10 Phase 24). Not a filing system for its own sake — the kind
+// decides which surfaces offer the tag, and whether the model may reach for it.
+enum TagKind {
+  ITEM                                           // describes a product
+  RECIPE                                         // describes a dish
+  DIETARY                                        // a claim about contents — never model-suggested
+  BEHAVIOURAL                                    // drives the app itself (`quick-add`, §8.2)
 }
 
 // Where an Item can be bought, when it's buyable in only one place (§8.3, §10
@@ -3404,6 +3414,105 @@ in `auto` — Ben's, at the wall.
 
 ---
 
+### Phase 24 — What a tag is *for* ✅ Complete (06-08-2026)
+
+Three phases of constrained-model work kept meeting the same wall. Phase 16 gave
+the model a closed pool to choose from, Phase 19 proved the pattern on a pool that
+is genuinely single-valued, and both were then caught suggesting things that were
+structurally perfect and factually wrong — `dairy-free` for Cheddar, `dinner` and
+`snack` for a block of cheese. The enum can guarantee a tag **exists**. It was
+never able to guarantee the tag is **about a product**, because `Tag` carried a
+name and a colour and nothing that said what it was for.
+
+Both patches shipped since were admissions of that: `DIETARY_TAGS`, five strings
+withheld by name, and a recipe form offering `chilled` and `quick-add` as things
+you might tag a lasagne with.
+
+**Goal**: Give a tag a stated purpose, and let every surface — the model included —
+draw only on the kinds that apply to it.
+
+**Design**:
+
+- **Four kinds, each earning its place by changing behaviour.** `ITEM` describes a
+  product — the storage words, and whatever the household invents. `RECIPE`
+  describes a dish: course, cuisine, effort, occasion. `DIETARY` is a claim about
+  contents, and is the one kind that applies to both. `BEHAVIOURAL` drives the app
+  rather than describing anything, and has exactly one member — `quick-add`, whose
+  *name* §8.2 has keyed off since Phase 2. This is a taxonomy only in so far as each
+  value answers two questions differently: which surfaces offer it, and whether the
+  model may reach for it.
+- **Dietary is withheld for what it claims, not for what it is called.** Phase 19
+  closed the Cheddar case with a by-name list whose limit was written into its own
+  comment: a household inventing `lactose-free` was protected by nothing. The claim
+  a dietary tag makes is readable only off a packet, and someone may rely on it for
+  medical reasons — so it is the *kind* that is withheld, and a household's own
+  invention is covered by the same rule as `gluten-free` from the moment it is filed
+  as one. It stays fully applicable by hand, which is where that claim belongs.
+- **The pool is now a fact about the data, not a subtraction from it.** The model
+  used to be handed every tag minus a hardcoded list; it is handed the tags of the
+  one kind that describes a product. That is the difference between a filter which
+  has to anticipate what might go wrong and a query which can only return the right
+  sort of thing — the same move Phase 18 made when aisles stopped being tags and
+  became a field.
+- **The surface that creates a tag knows what it is for.** Creation infers the kind
+  from its context rather than asking: the item editor makes `ITEM` tags, the recipe
+  form makes `RECIPE` ones. Putting a taxonomy question in front of someone halfway
+  through naming an item would buy correctness with the one thing inline creation
+  exists to protect.
+- **The same fault ran in both directions.** Item suggestion drew on recipe
+  vocabulary; the recipe form rendered the *whole* pool as togglable chips, so a
+  recipe could be tagged `ambient` or `quick-add`. One `kind` fixes both, which is
+  the argument for it living on the model rather than as a list held by the
+  suggestion service. The recipe form gains the inline creation it never had, since
+  filtering a pool it cannot add to would leave recipe vocabulary frozen at the seed.
+- **A kind can be wrong, so it has to be changeable.** `Settings → Tags` lists the
+  pool grouped by kind and makes name, colour, kind and deletion editable. It is
+  also the first caller `updateTag` and `deleteTag` have ever had — they shipped in
+  Phase 2 and have been reachable only by hand since, which meant a mistyped tag was
+  permanent. Mutating a tag becomes admin-only in the process; creating one, which
+  every member does inline, does not.
+- **The backfill is by name, and it is honest because only one surface could ever
+  create a tag.** The seed's own groups name every starter tag's kind, and anything
+  else in a live database was necessarily born in the item editor — the only
+  affordance that could make one — so it is item vocabulary. `ITEM` is therefore both
+  the backfill's fallback and the column's default, and no tag arrives unclassified.
+
+**Delivered**: `TAG_KINDS` and the rules that read them as one pure module in
+`@hame/shared` — `TAG_KINDS_BY_SURFACE`, `SUGGESTIBLE_TAG_KINDS`, `tagsForSurface`,
+`defaultTagKindFor` — with `DIETARY_TAGS` deleted rather than left beside them.
+A `TagKind` enum and `Tag.kind @default(ITEM)` in Prisma, in one migration that
+carries its own backfill. `suggestTags` narrows in the **query**, so the wrong
+kinds are never fetched at all; `createTag` / `updateTag` carry the kind, and
+`PATCH` / `DELETE /api/tags` gain `requireAdmin` while `POST` stays open to every
+member. `ItemTagsEditor` offers and creates item vocabulary, `RecipeForm` offers
+recipe vocabulary and gains the inline creation it never had, and a `TagsCard`
+under **Settings → Tags** groups the pool by kind and makes name, kind, colour and
+deletion editable. `apps/web/src/lib/item-tags.ts` is now `tags.ts`, since it
+serves both surfaces, and gained `tagOfAnotherKind` / `otherKindNote` for the one
+dead end the split creates — a name that is taken by a tag this surface cannot
+offer, which can be neither applied nor created and so has to be explained.
+
+**Verified**: typecheck / lint / format green, **725 API + 161 web + 15
+bin-scraper tests** (30 new), all builds clean; the migration applied to a live
+dev database with no drift, and the seed re-run over it. Coverage centres on the
+two questions a kind answers. On offering: recipe words kept off items and
+behavioural tags off recipes, dietary reaching both, and the ordering of a
+narrowed pool left to its caller. On suggestion: the narrowing asserted as the
+*query* rather than as a filter over the result, a name from outside the pool
+still dropped on the way back, and an empty pool now meaning "no suggestible
+tag". Plus the two invariants that keep the taxonomy honest — nothing suggestible
+that an item could not carry, and no kind unreachable from every surface — and,
+on the surfaces, creation stating its own kind, a rename that does not quietly
+re-file a tag, and the cross-kind dead end naming both the kind and where to fix
+it.
+
+**Still to check against the real model**: that Cheddar stops attracting `dinner`
+and `snack` — the noisy half of the fault this phase exists for. The dietary half
+is now structural rather than a list, so it holds by construction, but the
+usefulness of what is left in the pool is a live question, as it was for Phase 19.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -3425,6 +3534,7 @@ in `auto` — Ben's, at the wall.
 - **Device-control payloads**: the HA service allowlist (§8.11) pairs each permitted `(domain, service)` with an exact, `.strict()` payload schema; a service not in that map accepts no payload at all, and an allowlisted domain must be aimed at its own domain's entity. A setpoint is additionally clamped server-side to the device's own advertised range, since the schema can only enforce a constant envelope (Phase 20).
 - **Device-defined arguments**: a thermostat's preset modes are named by the *integration*, not by Home Assistant (`auto`/`manual` on one device, `eco`/`boost` on another), so `climate.set_preset_mode`'s schema can only bound the string's shape. The binding check is made in the service against the entity's own advertised `preset_modes`, and an unadvertised preset is **refused** rather than coerced — unlike a setpoint, which is clamped, because a number has a nearest legal value and a preset does not (Phase 23).
 - **Alert break-through commands**: the Companion-app device commands that lift a phone's Do Not Disturb, ringer mode and volume (§8.13, Phase 21) travel as `notify.*` payloads, not `call_service`, so they widen nothing in the allowlist above. Every payload is built server-side from a closed set in the pure planner — no user-supplied value reaches Home Assistant — the target service is the *recipient's own* stored `haNotifyService`, and the escalation is the recipient's opt-in, so a sender cannot elect to change another member's device settings.
+- **Shared vocabulary is admin-editable**: any member may *create* a tag inline while tagging an item or recipe, but renaming, re-filing (`kind`) and deleting one reach every item, recipe and chore carrying it, so `PATCH` / `DELETE /api/tags` require an admin (Phase 24).
 - **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
 - **httpOnly cookies** for JWT preferred over localStorage
@@ -3460,16 +3570,14 @@ in `auto` — Ben's, at the wall.
   answers "which aisle?", which is **single-valued** and therefore the cleanest fit
   for the constrained-model pattern — one choice from a closed list, with declining
   made representable, and nothing left to filter afterwards.
-- **A `kind` on `Tag` is the outstanding piece** (§10 Phase 19). Two separate
-  problems share one root cause: the model has no way to know what a tag is *for*.
-  It suggested `dairy-free` for Cheddar cheese (a claim about contents that only a
-  packet can settle), and it reaches for recipe vocabulary — `dinner`, `lunch` — when
-  tagging a grocery item, because since Phase 18 the shared pool is mostly recipe
-  tags. Dietary tags are withheld by name for now (`DIETARY_TAGS`), which closes the
-  harmful case but not the noisy one, and misses a household's own invention like
-  "lactose-free". A `kind` (dietary / storage / recipe / behavioural — the seed
-  already groups them this way informally by colour) would let suggestion draw only
-  on the kinds that describe a product, and retire the by-name list.
+- **A `kind` on `Tag` — built** (§10 Phase 24). Two separate problems shared one
+  root cause: the model had no way to know what a tag was *for*. It suggested
+  `dairy-free` for Cheddar cheese (a claim about contents that only a packet can
+  settle), and it reached for recipe vocabulary — `dinner`, `lunch` — when tagging a
+  grocery item, because since Phase 18 the shared pool is mostly recipe tags. `Tag`
+  now carries `ITEM | RECIPE | DIETARY | BEHAVIOURAL`, so suggestion draws on the one
+  kind that describes a product; the by-name `DIETARY_TAGS` list is retired, and a
+  household's own "lactose-free" is withheld by the same rule as `gluten-free`.
 - **Prerequisite met** (§10 Phase 17): the item-tag editing surface exists, so the
   endpoint has its first caller. Tags are editable from the pantry item-detail
   modal, the pantry's add-stock form (before the item exists) and a shopping line,
@@ -3606,12 +3714,13 @@ Choices intentionally left open, to revisit when the need is real:
 | **Hame**              | Scots for "home" — the app's name                                                                 |
 | **Item**              | A reusable product entity (e.g., "Milk") referenced by shopping, pantry, recipes                  |
 | **Tag**               | Global label applied to Items, Recipes, or Chores; some have semantic meaning (e.g., `quick-add`) |
+| **Tag kind**          | What a tag is *for* — `ITEM` / `RECIPE` / `DIETARY` / `BEHAVIOURAL`; decides where it's offered   |
 | **Quick-add**         | Special tag making an Item appear in shopping list quick-add dropdown                             |
 | **Instance**          | An occurrence of a recurring entity (e.g., this Saturday's hoover chore)                          |
 | **Rollover**          | Moving an unbought shopping item from an archived list to a new one                               |
 | **Storage Location**  | A user-defined place where pantry items live (Main Fridge, Garage Freezer)                        |
 | **Shop**              | A user-defined shop; set on an Item only when it's buyable _nowhere else_                         |
-| **Section**           | Which part of a shop an Item is in; carries a `position`, so the list reads in walking order       |
+| **Section**           | Which part of a shop an Item is in; carries a `position`, so the list reads in walking order      |
 | **Open Food Facts**   | Free, key-less open product database; turns an unseen barcode into a product name                 |
 | **PWA**               | Progressive Web App — installable from browser, no app store needed                               |
 | **HA / HAOS**         | Home Assistant / Home Assistant OS                                                                |

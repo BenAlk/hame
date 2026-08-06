@@ -24,7 +24,7 @@ import {
 } from '@/api/storage-locations'
 import { cn } from '@/lib/utils'
 import { isOverdueOrToday, quantityLabel, relativeDay } from '@/lib/format'
-import { sameTagSet } from '@/lib/item-tags'
+import { sameTagSet } from '@/lib/tags'
 
 export function PantryPage() {
   const { data: locations } = useStorageLocations()

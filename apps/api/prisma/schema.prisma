@@ -69,10 +69,23 @@ enum Role {
 model Tag {
   id      String   @id @default(uuid())
   name    String   @unique // "dairy", "frozen", "quick-add", "baking"
+  kind    TagKind  @default(ITEM) // what the tag is *for* — see TagKind (spec §10 Phase 24)
   colour  String? // hex for chip display
   items   Item[]   @relation("ItemTags")
   chores  Chore[]  @relation("ChoreTags")
   recipes Recipe[] @relation("RecipeTags")
+}
+
+/// A tag's purpose (spec §10 Phase 24). One pool is shared by items, recipes and
+/// chores, so without this every surface — and the language model — saw all of it.
+/// The kind decides which surfaces offer a tag and whether the model may reach for
+/// it: only ITEM is suggestible, DIETARY is a claim about contents that must be
+/// applied by hand, and BEHAVIOURAL drives the app rather than describing anything.
+enum TagKind {
+  ITEM
+  RECIPE
+  DIETARY
+  BEHAVIOURAL
 }
 
 model Item {

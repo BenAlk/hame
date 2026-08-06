@@ -1,11 +1,24 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import type { CreateRecipeInput, MealType, Recipe, RecipeIngredientInput, Tag } from '@hame/shared'
-import { MEAL_TYPES } from '@hame/shared'
+import type {
+  CreateRecipeInput,
+  MealType,
+  Recipe,
+  RecipeIngredientInput,
+  Tag,
+  TagSurface,
+} from '@hame/shared'
+import { MEAL_TYPES, defaultTagKindFor, tagsForSurface } from '@hame/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { ApiError } from '@/api/client'
+import { useCreateTag } from '@/api/tags'
+import { findTagByName, otherKindNote, tagOfAnotherKind } from '@/lib/tags'
+
+/** A recipe carries recipe vocabulary and dietary claims — never `quick-add` (§10 Phase 24). */
+const SURFACE: TagSurface = 'RECIPE'
 
 const MEAL_LABEL: Record<MealType, string> = {
   BREAKFAST: 'Breakfast',
@@ -109,6 +122,45 @@ export function RecipeForm({
     new Set(recipe ? recipe.mealTypes : (initial?.mealTypes ?? [])),
   )
   const [localError, setLocalError] = useState<string | null>(null)
+  const [newTag, setNewTag] = useState('')
+  const [tagNote, setTagNote] = useState<string | null>(null)
+  // A tag created here is selected at once, but the pool arrives from the parent's
+  // query — so hold it locally until that refetch lands, or the chip it was just
+  // created as would blink out of existence between the two.
+  const [justCreated, setJustCreated] = useState<Tag[]>([])
+  const createTag = useCreateTag()
+
+  // A recipe is only offered recipe vocabulary and dietary claims. Before Phase 24
+  // this rendered the *whole* pool, so a lasagne could be tagged `ambient`.
+  const pool = useMemo(
+    () => [...tags, ...justCreated.filter((t) => !tags.some((p) => p.id === t.id))],
+    [tags, justCreated],
+  )
+  const offered = useMemo(() => tagsForSurface(pool, SURFACE), [pool])
+
+  async function onCreateTag() {
+    const name = newTag.trim()
+    if (!name) return
+    setTagNote(null)
+    const clash = tagOfAnotherKind(pool, SURFACE, name)
+    if (clash) return setTagNote(otherKindNote(clash))
+    // Already in the pool under a kind a recipe can carry — select it rather than
+    // colliding on the unique name.
+    const existing = findTagByName(pool, name)
+    if (existing) {
+      setTagIds((s) => new Set(s).add(existing.id))
+      setNewTag('')
+      return
+    }
+    try {
+      const created = await createTag.mutateAsync({ name, kind: defaultTagKindFor(SURFACE) })
+      setJustCreated((current) => [...current, created])
+      setTagIds((s) => new Set(s).add(created.id))
+      setNewTag('')
+    } catch (err) {
+      setTagNote(err instanceof ApiError ? err.message : 'Could not create that tag.')
+    }
+  }
 
   function updateIngredient(index: number, patch: Partial<IngredientRow>) {
     setIngredients((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -341,11 +393,11 @@ export function RecipeForm({
       </div>
 
       {/* Tags */}
-      {tags.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <Label>Tags</Label>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="recipe-new-tag">Tags</Label>
+        {offered.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
+            {offered.map((tag) => (
               <button
                 key={tag.id}
                 type="button"
@@ -369,8 +421,42 @@ export function RecipeForm({
               </button>
             ))}
           </div>
+        )}
+
+        {/* Filtering a pool this form couldn't add to would freeze recipe
+            vocabulary at whatever the seed shipped, so it can add to it. */}
+        <div className="flex items-center gap-2">
+          <Input
+            id="recipe-new-tag"
+            value={newTag}
+            disabled={createTag.isPending}
+            autoComplete="off"
+            placeholder="New tag…"
+            className="max-w-56"
+            onChange={(e) => {
+              setNewTag(e.target.value)
+              setTagNote(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              // Enter here adds a tag; it must never submit the recipe.
+              e.preventDefault()
+              void onCreateTag()
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={createTag.isPending || newTag.trim() === ''}
+            onClick={() => void onCreateTag()}
+          >
+            <Plus className="size-3.5" />
+            Add tag
+          </Button>
         </div>
-      )}
+        {tagNote && <p className="text-xs text-muted-foreground">{tagNote}</p>}
+      </div>
 
       {(localError ?? error) && <p className="text-sm text-warning">{localError ?? error}</p>}
 

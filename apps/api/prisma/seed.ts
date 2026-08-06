@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import argon2 from 'argon2'
 import { PrismaClient } from '@prisma/client'
-import { firstDueDate, DEFAULT_DASHBOARD } from '@hame/shared'
+import { firstDueDate, DEFAULT_DASHBOARD, type TagKind } from '@hame/shared'
 import { buildEventICal, icalEtag } from '../src/lib/icalendar.js'
 
 // Load the repo-root .env so DATABASE_URL is available when run via tsx.
@@ -70,19 +70,21 @@ async function main() {
   // ── Tags ───────────────────────────────────────────────────────────────────
   // A curated starter palette grouped by purpose. Colours follow the Hearth
   // tokens (design-specification.md §3) and are assigned per *group*, not per
-  // tag, so chips stay calm and scan by category. Recipe tags drive library
-  // browsing; ingredient tags drive the pantry storage hint. Shop *sections* are
-  // no longer tags at all — they are a field on Item (§8.3, Phase 18), because an
-  // item is in exactly one and the list needs them ordered. `quick-add` is the one
-  // tag that still drives UI behaviour (§8.2).
+  // tag, so chips stay calm and scan by category. Since Phase 24 each group also
+  // carries the `kind` that says what its tags are *for*: which surfaces offer
+  // them, and whether the model may suggest them. Shop *sections* are no longer
+  // tags at all — they are a field on Item (§8.3, Phase 18), because an item is in
+  // exactly one and the list needs them ordered.
   // This is a strong default, not exhaustive — the long tail (more cuisines,
   // dish types, occasions) is created on the fly when tagging items/recipes.
-  const tagGroups: { colour: string; names: string[] }[] = [
-    // Behavioural (shopping quick-add dropdown)
-    { colour: '#6f8169', names: ['quick-add'] },
+  const tagGroups: { colour: string; kind: TagKind; names: string[] }[] = [
+    // Behavioural — drives the shopping quick-add dropdown (§8.2) rather than
+    // describing anything, which is why the model is never offered it.
+    { colour: '#6f8169', kind: 'BEHAVIOURAL', names: ['quick-add'] },
     // Recipe — course & occasion
     {
       colour: '#6f8169',
+      kind: 'RECIPE',
       names: [
         'breakfast',
         'brunch',
@@ -100,28 +102,36 @@ async function main() {
     // Recipe — effort & time
     {
       colour: '#857a6c',
+      kind: 'RECIPE',
       names: ['quick', 'one-pot', 'slow-cooker', 'batch-cook', 'freezer-friendly'],
     },
     // Recipe — cuisine
     {
       colour: '#7d2b3e',
+      kind: 'RECIPE',
       names: ['british', 'italian', 'indian', 'chinese', 'thai', 'mexican'],
     },
-    // Dietary — shared by recipes & ingredients
+    // Dietary — offered on both recipes and items, and applied by hand on both:
+    // this is a claim about contents, which only a packet can settle (§10 Phase 24).
     {
       colour: '#d16a6a',
+      kind: 'DIETARY',
       names: ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'healthy'],
     },
-    // Ingredient — storage type (drives the pantry default + expiry hint)
-    { colour: '#2f6fb0', names: ['fresh', 'chilled', 'frozen', 'ambient'] },
+    // Item — storage type. The starter product vocabulary, and the kind
+    // suggestions draw on.
+    { colour: '#2f6fb0', kind: 'ITEM', names: ['fresh', 'chilled', 'frozen', 'ambient'] },
   ]
   const tags: Record<string, string> = {}
   for (const group of tagGroups) {
     for (const name of group.names) {
       const tag = await prisma.tag.upsert({
         where: { name },
-        update: { colour: group.colour }, // keep the starter palette authoritative on re-seed
-        create: { name, colour: group.colour },
+        // Keep the starter palette *and* its kinds authoritative on re-seed — a
+        // seeded tag filed under the wrong kind would quietly change what the
+        // model is allowed to suggest.
+        update: { colour: group.colour, kind: group.kind },
+        create: { name, colour: group.colour, kind: group.kind },
       })
       tags[name] = tag.id
     }

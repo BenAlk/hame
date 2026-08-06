@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 import { Plus, Sparkles } from 'lucide-react'
-import type { Tag } from '@hame/shared'
+import type { Tag, TagSurface } from '@hame/shared'
+import { defaultTagKindFor, tagsForSurface } from '@hame/shared'
 import { TagChip } from '@/components/features/tag-chip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,9 +12,14 @@ import {
   canCreateTag,
   filterTagPool,
   findTagByName,
+  otherKindNote,
   suggestionNote,
+  tagOfAnotherKind,
   unappliedSuggestions,
-} from '@/lib/item-tags'
+} from '@/lib/tags'
+
+/** This control edits an item's tags, so it offers — and creates — item vocabulary. */
+const SURFACE: TagSurface = 'ITEM'
 
 interface ItemTagsEditorProps {
   /** The tags currently on the item. */
@@ -39,10 +45,10 @@ interface ItemTagsEditorProps {
 /**
  * Edit an item's tags (spec §12 LLM auto-tagging).
  *
- * Item tags do three jobs beyond description — they section the shopping list by
- * aisle (§8.3), hint the pantry's storage location, and `quick-add` drives the
- * shopping quick-add dropdown (§8.2) — so this is a genuinely load-bearing
- * surface rather than decoration.
+ * Item tags do real work beyond description — they hint the pantry's storage
+ * location, and `quick-add` drives the shopping quick-add dropdown (§8.2) — so
+ * this is a genuinely load-bearing surface rather than decoration. (Aisles left
+ * the tag pool in Phase 18; they are a field on Item now, §8.3.)
  *
  * Suggestions are **offered, not applied**: the model's picks arrive as dashed
  * chips that take a tap to accept, the same "suggest and match, never
@@ -66,9 +72,15 @@ export function ItemTagsEditor({
   const [error, setError] = useState<string | null>(null)
   const listId = useId()
 
-  const pool = tags ?? []
-  const matches = useMemo(() => filterTagPool(pool, value, query), [pool, value, query])
+  // Two pools, deliberately. `offered` is what an item may carry — item
+  // vocabulary, dietary claims, and `quick-add` (spec §10 Phase 24). `pool` stays
+  // the whole thing, because tag names are unique across kinds and so it is the
+  // whole thing that decides whether a name is free to create.
+  const pool = useMemo(() => tags ?? [], [tags])
+  const offered = useMemo(() => tagsForSurface(pool, SURFACE), [pool])
+  const matches = useMemo(() => filterTagPool(offered, value, query), [offered, value, query])
   const offerCreate = canCreateTag(pool, query)
+  const clash = tagOfAnotherKind(pool, SURFACE, query)
   const busy = disabled || createTag.isPending
 
   function add(tag: Tag) {
@@ -84,14 +96,20 @@ export function ItemTagsEditor({
     if (!name) return
     setError(null)
     // Someone may have added this tag since the pool was cached — apply theirs
-    // rather than colliding on the unique name.
+    // rather than colliding on the unique name. Unless they filed it under a kind
+    // this surface doesn't offer, in which case applying it would be a worse
+    // outcome than the collision: a recipe word silently landing on an item.
     const existing = findTagByName(pool, name)
     if (existing) {
-      add(existing)
+      const wrongKind = tagOfAnotherKind(pool, SURFACE, name)
+      if (wrongKind) setError(otherKindNote(wrongKind))
+      else add(existing)
       return
     }
     try {
-      add(await createTag.mutateAsync({ name }))
+      // The surface states the kind rather than asking for it: a tag made while
+      // naming an item is item vocabulary (spec §10 Phase 24).
+      add(await createTag.mutateAsync({ name, kind: defaultTagKindFor(SURFACE) }))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create that tag.')
     }
@@ -192,6 +210,11 @@ export function ItemTagsEditor({
           </ul>
         )}
       </div>
+
+      {/* The one dead end the kind split creates: a name that is taken, by a tag
+          this surface can't offer. Say so and point at where it's fixable, rather
+          than leaving an input that quietly does nothing. */}
+      {clash && <p className="text-xs text-muted-foreground">{otherKindNote(clash)}</p>}
 
       <div className="flex flex-wrap items-center gap-2">
         <Button

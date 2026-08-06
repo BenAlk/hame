@@ -54,8 +54,9 @@ export type SuggestTagsInput = z.infer<typeof SuggestTagsSchema>
  * Ollama loading several GB will exceed the short budget these calls get, and
  * reporting that as "nothing applies" tells the user something untrue.
  *
- * Tags asserting what a product *contains* are withheld from the model entirely
- * (see `DIETARY_TAGS`), so they never appear here.
+ * The pool is narrowed by `kind` before the model ever sees it
+ * (`SUGGESTIBLE_TAG_KINDS`, §10 Phase 24), so a dietary claim, a recipe word or a
+ * behavioural tag can never appear here.
  */
 export const SuggestedTagsSchema = z.object({
   tags: z.array(TagSchema),

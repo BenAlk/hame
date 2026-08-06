@@ -43,6 +43,7 @@ import {
   useUpdateBackupSettings,
 } from '@/api/backup'
 import { IntegrationsCard } from '@/components/features/integrations/IntegrationsCard'
+import { TagsCard } from '@/components/features/tags/TagsCard'
 import { useCalDavConnection } from '@/api/caldav'
 import { caldavCollectionUrl, caldavUrl } from '@/lib/caldav'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -70,6 +71,7 @@ const STRATEGIES: { value: NormaliserStrategy; label: string; description: strin
 const SETTINGS_TABS: TabItem[] = [
   { value: 'recipes', label: 'Recipes' },
   { value: 'pantry', label: 'Pantry' },
+  { value: 'tags', label: 'Tags' },
   { value: 'smart-home', label: 'Smart home' },
   { value: 'screensaver', label: 'Screensaver' },
   { value: 'integrations', label: 'Integrations' },
@@ -121,6 +123,7 @@ export function SettingsPage() {
               <BarcodeLookupCard />
             </TabPanel>
           )}
+          {activeTab === 'tags' && <TagsCard />}
           {activeTab === 'smart-home' && (
             <TabPanel>
               <HomeAssistantCard />

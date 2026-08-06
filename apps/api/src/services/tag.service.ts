@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 
 export function toTag(tag: PrismaTag): Tag {
-  return { id: tag.id, name: tag.name, colour: tag.colour }
+  return { id: tag.id, name: tag.name, kind: tag.kind, colour: tag.colour }
 }
 
 export async function listTags(): Promise<Tag[]> {
@@ -12,10 +12,19 @@ export async function listTags(): Promise<Tag[]> {
   return tags.map(toTag)
 }
 
+/**
+ * Create a tag. `kind` is the creating surface's to state (§10 Phase 24) — the
+ * item editor makes item vocabulary, the recipe form makes recipe vocabulary —
+ * and a caller that says nothing gets `ITEM`, the column's default.
+ */
 export async function createTag(input: CreateTagInput): Promise<Tag> {
   await assertNameAvailable(input.name)
   const tag = await prisma.tag.create({
-    data: { name: input.name, colour: input.colour ?? null },
+    data: {
+      name: input.name,
+      ...(input.kind !== undefined && { kind: input.kind }),
+      colour: input.colour ?? null,
+    },
   })
   return toTag(tag)
 }
@@ -27,6 +36,7 @@ export async function updateTag(id: string, input: UpdateTagInput): Promise<Tag>
     where: { id },
     data: {
       ...(input.name !== undefined && { name: input.name }),
+      ...(input.kind !== undefined && { kind: input.kind }),
       ...(input.colour !== undefined && { colour: input.colour }),
     },
   })

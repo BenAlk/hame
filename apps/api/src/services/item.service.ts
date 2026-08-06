@@ -6,7 +6,7 @@ import type {
   SuggestedTags,
   UpdateItemInput,
 } from '@hame/shared'
-import { DIETARY_TAGS, QUICK_ADD_TAG } from '@hame/shared'
+import { QUICK_ADD_TAG, SUGGESTIBLE_TAG_KINDS } from '@hame/shared'
 import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLlm } from './normaliser.service.js'
@@ -160,18 +160,20 @@ export async function findOrCreateItemByName(
  * near-duplicates alongside the ones in use. An empty pool, or no configured
  * model, is reported as `UNAVAILABLE` rather than as "no tags apply" — the same
  * empty list, but not the same situation for a caller to explain.
+ *
+ * What the model may choose from is narrowed by `kind` (§10 Phase 24): only tags
+ * that describe a *product*. That is a query rather than a subtraction — the
+ * by-name withholding it replaced had to anticipate each wrong answer, and duly
+ * missed a household's own "lactose-free".
  */
 export async function suggestTags(name: string): Promise<SuggestedTags> {
   const llm = await getLlm()
   if (!llm) return { tags: [], source: 'UNAVAILABLE' }
 
-  // Dietary tags are withheld from the model: they assert what a product
-  // *contains*, which can only be read off a packet (see DIETARY_TAGS). They stay
-  // applicable by hand, which is where that claim belongs.
-  const withheld = new Set<string>(DIETARY_TAGS.map((tag) => tag.toLowerCase()))
-  const pool = (await prisma.tag.findMany({ orderBy: { name: 'asc' } })).filter(
-    (tag) => !withheld.has(tag.name.toLowerCase()),
-  )
+  const pool = await prisma.tag.findMany({
+    where: { kind: { in: [...SUGGESTIBLE_TAG_KINDS] } },
+    orderBy: { name: 'asc' },
+  })
   if (pool.length === 0) return { tags: [], source: 'UNAVAILABLE' }
 
   let chosen: string[]

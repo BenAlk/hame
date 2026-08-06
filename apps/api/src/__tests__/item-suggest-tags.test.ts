@@ -11,8 +11,8 @@ vi.mock('../services/normaliser.service.js', () => ({ getLlm }))
 const { suggestTags } = await import('../services/item.service.js')
 
 const pool = [
-  { id: 't1', name: 'baking', colour: null },
-  { id: 't2', name: 'dairy', colour: '#fff' },
+  { id: 't1', name: 'baking', kind: 'ITEM', colour: null },
+  { id: 't2', name: 'dairy', kind: 'ITEM', colour: '#fff' },
 ]
 
 beforeEach(() => {
@@ -28,7 +28,7 @@ describe('suggestTags', () => {
     const result = await suggestTags('milk')
 
     expect(result.source).toBe('LLM')
-    expect(result.tags).toEqual([{ id: 't2', name: 'dairy', colour: '#fff' }])
+    expect(result.tags).toEqual([{ id: 't2', name: 'dairy', kind: 'ITEM', colour: '#fff' }])
   })
 
   it('passes the existing pool to the model, so it can only choose from it', async () => {
@@ -47,7 +47,8 @@ describe('suggestTags', () => {
     expect(tagFindMany).not.toHaveBeenCalled()
   })
 
-  it('reports UNAVAILABLE when the household has no tags yet', async () => {
+  /** Since Phase 24 an empty pool means no tag of a *suggestible* kind. */
+  it('reports UNAVAILABLE when the household has no suggestible tags', async () => {
     getLlm.mockResolvedValue({ suggestTags: vi.fn() })
     tagFindMany.mockResolvedValue([])
     expect(await suggestTags('milk')).toEqual({ tags: [], source: 'UNAVAILABLE' })
@@ -68,41 +69,32 @@ describe('suggestTags', () => {
   })
 
   /**
-   * Dietary tags are a claim about what a product contains, readable only off a
-   * packet. Left in the pool this was not hypothetical: with no `dairy` tag left
-   * after Phase 18, a real model suggested `dairy-free` for Cheddar cheese.
+   * The heart of Phase 24: the model is handed the tags of the one kind that
+   * describes a product, as a query rather than a subtraction. Dietary claims,
+   * recipe words and `quick-add` are excluded by never being fetched — the
+   * by-name withholding this replaced had to anticipate each wrong answer, and
+   * duly missed a household's own "lactose-free".
    */
-  it('withholds dietary tags from the model entirely', async () => {
-    const llmSuggest = vi.fn().mockResolvedValue([])
-    getLlm.mockResolvedValue({ suggestTags: llmSuggest })
-    tagFindMany.mockResolvedValue([
-      { id: 't1', name: 'chilled', colour: null },
-      { id: 't2', name: 'dairy-free', colour: null },
-      { id: 't3', name: 'Vegan', colour: null },
-      { id: 't4', name: 'gluten-free', colour: null },
-      { id: 't5', name: 'healthy', colour: null },
-    ])
+  it('asks the database only for suggestible kinds', async () => {
+    getLlm.mockResolvedValue({ suggestTags: vi.fn().mockResolvedValue([]) })
 
     await suggestTags('cheddar cheese')
 
-    expect(llmSuggest).toHaveBeenCalledWith('cheddar cheese', ['chilled'])
+    expect(tagFindMany).toHaveBeenCalledWith({
+      where: { kind: { in: ['ITEM'] } },
+      orderBy: { name: 'asc' },
+    })
   })
 
-  /** Withholding is case-insensitive, so a re-cased duplicate can't slip through. */
-  it('cannot return a dietary tag even if the model names one', async () => {
+  /**
+   * Belt and braces on top of the grammar: the reply is resolved against the pool
+   * that was sent, so a name from outside it — a dietary tag the model somehow
+   * produced — resolves to nothing rather than being trusted.
+   */
+  it('drops a chosen name that was not in the pool it sent', async () => {
     getLlm.mockResolvedValue({ suggestTags: vi.fn().mockResolvedValue(['dairy-free']) })
-    tagFindMany.mockResolvedValue([
-      { id: 't1', name: 'chilled', colour: null },
-      { id: 't2', name: 'Dairy-Free', colour: null },
-    ])
+    tagFindMany.mockResolvedValue([{ id: 't1', name: 'chilled', kind: 'ITEM', colour: null }])
 
     expect(await suggestTags('cheddar cheese')).toEqual({ tags: [], source: 'LLM' })
-  })
-
-  /** A pool that is nothing but dietary tags leaves the model nothing to pick. */
-  it('reports UNAVAILABLE when withholding empties the pool', async () => {
-    getLlm.mockResolvedValue({ suggestTags: vi.fn() })
-    tagFindMany.mockResolvedValue([{ id: 't1', name: 'vegan', colour: null }])
-    expect(await suggestTags('tofu')).toEqual({ tags: [], source: 'UNAVAILABLE' })
   })
 })

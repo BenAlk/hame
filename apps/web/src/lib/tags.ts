@@ -1,4 +1,5 @@
-import type { SuggestedTags, Tag } from '@hame/shared'
+import type { SuggestedTags, Tag, TagSurface } from '@hame/shared'
+import { TAG_KIND_LABELS, isTagKindOffered } from '@hame/shared'
 
 /**
  * Tag pool helpers for the item-tag editor (spec §12 LLM auto-tagging).
@@ -37,9 +38,34 @@ export function filterTagPool(pool: Tag[], applied: Tag[], query: string): Tag[]
  * Whether typing `query` should offer to create a new tag. Only when it names
  * something the pool doesn't already have — otherwise the offer would grow the
  * near-duplicate the enum-constrained suggestion endpoint exists to prevent.
+ *
+ * Takes the **whole** pool, never the kind-filtered slice a surface offers: tag
+ * names are unique across every kind, so a name held by a recipe tag is one this
+ * surface cannot create either. Checking only what the surface shows would offer
+ * a "Create" the server has to reject with a conflict.
  */
 export function canCreateTag(pool: Tag[], query: string): boolean {
   return normaliseTagName(query).length > 0 && !findTagByName(pool, query)
+}
+
+/**
+ * The existing tag `query` names when that tag belongs to a kind `surface`
+ * doesn't offer (spec §10 Phase 24) — typing "dinner" while tagging an item.
+ *
+ * This is the one dead end the kind split creates, so it is worth naming rather
+ * than leaving as an input that does nothing: the tag can't be applied here, and
+ * it can't be created here either, because the name is taken. Takes the whole
+ * pool for the same reason {@link canCreateTag} does.
+ */
+export function tagOfAnotherKind(pool: Tag[], surface: TagSurface, query: string): Tag | undefined {
+  const found = findTagByName(pool, query)
+  return found && !isTagKindOffered(found.kind, surface) ? found : undefined
+}
+
+/** How to explain a {@link tagOfAnotherKind}, pointing at the one place it's fixable. */
+export function otherKindNote(tag: Tag): string {
+  const kind = TAG_KIND_LABELS[tag.kind].label.toLowerCase()
+  return `“${tag.name}” is a ${kind} tag. Change its kind under Settings → Tags to use it here.`
 }
 
 /** Suggested tags worth showing as chips: those not already on the item. */
