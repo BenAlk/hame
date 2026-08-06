@@ -1066,8 +1066,9 @@ enum NoteAudience {
   - Read entity states (lights, sensors, temperature, presence) for dashboard widgets
   - Control devices (toggle lights, run scenes, trigger automations)
   - **Heating** — a climate entity's target temperature and on/off, on its own
-    dashboard widget (§10 Phase 20). The first control that carries an
-    *argument*, so the service allowlist gained a per-service payload schema
+    dashboard widget (§10 Phase 20; drawn as a dial in Phase 22). The first
+    control that carries an *argument*, so the service allowlist gained a
+    per-service payload schema
   - Send notifications via HA (HA handles phone push)
   - Read HA calendars (added as a `CalendarSource`)
 - **No state mirroring** — Hame queries HA live, doesn't duplicate entity data
@@ -3259,6 +3260,69 @@ until the lift commands have landed, and that a phone which escalated nothing is
 not delayed at all. **Not yet exercised against a live
 handset** — as with the Ollama and heating phases, that is Ben's check against his
 own phones, and the one that matters most here.
+
+---
+
+### Phase 22 — Heating, drawn as a dial ✅ Complete (06-08-2026)
+
+Phase 20 gave heating its own widget for a reason of *kind* — a thermostat isn't
+a light — but it moved the control across unchanged. What landed on the dashboard
+was still the row that had been designed to sit inside the smart-home widget: a
+name, a small room temperature, a switch, and an indented −/+ beneath. It worked
+and it was dull, and it never used the card it had been given.
+
+**Goal**: Spend the whole card on the one thing the widget is for.
+
+**Design**:
+
+- **The dial is the widget.** A 240° arc spans the *device's own* range, fills to
+  the target, and carries the room temperature as a marker riding the same curve.
+  The number alone could never say the thing you actually walk up to the tablet to
+  learn — the gap between the fill and the marker is "is it about to get warmer in
+  here", and that is a shape, not a digit.
+- **Scale the whole instrument, don't overlay it.** The target, the room
+  temperature and the range labels are SVG text *inside* the dial rather than HTML
+  over the top, so the entire thing scales as one unit to whatever height its tile
+  has. This is what makes the redesign safe to ship: the widget's default grew to
+  1×3, but an already-placed 1×2 tile shrinks the dial rather than cropping it.
+  Existing dashboards are not rewritten (the same contract as Phase 20) and are
+  not broken either — the tile is worth dragging taller, not obliged to be.
+- **Holding is the fix for a setpoint, not a bigger step.** Half a degree a tap is
+  right for a nudge and wrong for a real change; 19° to 21.5° was five taps at the
+  wall. The steppers now repeat while held. The debounce did this for free —
+  every repeat resets the same timer, so a whole hold still reaches Home Assistant
+  as **one** setpoint, and the boiler never sees the sweep.
+- **The pointer acts, so the click must not act twice.** A press nudges on
+  `pointerdown` and swallows the click that follows it; a keyboard press produces a
+  click with no pointer before it, which is exactly what keeps that path working.
+  A hold that runs into the device's limit disables its own button, so the repeat
+  is stopped by the same fact that greys the control.
+- **Ask the thermostat what it's doing.** "Heating" was previously inferred from
+  target > current, which is wrong through the deadband — a thermostat that has
+  just satisfied its call for heat still reads as heating on that test. `hvac_action`
+  is the device answering the question itself, so it wins where it's published, and
+  the comparison stays as the fallback for thermostats that publish nothing. This
+  is the same "the device is the authority on itself" stance Phase 20 took for the
+  setpoint clamp.
+- **Indicator, not input.** The arc is deliberately not draggable. It is mounted on
+  a wall at hand height, and a brush past it must not move the heating — every
+  change still goes through a stepper, where the debounce and the snap-back apply.
+
+**Delivered**: `climateStatus` + `HaClimateView.action` in `@hame/shared` (pure, with
+the fallback tested against the deadband case); a `Dial` and a `StepButton` inside
+`heating-widget.tsx`, with the arc geometry held as constants so the curve, its
+fill and the marker are all derived from one description; `heating.defaultH` 2 → 3,
+`minH` deliberately left at 2. Phase 20's behaviour is untouched — bounds and step
+from the entity, the tap answering before HA, one settled value sent, and an
+unconfirmed setpoint snapping back.
+
+**Verified**: typecheck / lint / format green, **688 API + 142 web + 15
+bin-scraper tests** (21 new), all builds clean. The new coverage is the dial's
+fill fraction against the device's range, the marker and fill disappearing rather
+than defaulting to zero when a reading is missing, the status falling back only
+when nothing is published, and the hold on fake timers — that it repeats, stops on
+release, stops when the pointer leaves, stops at the device's limit, doesn't
+double-count its own trailing click, and still sends exactly one setpoint.
 
 ---
 

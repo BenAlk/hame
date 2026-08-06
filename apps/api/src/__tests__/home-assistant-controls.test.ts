@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { HaEntityState } from '@hame/shared'
 import {
   clampSetpoint,
+  climateStatus,
   haClimateView,
   HaServiceCallSchema,
   isHaServiceAllowed,
@@ -194,7 +195,14 @@ describe('haClimateView', () => {
       max: 30,
       step: 0.5,
       isOn: true,
+      action: null,
     })
+  })
+
+  it('reads what the thermostat says it is doing, when it says so', () => {
+    expect(haClimateView(climate({ hvac_action: 'heating' })).action).toBe('heating')
+    expect(haClimateView(climate({ hvac_action: '' })).action).toBeNull()
+    expect(haClimateView(climate({ hvac_action: 3 })).action).toBeNull()
   })
 
   it('treats any mode other than off as on', () => {
@@ -223,6 +231,39 @@ describe('haClimateView', () => {
   it('survives a device reporting its range backwards', () => {
     const view = haClimateView(climate({ min_temp: 28, max_temp: 10 }))
     expect(view.min).toBeLessThanOrEqual(view.max)
+  })
+})
+
+describe('climateStatus', () => {
+  it('is off whenever the thermostat is off, whatever else it reports', () => {
+    const view = haClimateView(climate({ hvac_action: 'heating' }, 'off'))
+    expect(climateStatus(view)).toBe('off')
+  })
+
+  it('believes the thermostat over the temperatures', () => {
+    // Asking for less than the room already has, but the boiler is still firing.
+    const firing = haClimateView(climate({ hvac_action: 'heating', temperature: 18 }))
+    expect(climateStatus(firing)).toBe('heating')
+
+    // Asking for more than the room has, but the thermostat has settled — the
+    // deadband case the naive comparison gets wrong.
+    const settled = haClimateView(climate({ hvac_action: 'idle', temperature: 22 }))
+    expect(climateStatus(settled)).toBe('idle')
+  })
+
+  it('treats any other action the thermostat reports as not heating', () => {
+    expect(climateStatus(haClimateView(climate({ hvac_action: 'cooling' })))).toBe('idle')
+    expect(climateStatus(haClimateView(climate({ hvac_action: 'preheating' })))).toBe('idle')
+  })
+
+  it('falls back to the temperatures when nothing is published', () => {
+    expect(climateStatus(haClimateView(climate({ temperature: 22 })))).toBe('heating')
+    expect(climateStatus(haClimateView(climate({ temperature: 18 })))).toBe('idle')
+  })
+
+  it('does not claim to be heating when a temperature is missing', () => {
+    expect(climateStatus(haClimateView(climate({ temperature: null })))).toBe('idle')
+    expect(climateStatus(haClimateView(climate({ current_temperature: null })))).toBe('idle')
   })
 })
 

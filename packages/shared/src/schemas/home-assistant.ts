@@ -283,6 +283,8 @@ export interface HaClimateView {
   max: number
   step: number
   isOn: boolean
+  /** What the thermostat says it is *doing* (`hvac_action`), when it publishes it. */
+  action: string | null
 }
 
 /** HA's own fallbacks when a climate entity declines to publish a range. */
@@ -301,11 +303,36 @@ export function haClimateView(entity: HaEntityState): HaClimateView {
     max: Math.max(min, max),
     step: numberAttr(attrs.target_temp_step) ?? DEFAULT_TEMP_STEP,
     isOn: entity.state !== 'off',
+    action: stringAttr(attrs.hvac_action),
   }
 }
 
 function numberAttr(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function stringAttr(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/** What the heating widget says a thermostat is doing right now. */
+export type HaClimateStatus = 'off' | 'heating' | 'idle'
+
+/**
+ * Whether the boiler is actually firing, rather than whether the number is higher.
+ *
+ * A thermostat that publishes `hvac_action` is answering this question itself, so
+ * that answer wins — it knows about its own hysteresis, its minimum run time and
+ * whether the call for heat reached the boiler at all. Only when it publishes
+ * nothing does this fall back to comparing target against room temperature, which
+ * is a fair guess and no more: it will read "heating" through the deadband where a
+ * real thermostat has already stopped.
+ */
+export function climateStatus(view: HaClimateView): HaClimateStatus {
+  if (!view.isOn) return 'off'
+  if (view.action !== null) return view.action === 'heating' ? 'heating' : 'idle'
+  if (view.target === null || view.current === null) return 'idle'
+  return view.target > view.current ? 'heating' : 'idle'
 }
 
 function clampToEnvelope(value: number): number {
