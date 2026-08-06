@@ -150,6 +150,7 @@ export async function callHomeAssistantService(
     throw HttpError.badRequest('Invalid arguments for that Home Assistant service.')
   }
   data = clampSetpointToDevice(input, data)
+  requirePresetTheDeviceOffers(input, data)
 
   try {
     await haClient.callService(input.domain, input.service, input.entityId, data)
@@ -180,6 +181,38 @@ function clampSetpointToDevice(
   const entity = haClient.getEntity(input.entityId)
   if (!entity) return data
   return { ...data, temperature: clampSetpoint(temperature, haClimateView(entity)) }
+}
+
+/**
+ * Refuse a preset the device doesn't advertise (spec §10 Phase 23).
+ *
+ * A preset's vocabulary is the integration's, not Home Assistant's — `auto` and
+ * `manual` on a Tuya thermostat, `eco` or `boost` elsewhere — so the request
+ * schema can only bound the *shape* of the string. The meaning has to be checked
+ * against the entity's own `preset_modes`, which is live state and therefore
+ * belongs here, exactly as the setpoint's real range does.
+ *
+ * Same seam, opposite treatment, and deliberately so: an out-of-range setpoint is
+ * clamped to something safe because a number has a nearest legal value, while a
+ * preset has no nearest anything — an unrecognised one can only be refused. An
+ * entity the registry isn't tracking is relayed unchecked, as with the clamp: HA
+ * is the final authority on its own device, and refusing would break the control
+ * whenever the registry is mid-reconnect.
+ */
+function requirePresetTheDeviceOffers(
+  input: HaServiceCallInput,
+  data: Record<string, unknown> | undefined,
+): void {
+  if (input.domain !== 'climate' || input.service !== 'set_preset_mode') return
+  const preset = data?.preset_mode
+  if (typeof preset !== 'string') return
+
+  const entity = haClient.getEntity(input.entityId)
+  if (!entity) return
+  const { presets } = haClimateView(entity)
+  if (presets.length > 0 && !presets.includes(preset)) {
+    throw HttpError.badRequest('That thermostat does not offer that mode.')
+  }
 }
 
 /**

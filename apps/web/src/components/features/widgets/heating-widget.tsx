@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Minus, Plus, SlidersHorizontal } from 'lucide-react'
 import type { HaClimateStatus, HaClimateView, HaEntityState } from '@hame/shared'
-import { clampSetpoint, climateStatus, haClimateView, HA_SETPOINT_DOMAINS } from '@hame/shared'
+import {
+  clampSetpoint,
+  climateOffCall,
+  climateOnCall,
+  climateStatus,
+  haClimateView,
+  isSchedulePreset,
+  HA_SETPOINT_DOMAINS,
+} from '@hame/shared'
 import { WidgetCard } from '@/components/features/widget-card'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { useHaControl, useHaEntities, useSmartHomeControls } from '@/api/home-assistant'
@@ -304,6 +312,56 @@ function Dial({
 }
 
 /**
+ * The presets the device offers, as a segmented pill — on a Tuya thermostat that
+ * is "auto" (run the schedule) against "manual" (hold what I set).
+ *
+ * The labels are the device's own strings, only cased for display: this vocabulary
+ * belongs to the integration, so inventing friendlier words here would be guessing
+ * about someone else's thermostat. Shown only when there's an actual choice to
+ * make, and the whole control is skipped for a device offering one preset or none.
+ */
+function PresetPill({
+  view,
+  busy,
+  name,
+  onCall,
+}: {
+  view: HaClimateView
+  busy: boolean
+  name: string
+  onCall: (service: string, data?: Record<string, unknown>) => void
+}) {
+  if (view.presets.length < 2) return null
+
+  return (
+    <div
+      role="group"
+      aria-label={`${name} mode`}
+      className="flex shrink-0 items-center gap-0.5 rounded-pill border border-line p-0.5"
+    >
+      {view.presets.map((preset) => {
+        const active = view.preset === preset
+        return (
+          <button
+            key={preset}
+            type="button"
+            aria-pressed={active}
+            disabled={busy}
+            onClick={() => onCall('set_preset_mode', { preset_mode: preset })}
+            className={cn(
+              'rounded-pill px-2.5 py-0.5 text-[11px] font-semibold capitalize transition-colors disabled:opacity-50',
+              active ? 'bg-accent text-white' : 'text-muted-foreground hover:text-ink',
+            )}
+          >
+            {preset}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * One thermostat: its name and on/off above a dial, with the steppers and what
  * it's currently doing beneath. Bounds and step come from the entity itself, so
  * the stepper stops exactly where the device does.
@@ -324,17 +382,38 @@ export function SetpointRow({
   const name = label(entity)
   const status = climateStatus(view)
 
+  // How *this* device switches, rather than what Hame would like to send.
+  const powerCall = view.isOn ? climateOffCall(view) : climateOnCall(view)
+
+  // In a schedule preset the thermostat owns the target, so a nudge is a hold
+  // that expires — say so, rather than implying the wall tablet had the last word.
+  const holdsUntilSchedule = view.isOn && isSchedulePreset(view.preset)
+
   return (
     <li className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex items-center gap-3 text-sm">
         <span className="min-w-0 flex-1 truncate text-ink">{name}</span>
         <ToggleSwitch
           on={view.isOn}
-          busy={busy}
+          busy={busy || powerCall === null}
           ariaLabel={`Turn ${view.isOn ? 'off' : 'on'} ${name}`}
-          onToggle={() => onCall('set_hvac_mode', { hvac_mode: view.isOn ? 'off' : 'heat' })}
+          onToggle={() => powerCall && onCall(powerCall.service, powerCall.data)}
         />
       </div>
+
+      {(view.presets.length > 1 || holdsUntilSchedule) && (
+        <div className="flex items-center justify-between gap-2">
+          <PresetPill view={view} busy={busy} name={name} onCall={onCall} />
+          {holdsUntilSchedule && (
+            <span
+              className="truncate text-[11px] text-muted-foreground"
+              title="A change now holds until the thermostat’s next scheduled change."
+            >
+              holds until next change
+            </span>
+          )}
+        </div>
+      )}
 
       {/* The dial fills what's left; the floor keeps it legible on a short tile. */}
       <div className="flex min-h-[104px] flex-1 justify-center">

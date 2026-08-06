@@ -144,6 +144,91 @@ describe('callHomeAssistantService', () => {
     expect(callService).not.toHaveBeenCalled()
   })
 
+  it('relays a preset the thermostat actually offers', async () => {
+    getEntity.mockReturnValue(climateEntity({ preset_modes: ['auto', 'manual'] }))
+    const result = await callHomeAssistantService({
+      domain: 'climate',
+      service: 'set_preset_mode',
+      entityId: 'climate.hallway',
+      data: { preset_mode: 'manual' },
+    })
+    expect(result.ok).toBe(true)
+    expect(callService).toHaveBeenCalledWith('climate', 'set_preset_mode', 'climate.hallway', {
+      preset_mode: 'manual',
+    })
+  })
+
+  it('refuses a preset the device does not advertise', async () => {
+    getEntity.mockReturnValue(climateEntity({ preset_modes: ['auto', 'manual'] }))
+    await expect(
+      callHomeAssistantService({
+        domain: 'climate',
+        service: 'set_preset_mode',
+        entityId: 'climate.hallway',
+        data: { preset_mode: 'boost' },
+      }),
+    ).rejects.toThrow(/does not offer/i)
+    expect(callService).not.toHaveBeenCalled()
+  })
+
+  it('refuses a preset even when it is one HA itself defines', async () => {
+    // `eco` is a standard HA preset — but not on *this* device, which is what counts.
+    getEntity.mockReturnValue(climateEntity({ preset_modes: ['auto', 'manual'] }))
+    await expect(
+      callHomeAssistantService({
+        domain: 'climate',
+        service: 'set_preset_mode',
+        entityId: 'climate.hallway',
+        data: { preset_mode: 'eco' },
+      }),
+    ).rejects.toThrow(/does not offer/i)
+  })
+
+  it('relays a preset for a device the registry is not tracking — HA decides', async () => {
+    getEntity.mockReturnValue(null)
+    const result = await callHomeAssistantService({
+      domain: 'climate',
+      service: 'set_preset_mode',
+      entityId: 'climate.hallway',
+      data: { preset_mode: 'manual' },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('relays a preset for a device that advertises no list at all', async () => {
+    getEntity.mockReturnValue(climateEntity())
+    const result = await callHomeAssistantService({
+      domain: 'climate',
+      service: 'set_preset_mode',
+      entityId: 'climate.hallway',
+      data: { preset_mode: 'manual' },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  it('refuses an unknown key smuggled beside a preset', async () => {
+    getEntity.mockReturnValue(climateEntity({ preset_modes: ['auto', 'manual'] }))
+    await expect(
+      callHomeAssistantService({
+        domain: 'climate',
+        service: 'set_preset_mode',
+        entityId: 'climate.hallway',
+        data: { preset_mode: 'manual', temperature: 30 },
+      }),
+    ).rejects.toThrow(/invalid arguments/i)
+    expect(callService).not.toHaveBeenCalled()
+  })
+
+  it('relays climate turn_on with no arguments at all', async () => {
+    const result = await callHomeAssistantService({
+      domain: 'climate',
+      service: 'turn_on',
+      entityId: 'climate.hallway',
+    })
+    expect(result.ok).toBe(true)
+    expect(callService).toHaveBeenCalledWith('climate', 'turn_on', 'climate.hallway', undefined)
+  })
+
   it('degrades to a structured failure when the socket rejects', async () => {
     callService.mockRejectedValue(new Error('Home Assistant is not connected'))
     const result = await callHomeAssistantService({

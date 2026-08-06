@@ -126,15 +126,33 @@ describe('SetpointRow', () => {
   })
 
   it('turns the heating off when it is on', () => {
-    const { onCall } = renderRow()
+    const { onCall } = renderRow(withAttrs({ hvac_modes: ['off', 'heat'] }))
     fireEvent.click(screen.getByRole('switch'))
     expect(onCall).toHaveBeenCalledWith('set_hvac_mode', { hvac_mode: 'off' })
   })
 
   it('turns it back on to heat when it is off', () => {
-    const { onCall } = renderRow(climate({ state: 'off' }))
+    const { onCall } = renderRow(
+      climate({
+        state: 'off',
+        attributes: { ...climate().attributes, hvac_modes: ['off', 'heat'] },
+      }),
+    )
     fireEvent.click(screen.getByRole('switch'))
     expect(onCall).toHaveBeenCalledWith('set_hvac_mode', { hvac_mode: 'heat' })
+  })
+
+  it('lets a thermostat that heats under another name switch itself on', () => {
+    // The real device: `heat_cool` is its only on-mode, so asking for `heat`
+    // would be refused outright and the heating could not be turned back on.
+    const { onCall } = renderRow(
+      climate({
+        state: 'off',
+        attributes: { ...climate().attributes, hvac_modes: ['off', 'heat_cool'] },
+      }),
+    )
+    fireEvent.click(screen.getByRole('switch'))
+    expect(onCall).toHaveBeenCalledWith('turn_on', undefined)
   })
 
   it('reads a thermostat that publishes no target at all', () => {
@@ -182,6 +200,63 @@ describe('SetpointRow — what it says it is doing', () => {
   it('says nothing about heating while it is off', () => {
     renderRow(climate({ state: 'off' }))
     expect(screen.getByText('Off')).toBeInTheDocument()
+  })
+})
+
+describe('SetpointRow — schedule and manual', () => {
+  /** The real thermostat: a Tuya running its own schedule. */
+  const scheduled = (over: Record<string, unknown> = {}) =>
+    withAttrs({
+      hvac_modes: ['off', 'heat_cool'],
+      preset_modes: ['auto', 'manual'],
+      preset_mode: 'auto',
+      ...over,
+    })
+
+  it('offers the presets the device declares, marking the active one', () => {
+    renderRow(scheduled())
+    expect(screen.getByRole('button', { name: 'auto' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'manual' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('switches preset with the device’s own word for it', () => {
+    const { onCall } = renderRow(scheduled())
+    fireEvent.click(screen.getByRole('button', { name: 'manual' }))
+    expect(onCall).toHaveBeenCalledWith('set_preset_mode', { preset_mode: 'manual' })
+  })
+
+  it('says a change holds only until the next scheduled one', () => {
+    renderRow(scheduled())
+    expect(screen.getByText(/holds until next change/i)).toBeInTheDocument()
+  })
+
+  it('leaves the preset alone when the temperature is nudged', () => {
+    const { onCall } = renderRow(scheduled())
+    raise()
+    settle()
+    expect(onCall).toHaveBeenCalledTimes(1)
+    expect(onCall).toHaveBeenCalledWith('set_temperature', { temperature: 20.5 })
+  })
+
+  it('drops the caption once it is holding a manual temperature', () => {
+    renderRow(scheduled({ preset_mode: 'manual' }))
+    expect(screen.queryByText(/holds until next change/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'manual' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('says nothing about a schedule while the heating is off', () => {
+    renderRow(climate({ state: 'off', attributes: { ...scheduled().attributes } }))
+    expect(screen.queryByText(/holds until next change/i)).not.toBeInTheDocument()
+  })
+
+  it('shows no preset control for a thermostat that offers no choice', () => {
+    renderRow(withAttrs({ preset_modes: ['auto'] }))
+    expect(screen.queryByRole('group', { name: /mode/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no preset control for a thermostat that declares none', () => {
+    renderRow()
+    expect(screen.queryByRole('group', { name: /mode/i })).not.toBeInTheDocument()
   })
 })
 

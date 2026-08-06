@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest'
 import type { HaEntityState } from '@hame/shared'
 import {
   clampSetpoint,
+  climateOffCall,
+  climateOnCall,
   climateStatus,
   haClimateView,
   HaServiceCallSchema,
   isHaServiceAllowed,
+  isSchedulePreset,
   sanitiseHaServiceData,
 } from '@hame/shared'
 import { haClient } from '../integrations/home-assistant/client.js'
@@ -37,14 +40,20 @@ describe('isHaServiceAllowed', () => {
     expect(isHaServiceAllowed('automation', 'trigger')).toBe(true)
     expect(isHaServiceAllowed('climate', 'set_temperature')).toBe(true)
     expect(isHaServiceAllowed('climate', 'set_hvac_mode')).toBe(true)
+    expect(isHaServiceAllowed('climate', 'set_preset_mode')).toBe(true)
+    expect(isHaServiceAllowed('climate', 'turn_on')).toBe(true)
+    expect(isHaServiceAllowed('climate', 'turn_off')).toBe(true)
   })
 
   it('rejects anything outside the allowlist', () => {
     expect(isHaServiceAllowed('scene', 'toggle')).toBe(false) // scenes only turn_on
     expect(isHaServiceAllowed('lock', 'unlock')).toBe(false) // lock not controllable here
     expect(isHaServiceAllowed('homeassistant', 'restart')).toBe(false)
-    expect(isHaServiceAllowed('climate', 'set_preset_mode')).toBe(false) // out of scope
-    expect(isHaServiceAllowed('climate', 'turn_off')).toBe(false) // mode, not a power verb
+    // Real climate services HA exposes that Hame still has no business relaying —
+    // the widget controls heating, not humidity, fans or swing (§10 Phase 23).
+    expect(isHaServiceAllowed('climate', 'set_humidity')).toBe(false)
+    expect(isHaServiceAllowed('climate', 'set_fan_mode')).toBe(false)
+    expect(isHaServiceAllowed('climate', 'set_swing_mode')).toBe(false)
   })
 })
 
@@ -196,7 +205,30 @@ describe('haClimateView', () => {
       step: 0.5,
       isOn: true,
       action: null,
+      hvacModes: [],
+      presets: [],
+      preset: null,
     })
+  })
+
+  it('reads the vocabularies the device declares for itself', () => {
+    const view = haClimateView(
+      climate({
+        hvac_modes: ['off', 'heat_cool'],
+        preset_modes: ['auto', 'manual'],
+        preset_mode: 'auto',
+      }),
+    )
+    expect(view).toMatchObject({
+      hvacModes: ['off', 'heat_cool'],
+      presets: ['auto', 'manual'],
+      preset: 'auto',
+    })
+  })
+
+  it('ignores non-string entries in a device’s declared lists', () => {
+    const view = haClimateView(climate({ hvac_modes: ['off', 3, null, 'heat'] }))
+    expect(view.hvacModes).toEqual(['off', 'heat'])
   })
 
   it('reads what the thermostat says it is doing, when it says so', () => {
@@ -231,6 +263,65 @@ describe('haClimateView', () => {
   it('survives a device reporting its range backwards', () => {
     const view = haClimateView(climate({ min_temp: 28, max_temp: 10 }))
     expect(view.min).toBeLessThanOrEqual(view.max)
+  })
+})
+
+describe('climateOnCall / climateOffCall', () => {
+  const view = (attributes: Record<string, unknown>, state = 'heat') =>
+    haClimateView(climate(attributes, state))
+
+  it('names the mode when the device lists one Hame sets', () => {
+    expect(climateOnCall(view({ hvac_modes: ['off', 'heat'] }))).toEqual({
+      service: 'set_hvac_mode',
+      data: { hvac_mode: 'heat' },
+    })
+  })
+
+  it('lets a device that heats under another name choose for itself', () => {
+    // The real thermostat: its only on-mode is `heat_cool`, so naming `heat`
+    // would be rejected outright and the heating could not be switched back on.
+    expect(climateOnCall(view({ hvac_modes: ['off', 'heat_cool'] }))).toEqual({
+      service: 'turn_on',
+    })
+    expect(climateOnCall(view({ hvac_modes: ['off', 'auto'] }))).toEqual({ service: 'turn_on' })
+  })
+
+  it('falls back to turn_on when a device publishes no modes at all', () => {
+    expect(climateOnCall(view({ hvac_modes: null }))).toEqual({ service: 'turn_on' })
+  })
+
+  it('offers nothing for a device that only knows how to be off', () => {
+    expect(climateOnCall(view({ hvac_modes: ['off'] }))).toBeNull()
+  })
+
+  it('turns off by name where it can, and by service where it cannot', () => {
+    expect(climateOffCall(view({ hvac_modes: ['off', 'heat_cool'] }))).toEqual({
+      service: 'set_hvac_mode',
+      data: { hvac_mode: 'off' },
+    })
+    expect(climateOffCall(view({ hvac_modes: ['heat_cool'] }))).toEqual({ service: 'turn_off' })
+  })
+
+  it('only ever asks for services the allowlist carries', () => {
+    for (const modes of [['off', 'heat'], ['off', 'heat_cool'], ['off'], []]) {
+      const call = climateOnCall(view({ hvac_modes: modes })) ?? climateOffCall(view({}))
+      expect(isHaServiceAllowed('climate', call.service)).toBe(true)
+    }
+  })
+})
+
+describe('isSchedulePreset', () => {
+  it('recognises the presets that mean "running its own schedule"', () => {
+    expect(isSchedulePreset('auto')).toBe(true)
+    expect(isSchedulePreset('Auto')).toBe(true)
+    expect(isSchedulePreset('program')).toBe(true)
+  })
+
+  it('says nothing about a preset it does not recognise', () => {
+    expect(isSchedulePreset('manual')).toBe(false)
+    expect(isSchedulePreset('eco')).toBe(false)
+    expect(isSchedulePreset('boost')).toBe(false)
+    expect(isSchedulePreset(null)).toBe(false)
   })
 })
 

@@ -114,7 +114,7 @@ export const HA_CONTROL_SERVICES: Record<string, readonly string[]> = {
   scene: ['turn_on'],
   script: ['turn_on'],
   automation: ['trigger', 'turn_on', 'turn_off'],
-  climate: ['set_temperature', 'set_hvac_mode'],
+  climate: ['set_temperature', 'set_hvac_mode', 'set_preset_mode', 'turn_on', 'turn_off'],
 }
 
 /** Domains the widget renders as on/off toggles (they carry an on/off state). */
@@ -189,6 +189,17 @@ const HA_SERVICE_DATA_SCHEMAS: Record<string, z.ZodType<Record<string, unknown>>
   'climate.set_hvac_mode': z
     .object({
       hvac_mode: z.enum(HA_HVAC_MODES),
+    })
+    .strict(),
+  // Unlike an HVAC mode, a preset's vocabulary belongs to the *integration*, not
+  // to Home Assistant: a Tuya thermostat offers `auto`/`manual`, others `eco` or
+  // `boost`, and HA's own PRESET_* constants cover none of the first pair. An
+  // enum here would refuse real devices, so the constant bounds only the shape —
+  // the binding check is against the entity's own advertised `preset_modes`, in
+  // the service, where the registry is (§10 Phase 23).
+  'climate.set_preset_mode': z
+    .object({
+      preset_mode: z.string().min(1).max(64),
     })
     .strict(),
 }
@@ -285,6 +296,11 @@ export interface HaClimateView {
   isOn: boolean
   /** What the thermostat says it is *doing* (`hvac_action`), when it publishes it. */
   action: string | null
+  /** The modes this device will actually accept — not what Hame would like to send. */
+  hvacModes: string[]
+  /** The presets it offers (`auto`/`manual`, `eco`…), and which one is active. */
+  presets: string[]
+  preset: string | null
 }
 
 /** HA's own fallbacks when a climate entity declines to publish a range. */
@@ -304,6 +320,9 @@ export function haClimateView(entity: HaEntityState): HaClimateView {
     step: numberAttr(attrs.target_temp_step) ?? DEFAULT_TEMP_STEP,
     isOn: entity.state !== 'off',
     action: stringAttr(attrs.hvac_action),
+    hvacModes: stringListAttr(attrs.hvac_modes),
+    presets: stringListAttr(attrs.preset_modes),
+    preset: stringAttr(attrs.preset_mode),
   }
 }
 
@@ -313,6 +332,63 @@ function numberAttr(value: unknown): number | null {
 
 function stringAttr(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function stringListAttr(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+}
+
+/**
+ * How to turn this particular thermostat on.
+ *
+ * Hame used to assume `set_hvac_mode: heat`, which is wrong on any device that
+ * doesn't list `heat` — a Tuya thermostat whose only on-mode is `heat_cool`
+ * rejects it outright, so the widget could switch the heating off and then not
+ * back on. `climate.turn_on` avoids the question entirely by letting the device
+ * pick its own on-mode, so it is preferred wherever the entity advertises it
+ * (`TURN_ON`, feature bit 256). Failing that, the mode is chosen from what the
+ * device actually lists rather than from what Hame would like to send.
+ *
+ * Returns null when a device advertises no way to be turned on at all, so the
+ * caller can hide the control rather than offer one that cannot work.
+ */
+export function climateOnCall(
+  view: HaClimateView,
+): { service: string; data?: Record<string, unknown> } | null {
+  if (view.hvacModes.length === 0) return { service: 'turn_on' }
+  for (const mode of HA_HVAC_MODES) {
+    if (mode !== 'off' && view.hvacModes.includes(mode)) {
+      return { service: 'set_hvac_mode', data: { hvac_mode: mode } }
+    }
+  }
+  // The device heats under a name Hame doesn't set (`heat_cool`, `auto`); let it
+  // choose for itself rather than naming a mode this allowlist won't carry.
+  const onModes = view.hvacModes.filter((m) => m !== 'off')
+  return onModes.length > 0 ? { service: 'turn_on' } : null
+}
+
+/** How to turn it off — `off` is universal enough to name, but not to assume. */
+export function climateOffCall(view: HaClimateView): {
+  service: string
+  data?: Record<string, unknown>
+} {
+  return view.hvacModes.includes('off')
+    ? { service: 'set_hvac_mode', data: { hvac_mode: 'off' } }
+    : { service: 'turn_off' }
+}
+
+/**
+ * Presets that mean "the thermostat is running its own schedule".
+ *
+ * A heuristic over a device-defined vocabulary, and deliberately a short one: it
+ * only decides whether the widget adds the caption saying a change lasts until
+ * the next scheduled change. An unrecognised preset says nothing rather than
+ * claiming something wrong.
+ */
+const SCHEDULE_PRESETS = ['auto', 'program', 'programme', 'schedule', 'scheduled']
+
+export function isSchedulePreset(preset: string | null): boolean {
+  return preset !== null && SCHEDULE_PRESETS.includes(preset.toLowerCase())
 }
 
 /** What the heating widget says a thermostat is doing right now. */

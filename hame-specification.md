@@ -1065,10 +1065,11 @@ enum NoteAudience {
 - **Features exposed**:
   - Read entity states (lights, sensors, temperature, presence) for dashboard widgets
   - Control devices (toggle lights, run scenes, trigger automations)
-  - **Heating** — a climate entity's target temperature and on/off, on its own
-    dashboard widget (§10 Phase 20; drawn as a dial in Phase 22). The first
-    control that carries an *argument*, so the service allowlist gained a
-    per-service payload schema
+  - **Heating** — a climate entity's target temperature, on/off and preset mode,
+    on its own dashboard widget (§10 Phase 20; drawn as a dial in Phase 22;
+    schedule-aware in Phase 23). The first control that carries an *argument*, so
+    the service allowlist gained a per-service payload schema — and, for presets,
+    a check against the device's own advertised vocabulary
   - Send notifications via HA (HA handles phone push)
   - Read HA calendars (added as a `CalendarSource`)
 - **No state mirroring** — Hame queries HA live, doesn't duplicate entity data
@@ -3326,6 +3327,83 @@ double-count its own trailing click, and still sends exactly one setpoint.
 
 ---
 
+### Phase 23 — The thermostat's own vocabulary ✅ Complete (06-08-2026)
+
+Phase 20 and 22 were both built against a thermostat described in the abstract.
+Reading the *actual* device — a Tuya RF/WiFi thermostat wired to the boiler —
+found Hame confidently wrong about it: `hvac_modes` is `["off", "heat_cool"]`, so
+the on/off toggle, which sent `set_hvac_mode: heat`, could switch the heating
+**off and never back on**. HA validates a mode against the entity's own list and
+refuses anything else. The widget had been shipped twice without that ever being
+exercised.
+
+**Goal**: Control the thermostat that's actually on the wall, and let a schedule
+stay a schedule.
+
+**Design**:
+
+- **Ask the device how to switch it on.** `climate.turn_on` / `turn_off` join the
+  allowlist — argument-free verbs, the original safe shape — and are preferred,
+  because they let the device pick its own on-mode. `set_hvac_mode` remains for
+  devices that list a mode Hame actually sets, chosen from `hvac_modes` rather
+  than assumed. A device that advertises no way to be turned on at all disables the
+  toggle instead of offering one that cannot work.
+- **A preset's vocabulary belongs to the integration.** `set_preset_mode` is the
+  first allowlisted service whose argument Hame *cannot* enumerate: this device
+  offers `auto`/`manual`, others `eco` or `boost`, and HA's own `PRESET_*`
+  constants cover neither of the first pair. So the schema bounds only the
+  **shape** (a short string, `.strict()`), and the binding check moved to the
+  service, against the entity's advertised `preset_modes`. Phase 20's two bounds
+  taken to their conclusion — where the vocabulary itself is device-defined, a
+  constant can only describe the shape and the live check has to carry the meaning.
+- **Refuse, don't clamp.** The setpoint clamp and the preset check share a seam and
+  deliberately behave differently: an out-of-range number has a nearest legal
+  value, so it is clamped; an unrecognised preset has no nearest anything, so it is
+  refused. `eco` is rejected on a device offering `auto`/`manual` even though HA
+  itself defines `eco` — what HA defines is not what this thermostat has.
+- **A schedule is not a mistake to be corrected.** Nudging the dial while the
+  thermostat is in `auto` leaves the preset **alone**: the device's own behaviour
+  is to hold the new temperature until its next scheduled change, which is exactly
+  what's wanted from a wall tablet. Silently flipping to `manual` would be Hame
+  quietly cancelling the household's heating schedule on a tap. Instead the widget
+  *says* what will happen — "holds until next change" — and the preset pill makes
+  flipping to `manual` a deliberate act.
+- **The pill speaks the device's language.** Presets are rendered with the device's
+  own strings, only cased for display, because inventing friendlier words would be
+  guessing about someone else's thermostat. It appears only when there are two or
+  more presets to choose between; the schedule caption uses a short heuristic list
+  (`auto`, `program`, `schedule`…) and says nothing at all about a preset it
+  doesn't recognise, rather than claiming something wrong.
+
+**Delivered**: `climate` gains `set_preset_mode` / `turn_on` / `turn_off` on
+`HA_CONTROL_SERVICES`, with a shape-only payload schema for the first;
+`requirePresetTheDeviceOffers` beside `clampSetpointToDevice` in the service;
+`HaClimateView` gains `hvacModes` / `presets` / `preset`, with `climateOnCall`,
+`climateOffCall` and `isSchedulePreset` as pure shared helpers; a `PresetPill` and
+the schedule caption on the heating widget.
+
+**Found along the way**: the device claims `max_temp: 250`, which the §11 envelope
+already clamps to 35 — but that still leaves the dial spanning 5–35° for a house
+that lives between 15 and 23, so the arc's proportion, which is the whole point of
+Phase 22, is diluted by a device lying about itself. Left as-is for now and noted
+in §12. Its battery also reads 1%, which is a household fact Hame could surface
+(`sensor.heating_battery` is already ingested) — also §12.
+
+**Verified**: typecheck / lint / format green, **705 API + 151 web + 15
+bin-scraper tests** (26 new), all builds clean. Coverage centres on the vocabulary
+boundary: a preset the device doesn't list is refused (including one HA itself
+defines), an unknown key beside a valid preset is refused, a device the registry
+isn't tracking is still relayed (HA is the final authority, as with the clamp), the
+on-call resolves to `turn_on` for a `heat_cool`-only device and to `set_hvac_mode`
+where `heat` exists, every branch asks only for services the allowlist carries, and
+the widget leaves the preset untouched when the temperature is nudged.
+
+**Still to check against the real thermostat**: that `turn_on` brings it back after
+an off, and what the device does to `preset_mode` when it receives a setpoint while
+in `auto` — Ben's, at the wall.
+
+---
+
 ## 11. Security & Conventions
 
 ### Security
@@ -3345,6 +3423,7 @@ double-count its own trailing click, and still sends exactly one setpoint.
 - **Content-Security-Policy** and companion headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) on the served HTML; user URL fields are constrained to http(s) at the Zod schema to prevent `javascript:`-scheme stored XSS (Phase 8.6).
 - **Backups**: the logical export (§8.15) is **always** passphrase-encrypted — an argon2id-derived key + AES-256-GCM over the whole file — because it contains argon2 password hashes and the decrypted integration secrets. Import re-encrypts those secrets under the target instance's `ENCRYPTION_KEY`. Export/import are admin-only, CSRF-protected and rate-limited (Phase 8.8).
 - **Device-control payloads**: the HA service allowlist (§8.11) pairs each permitted `(domain, service)` with an exact, `.strict()` payload schema; a service not in that map accepts no payload at all, and an allowlisted domain must be aimed at its own domain's entity. A setpoint is additionally clamped server-side to the device's own advertised range, since the schema can only enforce a constant envelope (Phase 20).
+- **Device-defined arguments**: a thermostat's preset modes are named by the *integration*, not by Home Assistant (`auto`/`manual` on one device, `eco`/`boost` on another), so `climate.set_preset_mode`'s schema can only bound the string's shape. The binding check is made in the service against the entity's own advertised `preset_modes`, and an unadvertised preset is **refused** rather than coerced — unlike a setpoint, which is clamped, because a number has a nearest legal value and a preset does not (Phase 23).
 - **Alert break-through commands**: the Companion-app device commands that lift a phone's Do Not Disturb, ringer mode and volume (§8.13, Phase 21) travel as `notify.*` payloads, not `call_service`, so they widen nothing in the allowlist above. Every payload is built server-side from a closed set in the pure planner — no user-supplied value reaches Home Assistant — the target service is the *recipient's own* stored `haNotifyService`, and the escalation is the recipient's opt-in, so a sender cannot elect to change another member's device settings.
 - **Env vars** validated at startup with Zod — fail fast if misconfigured (`JWT_SECRET` ≥ 32 chars, `ENCRYPTION_KEY` 64 hex)
 - **No secrets in git** — `.env.example` documents required vars
@@ -3447,6 +3526,27 @@ different feature, so it is sequenced after rather than bundled in:
 
 Sequencing pantry-first is the point: the barcode library fills as a side effect
 of ordinary unpacking, which is what makes in-shop ticking viable later.
+
+### Heating — Two Things the Real Device Turned Up
+
+Both found while wiring Phase 23 against the actual thermostat, neither worth a
+phase on its own:
+
+- **A device that lies about its range dilutes the dial.** The Tuya thermostat
+  advertises `max_temp: 250`. The §11 envelope clamps that to 35, so nothing
+  unsafe is sent — but the Phase 22 arc then spans 5–35° for a house that lives
+  between 15 and 23, and proportion is the entire point of a dial. The fix is a
+  *display* range distinct from the *safety* clamp: span a plausible domestic band
+  (or the device's range where it's credible), while the clamp keeps enforcing the
+  device's own claim. Deliberately not done as part of Phase 23 — the clamp is a
+  security boundary and shouldn't be casually entangled with a presentation
+  concern.
+- **The thermostat's battery is already ingested.** `sensor.heating_battery` sits
+  in the registry (`sensor` has been a dashboard domain since Phase 6.2), and the
+  slug correspondence `climate.heating` → `sensor.heating_battery` is the same one
+  Phase 21 leans on for phones. A low-battery marker on the heating widget is
+  therefore nearly free, and worth having: a thermostat whose battery dies stops
+  being a thermostat. (It read **1%** on the day Phase 23 was built.)
 
 ### Other Down-the-Line Features
 
