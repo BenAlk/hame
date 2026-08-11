@@ -77,6 +77,28 @@ describe('parseRecordPage — a 4-weekly bin out this week (real fixture)', () =
   })
 })
 
+describe('parseRecordPage — a "Town"-headed page (real fixture)', () => {
+  // Cambuslang & Rutherglen head the round's row "Town" where every other zone
+  // says "Area". This page also carries two rows that are not bin schedules.
+  const obs = parseRecordPage(fixture('south-lanarkshire-record-town.html'))
+
+  it('reads the round name from a "Town" row', () => {
+    expect(obs.area).toBe('Cambuslang')
+  })
+
+  it('reads every bin on the page, including a non-colour one', () => {
+    expect(obs.bins.map((b) => b.key)).toEqual(['black/green', 'burgundy', 'blue', 'grey', 'bulk'])
+    // "Bulk Bin - Flats" collects on its own weekday and frequency.
+    expect(obs.bins.find((b) => b.key === 'bulk')).toMatchObject({ weekday: 4, frequencyDays: 7 })
+  })
+
+  it('ignores a free-text row that is not a "Weekday (Frequency)" schedule', () => {
+    // A "Comments" row reads "Household Waste (Black) : Non Recycling Properties
+    // - Monday (Weekly)" — parenthesised and weekday-bearing, but not a schedule.
+    expect(obs.bins.some((b) => /household|comment/i.test(b.name))).toBe(false)
+  })
+})
+
 describe('parseAddressSearch (real fixture)', () => {
   const addresses = parseAddressSearch(fixture('south-lanarkshire-search.html'))
 

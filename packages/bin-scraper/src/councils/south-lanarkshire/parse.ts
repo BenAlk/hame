@@ -89,7 +89,9 @@ export function parseRecordPage(html: string): CollectionObservation {
   )) {
     const label = decodeEntities(row[1])
     const value = decodeEntities(row[2])
-    if (/^area$/i.test(label)) {
+    // The round's name, headed "Area" in most zones but "Town" in Cambuslang &
+    // Rutherglen. Both mean the same thing, so read either.
+    if (/^(area|town)$/i.test(label)) {
       area = value
       continue
     }
