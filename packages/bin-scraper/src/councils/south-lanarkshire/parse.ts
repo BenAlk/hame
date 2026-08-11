@@ -15,15 +15,30 @@ const ORIGIN = 'https://www.southlanarkshire.gov.uk'
 /**
  * A stable colour key for matching a bin across the page's two spellings
  * (the table's "Burgundy - Food and garden" vs the snippet's "Burgundy bin …").
- * Takes the text before the first "-" or "(", drops a trailing "bin", lowercases.
+ * Takes the text before the first "-" or "(", drops a trailing "bin", lowercases,
+ * and keeps only the **last** word.
+ *
+ * That last step matters: the two spellings disagree about more than the trailing
+ * description. The table calls one bin "Light Grey - Glass, cans and plastics"
+ * where the snippet calls it "Grey bin - glass, cans and plastics", so anything
+ * that keeps the shade qualifier gives "light grey" on one side and "grey" on the
+ * other and the two never meet. Reducing to the colour word leaves a single-word
+ * colour ("burgundy", "blue") and a slashed pair ("black/green") untouched.
+ *
+ * A mismatch here is not cosmetic, which is why this is worth the narrowing: a
+ * bin whose spellings don't reduce to one key is never seen as out in the observed
+ * week, and a 4-weekly bin has no other way to pin its phase from a single reading
+ * (`project.ts`), so it silently projects no dates at all.
  */
 export function normaliseKey(name: string): string {
-  return name
+  const colour = name
     .toLowerCase()
     .split(/[-(]/)[0]
     .replace(/\bbin\b/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+  const words = colour.split(' ')
+  return words[words.length - 1]
 }
 
 function decodeEntities(s: string): string {

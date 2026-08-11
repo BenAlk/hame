@@ -15,7 +15,7 @@ export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
 export interface BinSchedule {
   /** The bin's name exactly as the council shows it, e.g. "Burgundy - Food and garden". */
   name: string
-  /** A normalised key for matching ("burgundy", "black/green", "blue", "light grey"). */
+  /** A normalised key for matching ("burgundy", "black/green", "blue", "grey"). */
   key: string
   /** The collection weekday. */
   weekday: IsoWeekday
