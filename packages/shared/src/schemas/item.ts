@@ -3,6 +3,7 @@ import { BASE_UNITS } from '../units.js'
 import { TagSchema } from './tag.js'
 import { ShopSchema } from './shop.js'
 import { SectionSchema } from './section.js'
+import { STORAGE_TYPES } from '../storage-types.js'
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
 const atLeastOneFieldMessage = { message: 'At least one field must be provided' }
@@ -24,6 +25,8 @@ const ItemFields = z.object({
   shopId: z.string().uuid().nullish(),
   /** Which part of the shop it's in; null/absent = groups under "Other" (§8.3). */
   sectionId: z.string().uuid().nullish(),
+  /** How it's kept; drives the pantry's default location (§10 Phase 25). */
+  storageType: z.enum(STORAGE_TYPES).nullish(),
   tagIds: z.array(z.string().uuid()).optional(),
 })
 
@@ -87,6 +90,28 @@ export const SuggestedSectionSchema = z.object({
 })
 export type SuggestedSection = z.infer<typeof SuggestedSectionSchema>
 
+/** Ask how an item is kept. Takes a bare name, as tags and sections do. */
+export const SuggestStorageTypeSchema = z.object({
+  name: z.string().min(1, 'Item name is required').max(80, 'Item name is too long'),
+})
+export type SuggestStorageTypeInput = z.infer<typeof SuggestStorageTypeSchema>
+
+/**
+ * A suggested storage type (§10 Phase 25). The sibling of section suggestion, and
+ * the same shape for the same reason: **one** choice from a closed list, with
+ * declining representable inside the grammar rather than inferred from a bad
+ * answer.
+ *
+ * The one difference is that this list is a project constant rather than the
+ * household's rows, so `UNAVAILABLE` here can only mean "no model configured" —
+ * there is no empty-pool case to tell apart, because the pool cannot be empty.
+ */
+export const SuggestedStorageTypeSchema = z.object({
+  storageType: z.enum(STORAGE_TYPES).nullable(),
+  source: z.enum(['LLM', 'UNAVAILABLE', 'FAILED']),
+})
+export type SuggestedStorageType = z.infer<typeof SuggestedStorageTypeSchema>
+
 /** Public representation of an item, with its tags expanded. */
 export const ItemSchema = z.object({
   id: z.string().uuid(),
@@ -103,6 +128,7 @@ export const ItemSchema = z.object({
   shop: ShopSchema.nullable(),
   /** Expanded for the same reason, and it carries the position the list groups by. */
   section: SectionSchema.nullable(),
+  storageType: z.enum(STORAGE_TYPES).nullable(),
   tags: z.array(TagSchema),
   createdById: z.string().uuid(),
   createdAt: z.coerce.date(),

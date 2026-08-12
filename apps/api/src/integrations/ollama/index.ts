@@ -12,10 +12,12 @@
  */
 import {
   BASE_UNITS,
+  STORAGE_TYPES,
   type IngredientNormaliser,
   type NormalisedIngredient,
   type NormaliseResult,
   type NormaliserStrategy,
+  type StorageType,
 } from '@hame/shared'
 import { logger } from '../../lib/logger.js'
 import type { ExtractedRecipe } from '../recipe-import/index.js'
@@ -45,6 +47,7 @@ const EXTRACT_TIMEOUT_MS = 90_000
  */
 const TAG_TIMEOUT_MS = 15_000
 const SECTION_TIMEOUT_MS = 15_000
+const STORAGE_TIMEOUT_MS = 15_000
 const CANONICAL_TIMEOUT_MS = 15_000
 
 /**
@@ -258,6 +261,33 @@ export class LlmNormaliser implements IngredientNormaliser {
       return parseSuggestedSection(content, pool)
     } catch (err) {
       logger.warn({ err, itemName }, 'Ollama section suggestion failed')
+      throw err
+    }
+  }
+
+  /**
+   * Suggest how an item is kept (§10 Phase 25) — the third of the constrained
+   * siblings, and the only one whose enum is a **project constant** rather than
+   * the household's rows: nobody renames "frozen", so the grammar is the same on
+   * every install.
+   *
+   * Single-valued for the reason the field exists: as four tags this was a
+   * multi-select, and a real model returned both `chilled` and `frozen` for ice
+   * cream. Declining is representable, so an item with no sensible storage answer
+   * is left alone rather than filed somewhere to satisfy the grammar. Throws on a
+   * call that never completed, as its siblings do.
+   */
+  async suggestStorageType(itemName: string): Promise<StorageType | null> {
+    try {
+      const content = await this.chat(
+        STORAGE_SYSTEM_PROMPT,
+        buildStoragePrompt(itemName),
+        STORAGE_FORMAT,
+        STORAGE_TIMEOUT_MS,
+      )
+      return parseSuggestedStorageType(content)
+    } catch (err) {
+      logger.warn({ err, itemName }, 'Ollama storage-type suggestion failed')
       throw err
     }
   }
@@ -577,6 +607,68 @@ export function parseSuggestedSection(content: string, pool: string[]): string |
   if (typeof choice !== 'string') return null
   const wanted = choice.trim().toLowerCase()
   return pool.find((section) => section.toLowerCase() === wanted) ?? null
+}
+
+const STORAGE_SYSTEM_PROMPT =
+  'You say how a household grocery item is kept at home. ' +
+  'You only ever choose from the list given. Always reply with strict JSON only.'
+
+/** The sentinel for "I can't say", the same first-class decline sections get. */
+export const NO_STORAGE_TYPE = 'unknown'
+
+/**
+ * Unlike tags and sections this schema is a constant, because the choices are.
+ * `as const` and no builder: there is no household data to compile in.
+ */
+const STORAGE_FORMAT = {
+  type: 'object',
+  properties: { storageType: { enum: [...STORAGE_TYPES, NO_STORAGE_TYPE] } },
+  required: ['storageType'],
+  additionalProperties: false,
+} as const
+
+/**
+ * Build the storage prompt for one item name. Pure.
+ *
+ * Each choice is described rather than just named: "fresh" and "chilled" are not
+ * self-evident words, and the gloss is what stops a model treating them as
+ * interchangeable. The exactly-one rule is stated too, but it is the grammar that
+ * enforces it — the sentence is a courtesy, not the constraint (§10 Phase 15).
+ */
+export function buildStoragePrompt(itemName: string): string {
+  return [
+    `How is the grocery item "${itemName}" kept at home?`,
+    '',
+    'Available answers:',
+    '- FRESH: eaten within days, kept out of the fridge (fruit, veg, bread)',
+    '- CHILLED: kept in the fridge (milk, cheese, raw meat)',
+    '- FROZEN: kept in the freezer',
+    '- AMBIENT: shelf-stable at room temperature (tins, dry goods, jars)',
+    '',
+    'Rules:',
+    '- Choose exactly one. Answer for how the item is usually bought.',
+    `- Reply {"storageType":"${NO_STORAGE_TYPE}"} if you cannot say.`,
+    '- Reply as {"storageType":"CHILLED"}.',
+  ].join('\n')
+}
+
+/**
+ * Parse a storage reply into one of the four types, or null when the model
+ * declined or answered unusably. Case-insensitive, so a model that lower-cases
+ * the enum still resolves. Pure.
+ */
+export function parseSuggestedStorageType(content: string): StorageType | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const choice = (parsed as { storageType?: unknown }).storageType
+  if (typeof choice !== 'string') return null
+  const wanted = choice.trim().toUpperCase()
+  return STORAGE_TYPES.find((type) => type === wanted) ?? null
 }
 
 const CANONICAL_SYSTEM_PROMPT =

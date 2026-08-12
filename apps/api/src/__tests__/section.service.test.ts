@@ -162,6 +162,7 @@ describe('item section assignment', () => {
     isStaple: false,
     isConsumable: false,
     reorderIntervalDays: null,
+    storageType: null,
     shopId: null,
     shop: null,
     sectionId: null,

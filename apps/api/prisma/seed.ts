@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import argon2 from 'argon2'
 import { PrismaClient } from '@prisma/client'
-import { firstDueDate, DEFAULT_DASHBOARD, type TagKind } from '@hame/shared'
+import { firstDueDate, DEFAULT_DASHBOARD, type StorageType, type TagKind } from '@hame/shared'
 import { buildEventICal, icalEtag } from '../src/lib/icalendar.js'
 
 // Load the repo-root .env so DATABASE_URL is available when run via tsx.
@@ -74,7 +74,10 @@ async function main() {
   // carries the `kind` that says what its tags are *for*: which surfaces offer
   // them, and whether the model may suggest them. Shop *sections* are no longer
   // tags at all — they are a field on Item (§8.3, Phase 18), because an item is in
-  // exactly one and the list needs them ordered.
+  // exactly one and the list needs them ordered, and storage type left it in Phase
+  // 25 for the same reason — which is why no `ITEM` tag is seeded at all now: the
+  // starter vocabulary this project can honestly ship is all recipe or dietary, and
+  // a household's own product words are its own.
   // This is a strong default, not exhaustive — the long tail (more cuisines,
   // dish types, occasions) is created on the fly when tagging items/recipes.
   const tagGroups: { colour: string; kind: TagKind; names: string[] }[] = [
@@ -118,9 +121,6 @@ async function main() {
       kind: 'DIETARY',
       names: ['vegetarian', 'vegan', 'gluten-free', 'dairy-free', 'healthy'],
     },
-    // Item — storage type. The starter product vocabulary, and the kind
-    // suggestions draw on.
-    { colour: '#2f6fb0', kind: 'ITEM', names: ['fresh', 'chilled', 'frozen', 'ambient'] },
   ]
   const tags: Record<string, string> = {}
   for (const group of tagGroups) {
@@ -144,6 +144,8 @@ async function main() {
     minimumQuantity?: number
     defaultUnit?: string
     tags?: string[]
+    /** How it's kept (spec §10 Phase 25) — a field, not a tag: exactly one applies. */
+    storageType?: StorageType
     isConsumable?: boolean
     reorderIntervalDays?: number
     /** Only when the item is buyable nowhere else (spec §8.3); omit = anywhere. */
@@ -200,7 +202,8 @@ async function main() {
       baseUnit: 'ml',
       minimumQuantity: 2000,
       defaultUnit: 'bottle',
-      tags: ['quick-add', 'chilled'],
+      tags: ['quick-add'],
+      storageType: 'CHILLED',
       section: 'Dairy',
     },
     {
@@ -208,7 +211,8 @@ async function main() {
       baseUnit: 'unit',
       minimumQuantity: 1,
       defaultUnit: 'loaf',
-      tags: ['quick-add', 'fresh'],
+      tags: ['quick-add'],
+      storageType: 'FRESH',
       section: 'Bakery',
     },
     {
@@ -216,36 +220,39 @@ async function main() {
       baseUnit: 'unit',
       minimumQuantity: 6,
       defaultUnit: 'box',
-      tags: ['quick-add', 'chilled'],
+      tags: ['quick-add'],
+      storageType: 'CHILLED',
       section: 'Dairy',
     },
     {
       name: 'Butter',
       baseUnit: 'g',
       minimumQuantity: 250,
-      tags: ['chilled'],
+      storageType: 'CHILLED',
       section: 'Dairy',
     },
     {
       name: 'Bananas',
       baseUnit: 'unit',
       defaultUnit: 'bunch',
-      tags: ['quick-add', 'fresh'],
+      tags: ['quick-add'],
+      storageType: 'FRESH',
       section: 'Produce',
     },
-    { name: 'Chicken breast', baseUnit: 'g', tags: ['frozen'], section: 'Meat' },
+    { name: 'Chicken breast', baseUnit: 'g', storageType: 'FROZEN', section: 'Meat' },
     {
       name: 'Pasta',
       baseUnit: 'g',
       minimumQuantity: 500,
-      tags: ['ambient'],
+      storageType: 'AMBIENT',
       section: 'Dry goods',
     },
     {
       name: 'Coffee',
       baseUnit: 'g',
       minimumQuantity: 200,
-      tags: ['quick-add', 'ambient'],
+      tags: ['quick-add'],
+      storageType: 'AMBIENT',
       section: 'Drinks',
       shop: 'Lidl',
     },
@@ -305,6 +312,7 @@ async function main() {
         reorderIntervalDays: spec.reorderIntervalDays ?? null,
         shopId: spec.shop ? shops[spec.shop] : null,
         sectionId: spec.section ? sections[spec.section] : null,
+        storageType: spec.storageType ?? null,
         createdById: admin.id,
         tags: { connect: spec.tags?.map((name) => ({ id: tags[name] })) ?? [] },
       },
@@ -313,13 +321,19 @@ async function main() {
   }
 
   // ── Storage locations ────────────────────────────────────────────────────—
-  const locationNames = ['Main Fridge', 'Pantry Cupboard', 'Garage Freezer']
+  // Each declares what it holds, so stocking a chilled item defaults to the fridge
+  // rather than to whichever name sorts first (spec §10 Phase 25).
+  const locationSpecs: { name: string; storageType: StorageType }[] = [
+    { name: 'Main Fridge', storageType: 'CHILLED' },
+    { name: 'Pantry Cupboard', storageType: 'AMBIENT' },
+    { name: 'Garage Freezer', storageType: 'FROZEN' },
+  ]
   const locations: Record<string, string> = {}
-  for (const name of locationNames) {
+  for (const { name, storageType } of locationSpecs) {
     const loc = await prisma.storageLocation.upsert({
       where: { name },
-      update: {},
-      create: { name },
+      update: { storageType }, // keep the destinations authoritative on re-seed
+      create: { name, storageType },
     })
     locations[name] = loc.id
   }

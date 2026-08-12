@@ -3,6 +3,7 @@ import type {
   CreateItemInput,
   Item,
   SuggestedSection,
+  SuggestedStorageType,
   SuggestedTags,
   UpdateItemInput,
 } from '@hame/shared'
@@ -36,6 +37,7 @@ export function toItem(item: ItemWithTags): Item {
     reorderIntervalDays: item.reorderIntervalDays,
     shop: item.shop ? toShop(item.shop) : null,
     section: item.section ? toSection(item.section) : null,
+    storageType: item.storageType,
     tags: item.tags.map(toTag),
     createdById: item.createdById,
     createdAt: item.createdAt,
@@ -74,6 +76,7 @@ export async function createItem(input: CreateItemInput, userId: string): Promis
       reorderIntervalDays: input.reorderIntervalDays ?? null,
       shopId: input.shopId ?? null,
       sectionId: input.sectionId ?? null,
+      storageType: input.storageType ?? null,
       createdById: userId,
       ...(input.tagIds && { tags: { connect: input.tagIds.map((id) => ({ id })) } }),
     },
@@ -103,6 +106,7 @@ export async function updateItem(id: string, input: UpdateItemInput): Promise<It
       ...(input.shopId !== undefined && { shopId: input.shopId }),
       // Likewise null, which returns the item to the list's "Other" group.
       ...(input.sectionId !== undefined && { sectionId: input.sectionId }),
+      ...(input.storageType !== undefined && { storageType: input.storageType }),
       // `tagIds` fully replaces the item's tag set when present.
       ...(input.tagIds && { tags: { set: input.tagIds.map((tid) => ({ id: tid })) } }),
     },
@@ -234,6 +238,30 @@ export async function suggestSection(name: string): Promise<SuggestedSection> {
     ? pool.find((section) => section.name.toLowerCase() === chosen.toLowerCase())
     : undefined
   return { section: match ? toSection(match) : null, source: 'LLM' }
+}
+
+/**
+ * Suggest how an item is kept (spec §10 Phase 25).
+ *
+ * The third constrained sibling, and the simplest: the choices are a project
+ * constant, so there is no pool to fetch and no empty-pool case to report.
+ * `UNAVAILABLE` here can only mean "no model configured".
+ *
+ * This replaces asking the model to pick storage words out of a tag pool, which
+ * it could not do reliably — the set is mutually exclusive and a tag reply is
+ * not, so it returned two, or answered by whichever it read first.
+ */
+export async function suggestStorageType(name: string): Promise<SuggestedStorageType> {
+  const llm = await getLlm()
+  if (!llm) return { storageType: null, source: 'UNAVAILABLE' }
+
+  try {
+    return { storageType: await llm.suggestStorageType(name.trim()), source: 'LLM' }
+  } catch {
+    // Same distinction as its siblings: a call that never completed is not the
+    // model saying it cannot tell.
+    return { storageType: null, source: 'FAILED' }
+  }
 }
 
 /**

@@ -103,6 +103,7 @@ model Item {
   shop            Shop?              @relation(fields: [shopId], references: [id], onDelete: SetNull)
   sectionId       String? // which part of the shop it's in (spec §8.3); null = groups under "Other"
   section         Section?           @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  storageType     StorageType? // how it's kept (spec §10 Phase 25); drives the pantry's default location
   createdById     String
   createdBy       User               @relation(fields: [createdById], references: [id])
   tags            Tag[]              @relation("ItemTags")
@@ -165,10 +166,23 @@ enum ShoppingItemSource {
 
 // ── Phase 2: Pantry ──────────────────────────────────────────────────────────
 
+/// How an item is kept (spec §10 Phase 25). A closed, universal set — unlike
+/// Section and Shop, which a household names itself — so it is an enum rather than
+/// rows, and exactly one applies. That last part is the point: as four tags this
+/// was a multi-select, and a model duly returned both "chilled" and "frozen" for
+/// ice cream.
+enum StorageType {
+  FRESH
+  CHILLED
+  FROZEN
+  AMBIENT
+}
+
 model StorageLocation {
   id          String        @id @default(uuid())
   name        String        @unique // "Main Fridge"
   icon        String?
+  storageType StorageType? // what this place holds; null = no default destination
   pantryItems PantryEntry[]
   createdAt   DateTime      @default(now())
 }

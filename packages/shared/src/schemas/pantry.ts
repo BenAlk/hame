@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ItemSchema } from './item.js'
+import { STORAGE_TYPES } from '../storage-types.js'
 import { MemberSummarySchema } from './user.js'
 
 const atLeastOneField = (data: Record<string, unknown>) => Object.keys(data).length > 0
@@ -10,6 +11,8 @@ const atLeastOneFieldMessage = { message: 'At least one field must be provided' 
 export const CreateStorageLocationSchema = z.object({
   name: z.string().min(1, 'Location name is required').max(40, 'Location name is too long'),
   icon: z.string().max(40).nullish(),
+  /** What this place holds, so stocking can default to it (§10 Phase 25). */
+  storageType: z.enum(STORAGE_TYPES).nullish(),
 })
 export type CreateStorageLocationInput = z.infer<typeof CreateStorageLocationSchema>
 
@@ -17,6 +20,7 @@ export const UpdateStorageLocationSchema = z
   .object({
     name: z.string().min(1).max(40).optional(),
     icon: z.string().max(40).nullish(),
+    storageType: z.enum(STORAGE_TYPES).nullish(),
   })
   .refine(atLeastOneField, atLeastOneFieldMessage)
 export type UpdateStorageLocationInput = z.infer<typeof UpdateStorageLocationSchema>
@@ -25,6 +29,7 @@ export const StorageLocationSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   icon: z.string().nullable(),
+  storageType: z.enum(STORAGE_TYPES).nullable(),
 })
 export type StorageLocation = z.infer<typeof StorageLocationSchema>
 

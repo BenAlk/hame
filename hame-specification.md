@@ -308,6 +308,7 @@ model Item {
   shop            Shop?               @relation(fields: [shopId], references: [id], onDelete: SetNull)
   sectionId       String?                          // which part of the shop it's in (§8.3); null = groups under "Other"
   section         Section?            @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  storageType     StorageType?                     // how it's kept (§10 Phase 25); drives the pantry's default location
   createdById     String
   createdBy       User                @relation(fields: [createdById], references: [id])
   tags            Tag[]               @relation("ItemTags")
@@ -434,10 +435,23 @@ enum ShoppingItemSource {
 ### 7.4 Pantry
 
 ```prisma
+/// How an item is kept (§10 Phase 25). A closed, universal set — unlike Section and
+/// Shop, which a household names itself — so an enum rather than rows, and exactly
+/// one applies. That last part is the point: as four tags this was a multi-select,
+/// and a real model duly returned both "chilled" and "frozen" for ice cream.
+enum StorageType {
+  FRESH                                           // eaten within days, kept out
+  CHILLED                                         // fridge
+  FROZEN                                          // freezer
+  AMBIENT                                         // shelf-stable
+}
+
 model StorageLocation {
   id          String        @id @default(uuid())
   name        String        @unique               // "Main Fridge"
   icon        String?
+  storageType StorageType?                        // what it holds (§10 Phase 25);
+                                                  // null = nothing defaults here
   pantryItems PantryEntry[]
   createdAt   DateTime      @default(now())
 }
@@ -3506,10 +3520,104 @@ on the surfaces, creation stating its own kind, a rename that does not quietly
 re-file a tag, and the cross-kind dead end naming both the kind and where to fix
 it.
 
-**Still to check against the real model**: that Cheddar stops attracting `dinner`
-and `snack` — the noisy half of the fault this phase exists for. The dietary half
-is now structural rather than a list, so it holds by construction, but the
-usefulness of what is left in the pool is a live question, as it was for Phase 19.
+**Checked against the real model** (`qwen2.5:7b`): Cheddar no longer attracts
+`dinner` or `snack`, and no dietary claim can reach the reply at all — the
+narrowing works, and what the model is handed is now item vocabulary and nothing
+else. What that exposed is that the item vocabulary was itself the wrong shape:
+with the noise gone, the storage words underneath turned out to be a
+mutually-exclusive family being offered as a free multi-select, answering by list
+position rather than by the item. That is Phase 25, and it is the reason this
+phase reads as necessary rather than sufficient.
+
+---
+
+### Phase 25 — Storage type stops being a tag ✅ Complete (07-08-2026)
+
+Phase 24 cleared the recipe words and dietary claims out of item suggestion, and
+what was left underneath was worse. Driven against the real model, "Cheddar" came
+back `ambient`, and so did "Semi skimmed milk". Then the pool was passed in
+reverse order and milk came back `fresh, chilled` — correct — from the same model
+at the same temperature on the same item. The list's *order* was deciding the
+answer, and `ambient` was winning because `orderBy: name asc` put it first.
+
+Ice cream came back `chilled, frozen` in every ordering tried. That one is not
+the model's fault at all: an item has exactly one storage type, and nothing in
+the reply schema said so.
+
+**Goal**: Ask a single-valued question in a way that can only be answered once.
+
+**Design**:
+
+- **The multi-select was the bug; the wrong answers were a symptom.** A tag set
+  over a mutually-exclusive family lets a model return two, and gives it nothing
+  to do when unsure except grab whatever it read first. This is the argument
+  Phase 18 made when aisles stopped being tags, and Phase 19 proved when a
+  single-choice section reply scored 8 of 10 on the same model that cannot pick
+  one word out of four here. The fix is not a better prompt — Phase 15 settled
+  that a constraint belongs in the grammar rather than in a politely worded rule.
+- **A closed, universal set is an enum, not a table.** `Section` and `Shop` are
+  household-named rows because a household names its own aisles and shops, and a
+  section needs a `position` to read in walking order. Nobody renames "frozen",
+  nobody reorders it, and there is nothing to add. So `StorageType` is a Prisma
+  enum, and the suggestion's reply schema is then the *same* on every install
+  rather than compiled per household — the one place in this project where the
+  constrained-model pattern gets a constant enum instead of a live pool.
+- **It has to earn the machinery.** The storage tags drove nothing: no code has
+  ever read `chilled`, despite the seed claiming since Phase 2 that they drive
+  "the pantry default + expiry hint". Building the Phase 19 apparatus for a label
+  that still did nothing would be the strongest argument against building it. So
+  `StorageLocation` gains a `storageType` — the Main Fridge holds chilled things,
+  the Garage Freezer frozen ones — and stocking a chilled item defaults the
+  location to a chilled place instead of whichever name sorts first. That is why
+  cheddar was offering the Garage Freezer.
+- **A default, not a rule.** The location select stays fully editable and a tie
+  between two ambient cupboards is broken by name, deterministically. An item with
+  no storage type, or a household whose locations declare none, falls back to
+  exactly the old behaviour rather than to nothing.
+- **Expiry stays out, and the seed comment gets corrected rather than fulfilled.**
+  A shelf life per storage type is invented data: "chilled" spans three days of
+  fish and six weeks of cheese. A pre-filled date is a claim about the food, it
+  would feed the expiring-soon widget and the twice-daily digest, and a wrong one
+  is worse than the blank that is there now.
+- **Retiring the tags follows Phase 18 exactly.** Detach `fresh` / `chilled` /
+  `frozen` / `ambient` from items, then delete each only where no recipe, chore or
+  other item still holds it — this phase owns the storage concept, not the words.
+  The consequence is worth stating plainly: they were the whole of the seeded
+  `ITEM` vocabulary, so a fresh install now has an empty suggestible pool and item
+  tag suggestion has nothing to offer until a household has words of its own.
+  Whether that is a gap or simply a starting point is a question about tag
+  suggestion rather than about this phase.
+
+**Delivered**: `STORAGE_TYPES` and `defaultLocationForStorage` as a pure module in
+`@hame/shared`; a `StorageType` enum in Prisma with `Item.storageType` and
+`StorageLocation.storageType`, in one migration that backfills both from the tags
+and the location names, then retires the four tags on Phase 18's contract.
+`LlmNormaliser.suggestStorageType` joins its two siblings on the shared
+schema-constrained `chat` helper — the only one whose format is a `const` rather
+than built per call — behind `POST /api/items/suggest-storage-type`, which takes a
+bare name so it answers before the item exists. A `StorageTypeSelect` carries the
+choice and the suggest affordance into the pantry's add-stock form and its
+item-detail modal, the storage locations panel gains a per-location "what does
+this hold", and the add-stock location select now derives its default from the
+item rather than from whichever name sorted first.
+
+**Verified**: typecheck / lint / format green, **746 API + 167 web + 15
+bin-scraper tests** (27 new), all builds clean; the migration applied to a live
+dev database and the seed re-run over it. Coverage is the default-location rule
+(a chilled item reaching a chilled place, a deterministic tie-break between two
+ambient cupboards, and each of the four ways it declines back to the old
+behaviour), the prompt glossing every choice rather than just naming it, the
+parser reading the sentinel as a decline and refusing a value outside the set,
+and the service separating a decline from a failure from an absent model.
+
+**Measured against the real model** (`qwen2.5:7b`, the same one the tag version was
+driven against): **11 of 12** items with a right answer, up from a version that got
+Cheddar, milk and tinned tomatoes wrong and returned contradictory pairs. Every
+previously-wrong case is now correct — Cheddar and milk both `CHILLED`, tinned
+tomatoes `AMBIENT`, and ice cream a single `FROZEN` rather than `chilled, frozen`.
+The one miss is **butter → `AMBIENT`**, which is defensible in a household that
+keeps it in a dish and wrong for one that doesn't; it is left as a wrong answer
+rather than argued away, and it costs a tap to correct.
 
 ---
 
@@ -3719,6 +3827,7 @@ Choices intentionally left open, to revisit when the need is real:
 | **Instance**          | An occurrence of a recurring entity (e.g., this Saturday's hoover chore)                          |
 | **Rollover**          | Moving an unbought shopping item from an archived list to a new one                               |
 | **Storage Location**  | A user-defined place where pantry items live (Main Fridge, Garage Freezer)                        |
+| **Storage type**      | How an item is kept — `FRESH` / `CHILLED` / `FROZEN` / `AMBIENT`; picks its default location      |
 | **Shop**              | A user-defined shop; set on an Item only when it's buyable _nowhere else_                         |
 | **Section**           | Which part of a shop an Item is in; carries a `position`, so the list reads in walking order      |
 | **Open Food Facts**   | Free, key-less open product database; turns an unseen barcode into a product name                 |

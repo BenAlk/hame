@@ -6,6 +6,7 @@ import { WidgetCard } from '@/components/features/widget-card'
 import { ShopChip } from '@/components/features/shop-chip'
 import { ItemTagsEditor } from '@/components/features/item-tags-editor'
 import { SectionSelect } from '@/components/features/section-select'
+import { StorageTypeSelect } from '@/components/features/storage-type-select'
 import { ScanDialog } from '@/components/features/pantry/scan-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,10 +22,13 @@ import {
   useCreateStorageLocation,
   useDeleteStorageLocation,
   useStorageLocations,
+  useUpdateStorageLocation,
 } from '@/api/storage-locations'
 import { cn } from '@/lib/utils'
 import { isOverdueOrToday, quantityLabel, relativeDay } from '@/lib/format'
 import { sameTagSet } from '@/lib/tags'
+import { STORAGE_TYPES, STORAGE_TYPE_LABELS, defaultLocationForStorage } from '@hame/shared'
+import type { StorageType } from '@hame/shared'
 
 export function PantryPage() {
   const { data: locations } = useStorageLocations()
@@ -168,6 +172,23 @@ function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClo
             </dd>
 
             <dt className="text-muted-foreground">
+              <label htmlFor="entry-storage">Kept</label>
+            </dt>
+            <dd>
+              {/* Also on the Item: how a product is kept is a fact about the
+                  product, and it's what picks the default location (§10 Phase 25). */}
+              <StorageTypeSelect
+                id="entry-storage"
+                itemName={entry.item.name}
+                value={entry.item.storageType}
+                disabled={updateItem.isPending}
+                onChange={(storageType) =>
+                  void updateItem.mutateAsync({ id: entry.item.id, storageType })
+                }
+              />
+            </dd>
+
+            <dt className="text-muted-foreground">
               <label htmlFor="entry-shop">Shop</label>
             </dt>
             <dd>
@@ -198,9 +219,9 @@ function EntryDetailModal({ entry, onClose }: { entry: PantryEntry | null; onClo
               <label htmlFor="entry-tags">Tags</label>
             </dt>
             <dd>
-              {/* Also on the Item, not this jar — tags section the shopping list
-                  by aisle and hint the storage location, both of which belong to
-                  the product rather than to one instance of it. */}
+              {/* Also on the Item, not this jar — a tag describes the product,
+                  not one instance of it. Aisle and storage used to live here and
+                  are now fields of their own (§10 Phase 18, Phase 25). */}
               <ItemTagsEditor
                 inputId="entry-tags"
                 itemName={entry.item.name}
@@ -269,8 +290,8 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
   const [tags, setTags] = useState<Tag[] | null>(null)
   // Same distinction for the section, where null would otherwise read as "clear it".
   const [sectionId, setSectionId] = useState<string | null | undefined>(undefined)
-
-  const resolvedLocation = locationId || locations?.[0]?.id || ''
+  // And for storage type, which additionally steers the location below.
+  const [storageType, setStorageType] = useState<StorageType | null | undefined>(undefined)
   // Adding by name find-or-creates, so a typed name may already be an item.
   // Showing that item's tags keeps what you see and what gets saved the same.
   const matched = useMemo(
@@ -279,6 +300,16 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
   )
   const shownTags = tags ?? matched?.tags ?? []
   const shownSectionId = sectionId !== undefined ? sectionId : (matched?.section?.id ?? null)
+  const shownStorageType = storageType !== undefined ? storageType : (matched?.storageType ?? null)
+
+  // A chilled item goes to a chilled place, rather than to whichever name sorts
+  // first (spec §10 Phase 25). A *default*, not a rule: an explicit choice wins,
+  // and an item with no storage type falls back to exactly the old behaviour.
+  const resolvedLocation =
+    locationId ||
+    defaultLocationForStorage(locations ?? [], shownStorageType)?.id ||
+    locations?.[0]?.id ||
+    ''
 
   // Re-prefill when the name starts naming a *different* item. Keyed on the
   // matched id rather than the text, so editing a free name mid-typing doesn't
@@ -286,6 +317,10 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
   useEffect(() => {
     setTags(null)
     setSectionId(undefined)
+    setStorageType(undefined)
+    // The location follows the item again, rather than sticking on a place chosen
+    // for whatever was being stocked before.
+    setLocationId('')
   }, [matched?.id])
 
   async function onSubmit(e: React.FormEvent) {
@@ -309,11 +344,14 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
       const tagsChanged = tags !== null && !sameTagSet(tags, entry.item.tags)
       const sectionChanged =
         sectionId !== undefined && sectionId !== (entry.item.section?.id ?? null)
-      if (tagsChanged || sectionChanged) {
+      const storageChanged =
+        storageType !== undefined && storageType !== (entry.item.storageType ?? null)
+      if (tagsChanged || sectionChanged || storageChanged) {
         await updateItem.mutateAsync({
           id: entry.item.id,
           ...(tagsChanged && { tagIds: tags.map((tag) => tag.id) }),
           ...(sectionChanged && { sectionId }),
+          ...(storageChanged && { storageType }),
         })
       }
       setName('')
@@ -410,6 +448,21 @@ function AddEntryForm({ hasLocations }: { hasLocations: boolean }) {
             something and when there's something for the model to reason from. */}
         {name.trim() !== '' && (
           <div className="flex max-w-md flex-col gap-3 border-t border-line pt-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="entry-storage-new">
+                Kept
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  {matched ? `already on ${matched.name}` : 'picks where it goes'}
+                </span>
+              </Label>
+              <StorageTypeSelect
+                id="entry-storage-new"
+                itemName={name}
+                value={shownStorageType}
+                onChange={setStorageType}
+                disabled={createEntry.isPending || updateItem.isPending}
+              />
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="entry-section-new">
                 Section
@@ -666,7 +719,7 @@ function ShopsPanel() {
         {shops?.map((shop) => (
           <li
             key={shop.id}
-            className="group flex items-center justify-between rounded-control px-2 py-1.5 text-sm hover:bg-muted"
+            className="group flex items-center gap-2 rounded-control px-2 py-1.5 text-sm hover:bg-muted"
           >
             <ShopChip shop={shop} />
             <button
@@ -701,6 +754,7 @@ function ShopsPanel() {
 function LocationsPanel() {
   const { data: locations } = useStorageLocations()
   const createLocation = useCreateStorageLocation()
+  const updateLocation = useUpdateStorageLocation()
   const deleteLocation = useDeleteStorageLocation()
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -714,6 +768,15 @@ function LocationsPanel() {
       setName('')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add location.')
+    }
+  }
+
+  async function onSetType(id: string, storageType: StorageType | null) {
+    setError(null)
+    try {
+      await updateLocation.mutateAsync({ id, storageType })
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save that.')
     }
   }
 
@@ -748,9 +811,27 @@ function LocationsPanel() {
         {locations?.map((loc) => (
           <li
             key={loc.id}
-            className="group flex items-center justify-between rounded-control px-2 py-1.5 text-sm hover:bg-muted"
+            className="group flex items-center gap-2 rounded-control px-2 py-1.5 text-sm hover:bg-muted"
           >
-            <span className="text-ink">{loc.name}</span>
+            <span className="min-w-0 truncate text-ink">{loc.name}</span>
+            {/* What this place holds, which is what lets stocking pick it (§10
+                Phase 25). "Anything" is the honest default: nothing routes here. */}
+            <select
+              value={loc.storageType ?? ''}
+              aria-label={`What ${loc.name} holds`}
+              disabled={updateLocation.isPending}
+              onChange={(e) =>
+                void onSetType(loc.id, (e.target.value || null) as StorageType | null)
+              }
+              className="ml-auto mr-1 h-8 shrink-0 rounded-control border border-input bg-surface px-1.5 text-xs text-muted-foreground"
+            >
+              <option value="">Anything</option>
+              {STORAGE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {STORAGE_TYPE_LABELS[type].label}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={() => void onDelete(loc.id)}

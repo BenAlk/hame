@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express'
 import type {
   CreateItemInput,
   SuggestSectionInput,
+  SuggestStorageTypeInput,
   SuggestTagsInput,
   UpdateItemInput,
 } from '@hame/shared'
@@ -11,6 +12,7 @@ import {
   getItem,
   listItems,
   suggestSection,
+  suggestStorageType,
   suggestTags,
   updateItem,
 } from '../services/item.service.js'
@@ -51,6 +53,14 @@ export const updateItemController: RequestHandler = async (req, res, next) => {
 export const suggestTagsController: RequestHandler = async (req, res, next) => {
   try {
     res.json(await suggestTags((req.body as SuggestTagsInput).name))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const suggestStorageTypeController: RequestHandler = async (req, res, next) => {
+  try {
+    res.json(await suggestStorageType((req.body as SuggestStorageTypeInput).name))
   } catch (err) {
     next(err)
   }

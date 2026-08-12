@@ -3,8 +3,10 @@ import type {
   CreateItemInput,
   Item,
   SuggestSectionInput,
+  SuggestStorageTypeInput,
   SuggestTagsInput,
   SuggestedSection,
+  SuggestedStorageType,
   SuggestedTags,
   UpdateItemInput,
 } from '@hame/shared'
@@ -54,6 +56,20 @@ export function useSuggestTags() {
   return useMutation({
     mutationFn: (body: SuggestTagsInput) =>
       apiFetch<SuggestedTags>('/api/items/suggest-tags', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+  })
+}
+
+/**
+ * Ask the model how an item is kept (spec §10 Phase 25). Keys on a name like its
+ * two siblings, so it answers before the item exists.
+ */
+export function useSuggestStorageType() {
+  return useMutation({
+    mutationFn: (body: SuggestStorageTypeInput) =>
+      apiFetch<SuggestedStorageType>('/api/items/suggest-storage-type', {
         method: 'POST',
         body: JSON.stringify(body),
       }),

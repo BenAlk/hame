@@ -8,7 +8,7 @@ import { prisma } from '../lib/prisma.js'
 import { HttpError } from '../lib/http-error.js'
 
 export function toStorageLocation(loc: PrismaLocation): StorageLocation {
-  return { id: loc.id, name: loc.name, icon: loc.icon }
+  return { id: loc.id, name: loc.name, icon: loc.icon, storageType: loc.storageType }
 }
 
 export async function listStorageLocations(): Promise<StorageLocation[]> {
@@ -21,7 +21,11 @@ export async function createStorageLocation(
 ): Promise<StorageLocation> {
   await assertNameAvailable(input.name)
   const loc = await prisma.storageLocation.create({
-    data: { name: input.name, icon: input.icon ?? null },
+    data: {
+      name: input.name,
+      icon: input.icon ?? null,
+      storageType: input.storageType ?? null,
+    },
   })
   return toStorageLocation(loc)
 }
@@ -37,6 +41,7 @@ export async function updateStorageLocation(
     data: {
       ...(input.name !== undefined && { name: input.name }),
       ...(input.icon !== undefined && { icon: input.icon }),
+      ...(input.storageType !== undefined && { storageType: input.storageType }),
     },
   })
   return toStorageLocation(loc)

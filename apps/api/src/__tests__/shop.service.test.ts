@@ -108,6 +108,7 @@ describe('item shop assignment', () => {
     isStaple: false,
     isConsumable: false,
     reorderIntervalDays: null,
+    storageType: null,
     shopId: null,
     shop: null,
     sectionId: null,

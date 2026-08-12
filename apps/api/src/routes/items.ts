@@ -2,6 +2,7 @@ import { Router } from 'express'
 import {
   CreateItemSchema,
   SuggestSectionSchema,
+  SuggestStorageTypeSchema,
   SuggestTagsSchema,
   UpdateItemSchema,
 } from '@hame/shared'
@@ -14,6 +15,7 @@ import {
   getItemController,
   listItemsController,
   suggestSectionController,
+  suggestStorageTypeController,
   suggestTagsController,
   updateItemController,
   warmUpSuggestionsController,
@@ -36,6 +38,14 @@ itemsRouter.post(
   verifyCsrf,
   validateBody(SuggestSectionSchema),
   suggestSectionController,
+  suggestStorageTypeController,
+)
+itemsRouter.post(
+  '/suggest-storage-type',
+  requireAuth,
+  verifyCsrf,
+  validateBody(SuggestStorageTypeSchema),
+  suggestStorageTypeController,
 )
 itemsRouter.post('/warm-suggestions', requireAuth, verifyCsrf, warmUpSuggestionsController)
 itemsRouter.get('/:id', requireAuth, getItemController)
