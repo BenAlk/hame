@@ -10,6 +10,7 @@ import type {
   ImmichTestResult,
   NormaliserStrategy,
   OllamaTestResult,
+  SleepModeSettings,
   WifiSecurity,
 } from '@hame/shared'
 import { BACKUP_RETENTION_MAX, BACKUP_RETENTION_MIN, DEFAULT_OLLAMA_MODEL } from '@hame/shared'
@@ -35,6 +36,7 @@ import {
   useUpdateImmichConfig,
 } from '@/api/immich'
 import { useIdleSettings, useUpdateIdleSettings } from '@/api/idle'
+import { useSleepModeSettings, useUpdateSleepModeSettings } from '@/api/sleep-mode'
 import {
   useBackupSettings,
   useExportBackup,
@@ -135,6 +137,7 @@ export function SettingsPage() {
             <TabPanel>
               <ImmichCard />
               <IdleModeCard />
+              <SleepModeCard />
             </TabPanel>
           )}
           {activeTab === 'integrations' && <IntegrationsCard />}
@@ -1606,6 +1609,121 @@ function IdleModeCard() {
               checked={form.showNotesInIdle}
               disabled={!form.enabled || update.isPending}
               onChange={(v) => set('showNotesInIdle', v)}
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-warning">{error}</p>}
+        {saved && !error && (
+          <p className="flex items-center gap-2 text-sm text-sage">
+            <CheckCircle2 className="size-4 shrink-0" />
+            Saved.
+          </p>
+        )}
+
+        <div>
+          <Button type="button" onClick={() => void handleSave()} disabled={update.isPending}>
+            {update.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** `<input type="time">` reads/writes `"HH:mm"`; settings store minutes-since-midnight. */
+function minutesToTimeString(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+    .toString()
+    .padStart(2, '0')
+  const m = (minutes % 60).toString().padStart(2, '0')
+  return `${h}:${m}`
+}
+
+function timeStringToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+function SleepModeCard() {
+  const { data: settings } = useSleepModeSettings()
+  const update = useUpdateSleepModeSettings()
+
+  const [form, setForm] = useState<SleepModeSettings | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (settings && !seeded.current) {
+      seeded.current = true
+      setForm(settings)
+    }
+  }, [settings])
+
+  if (!form) return null
+
+  function set<K extends keyof SleepModeSettings>(key: K, value: SleepModeSettings[K]) {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
+    setSaved(false)
+  }
+
+  async function handleSave() {
+    if (!form) return
+    setError(null)
+    setSaved(false)
+    try {
+      await update.mutateAsync({
+        enabled: form.enabled,
+        startMinutes: form.startMinutes,
+        endMinutes: form.endMinutes,
+      })
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save the sleep-mode schedule.')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sleep mode</CardTitle>
+        <CardDescription>
+          Between these times, once the Household dashboard has gone idle, the wall tablet shows a
+          plain black screen instead of the photo screensaver — touch wakes it, same as idle mode.
+          Replaces relying on a separate kiosk app to blank the screen overnight. Times are the
+          tablet&apos;s own local clock, not the server&apos;s.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <ToggleRow
+          label={form.enabled ? 'Sleep mode on' : 'Sleep mode off'}
+          checked={form.enabled}
+          disabled={update.isPending}
+          onChange={(v) => set('enabled', v)}
+        />
+
+        <div className={cn('flex gap-8', !form.enabled && 'opacity-60')}>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sleep-start">Starts</Label>
+            <Input
+              id="sleep-start"
+              type="time"
+              value={minutesToTimeString(form.startMinutes)}
+              disabled={!form.enabled}
+              onChange={(e) => set('startMinutes', timeStringToMinutes(e.target.value))}
+              className="w-32"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sleep-end">Ends</Label>
+            <Input
+              id="sleep-end"
+              type="time"
+              value={minutesToTimeString(form.endMinutes)}
+              disabled={!form.enabled}
+              onChange={(e) => set('endMinutes', timeStringToMinutes(e.target.value))}
+              className="w-32"
             />
           </div>
         </div>

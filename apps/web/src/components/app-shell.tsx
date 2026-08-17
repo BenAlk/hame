@@ -26,6 +26,7 @@ import { useCurrentUser, useLogout } from '@/api/auth'
 import { DashboardOwnerProvider } from '@/components/features/dashboard/dashboard-owner'
 import { ChoreCompletionProvider } from '@/components/features/chores/chore-completion'
 import { DashboardIdleMode } from '@/components/features/idle/idle-mode'
+import { DashboardWakeLock } from '@/components/features/idle/dashboard-wake-lock'
 import { AlertButton } from '@/components/features/alerts/alert-button'
 import { cn } from '@/lib/utils'
 
@@ -261,6 +262,9 @@ export function AppShell() {
         {/* Wall-tablet screensaver — runs on any page (Household device only) and
           returns to the dashboard on wake (spec §8.14). */}
         <DashboardIdleMode />
+        {/* Keeps the wall tablet's screen powered on (Household device only,
+          spec §8.14a) — no UI, just a held Wake Lock. */}
+        <DashboardWakeLock />
       </ChoreCompletionProvider>
     </DashboardOwnerProvider>
   )

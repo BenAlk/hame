@@ -58,6 +58,7 @@ export const BACKUP_MODELS = [
   'HomeAssistantConfig',
   'ImmichConfig',
   'IdleModeSettings',
+  'SleepModeSettings',
   'WifiConfig',
   'BackupSettings',
 ] as const

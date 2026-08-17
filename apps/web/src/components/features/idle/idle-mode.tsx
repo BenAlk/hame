@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIdleSettings } from '@/api/idle'
+import { useSleepModeSettings } from '@/api/sleep-mode'
 import { useDashboardOwner } from '@/components/features/dashboard/dashboard-owner'
 import { IdleScreensaver } from './idle-screensaver'
+import { SleepScreen } from './sleep-screen'
+import { useSleepWindow } from './sleep-window'
 
 /** Input events that count as activity / wake the screensaver. */
 const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const
@@ -49,9 +52,15 @@ function useIdleMode() {
  * dismisses it via the activity listener. On waking it returns to the dashboard
  * rather than leaving the tablet on whatever page it was idle on — the wall
  * tablet's home base is always the dashboard.
+ *
+ * Inside an admin-configured overnight window (spec §8.14a) it shows a plain
+ * black screen instead — the same idle/wake mechanics, just a different
+ * component once idle, so sleep mode needs no timer or wake logic of its own.
  */
 function IdleMode() {
   const { idle, settings } = useIdleMode()
+  const { data: sleepSettings } = useSleepModeSettings()
+  const inSleepWindow = useSleepWindow(sleepSettings)
   const navigate = useNavigate()
 
   // Navigate home on the idle → awake transition (not on every input while
@@ -67,6 +76,7 @@ function IdleMode() {
   }, [idle, navigate])
 
   if (!idle || !settings) return null
+  if (inSleepWindow) return <SleepScreen />
   return <IdleScreensaver settings={settings} />
 }
 

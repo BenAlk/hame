@@ -1218,6 +1218,43 @@ Benefits:
 
 ---
 
+### 8.14a Sleep Mode & Screen Wake Lock
+
+A scheduled overnight black-screen mode for the wall tablet, replacing reliance
+on a separate kiosk app to blank the screen — Hame now owns both halves of that
+job itself.
+
+**Sleep mode** is implemented as a variant of what idle mode renders, not a
+parallel system: once idle mode's existing inactivity timer (`activationMinutes`)
+fires, a check of the tablet's local clock against an admin-configured
+`[startMinutes, endMinutes)` window decides whether it shows the usual
+photo/clock screensaver or a plain black screen. This gets everything for free
+— the photo cycle (and its Immich fetches) simply isn't mounted during the
+window, the existing activity listeners wake it exactly as they wake idle mode,
+and the screen flips automatically at the window's start/end even without a
+touch, because the check re-runs on a timer independent of activity.
+
+- **`SleepModeSettings`** — singleton (household-wide, mirroring
+  `IdleModeSettings`):
+  - `enabled` — kill switch, default off
+  - `startMinutes` / `endMinutes` — minutes-since-midnight in the tablet's
+    **local** time (not server UTC — this drives a visible screen state a
+    person sets their own clock by). `startMinutes > endMinutes` is a normal
+    overnight window (e.g. 22:00–07:00) and wraps past midnight; equal values
+    mean "never" rather than "all day".
+- Gated identically to `DashboardIdleMode`: only the device showing the shared
+  **Household** dashboard, never a phone in normal use.
+
+**Screen Wake Lock** is a separate, always-on concern: whenever the tablet is
+showing the Household dashboard, Hame holds a Screen Wake Lock (the browser's
+Screen Wake Lock API) so the device's own screen-timeout never kicks in — this
+isn't tied to the sleep-mode schedule, since it replaces a kiosk app's general
+screen-stay-on duty, not just its overnight one. Feature-detected (a no-op
+where the API is unavailable) and re-requested on `visibilitychange`, since a
+held lock is released automatically whenever the document goes hidden.
+
+---
+
 ### 8.15 Backup & Restore (Data Integrity)
 
 If the server dies, Hame must not take the household's data with it. A full
@@ -3618,6 +3655,68 @@ tomatoes `AMBIENT`, and ice cream a single `FROZEN` rather than `chilled, frozen
 The one miss is **butter → `AMBIENT`**, which is defensible in a household that
 keeps it in a dish and wrong for one that doesn't; it is left as a wrong answer
 rather than argued away, and it costs a tap to correct.
+
+---
+
+### Phase 26 — Sleep mode retires the kiosk app ✅ Complete (17-08-2026)
+
+The wall tablet has relied on a third-party kiosk app for two jobs Hame never
+did itself: blanking the screen overnight, and holding the screen awake so the
+OS's own timeout never kicks in. Neither is a Hame feature — both are just
+something the household has had to keep a second app installed for.
+
+**Goal**: Do both inside Hame, so the kiosk app can come off the tablet
+entirely.
+
+**Design**:
+
+- **Sleep mode is a variant of what idle mode renders, not a parallel system.**
+  Idle mode already tracks an `idle` boolean and swaps in the photo
+  screensaver once `activationMinutes` of inactivity passes. The only new
+  question is *which* component it swaps in: inside an admin-configured
+  overnight window it's a plain black screen instead. Every other property —
+  the inactivity detection, the wake-on-touch, the return to the dashboard —
+  is idle mode's existing machinery, unmodified and unduplicated.
+- **The window recomputes on its own timer, not on activity.** Deriving
+  "inside the window" from a `setInterval` independent of the activity
+  listeners means the screen flips from black to photo-screensaver (or back)
+  exactly at the boundary even if nobody touches the tablet — the household
+  doesn't have to walk past at 7am to end the black screen.
+- **Wake lock is a second, unrelated concern living in the same phase because
+  it's the other half of the same retirement.** It isn't scheduled and isn't
+  gated by the sleep window — it holds for as long as the tablet shows the
+  Household dashboard, which is the general always-on-screen job the kiosk app
+  was doing, not just its overnight one. Gated identically to
+  `DashboardIdleMode` (`owner === 'household'`) so a phone never acquires it.
+- **A closed schedule, following `IdleModeSettings`'s own shape.** One
+  singleton row, times stored as minutes-since-midnight (consistent with
+  `activationMinutes`) rather than strings, admin-only to change and
+  member-readable so the tablet's own session can apply it without an admin
+  login. `startMinutes > endMinutes` wraps past midnight, which is what every
+  real schedule here looks like; equal values read as "never" rather than
+  quietly meaning "all day".
+
+**Delivered**: `SleepModeSettings` (Prisma singleton + migration, backed into
+`BACKUP_MODELS` alongside `IdleModeSettings`) and the matching
+`SleepModeSettingsSchema` / `UpdateSleepModeSettingsSchema` in `@hame/shared`.
+`sleep-mode.service.ts` / `.controller.ts` / `routes/sleep-mode.ts` mirror
+idle mode's exactly — member `GET`, admin `PATCH` behind CSRF. On the frontend,
+`isWithinSleepWindow` (pure, unit-tested) and the `useSleepWindow` hook that
+ticks it against the tablet's local clock; `IdleMode` branches on the result to
+render `SleepScreen` (a bare full-bleed black div) instead of
+`IdleScreensaver`. `useWakeLock(enabled)` requests and holds
+`navigator.wakeLock.request('screen')`, re-acquiring on `visibilitychange`
+since the browser releases a lock whenever the tab goes hidden; a gated
+`DashboardWakeLock` sibling to `DashboardIdleMode` in `app-shell.tsx` is the
+only caller. A `SleepModeCard` under **Settings → Idle mode** offers the
+toggle and two `<input type="time">` fields, converting to/from
+minutes-since-midnight at the form boundary — the same seeded-form/save-button
+shape as every other settings card.
+
+**Verified**: typecheck / lint / format green, **748 API + 170 web tests**
+(4 new: the service's singleton-upsert read/write, the window-wrap arithmetic
+including the midnight and equal-times edge cases), all builds clean; the
+migration applied to a live dev database with no drift.
 
 ---
 

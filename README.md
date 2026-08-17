@@ -548,6 +548,13 @@ selected = all photos). The API key is **AES-256-GCM encrypted at rest** and nev
 the screensaver pulls each photo **through Hame's backend proxy**, so your Immich credentials are never
 exposed to the browser and it works even when Hame is reached remotely.
 
+**Sleep mode.** Beside idle mode, an admin can set a start/end time (**Settings → Idle mode → Sleep
+mode**) during which an idle Household dashboard shows a plain black screen instead of the photo
+screensaver — touch wakes it, same as idle mode — and it flips back on its own at the end of the
+window. Hame also holds a **Screen Wake Lock** whenever the tablet is on the Household dashboard, so
+the device's own screen timeout never kicks in. Together they mean a wall tablet no longer needs a
+separate kiosk app just to blank and un-blank itself overnight.
+
 ## Security
 
 Hame is single-household and self-hosted, but built to sit safely behind a Cloudflare-proxied domain:
