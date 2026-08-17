@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, Outlet } from 'react-router-dom'
 import {
   Calendar,
@@ -59,7 +60,15 @@ const ADMIN_NAV: NavItemDef[] = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
-/** A single nav link, rendered icon-only on the rail and icon + label when expanded. */
+/**
+ * A single nav link, rendered icon-only on the rail and icon + label when
+ * expanded. The collapsed rail's hover label is portalled to `document.body`
+ * (same reasoning as `Modal`): the rail is `position: sticky`, which — with
+ * no `z-index` of its own — traps a descendant's `z-index` inside the rail's
+ * stacking context, so the dashboard's absolutely-positioned widgets (later
+ * in the DOM, outside that context) painted over it regardless of the
+ * tooltip's own `z-50`.
+ */
 function NavItem({
   item,
   expanded,
@@ -70,14 +79,22 @@ function NavItem({
   onNavigate: () => void
 }) {
   const Icon = item.icon
+  const linkRef = React.useRef<HTMLAnchorElement>(null)
+  const [tooltipRect, setTooltipRect] = React.useState<DOMRect | null>(null)
+
   return (
     <NavLink
+      ref={linkRef}
       to={item.to}
       end={item.end}
       onClick={onNavigate}
+      onMouseEnter={() =>
+        !expanded && setTooltipRect(linkRef.current?.getBoundingClientRect() ?? null)
+      }
+      onMouseLeave={() => setTooltipRect(null)}
       className={({ isActive }) =>
         cn(
-          'group relative flex items-center rounded-control text-sm font-medium transition-colors',
+          'relative flex items-center rounded-control text-sm font-medium transition-colors',
           expanded ? 'gap-3 px-3 py-2' : 'justify-center p-2.5',
           isActive
             ? 'bg-accent-soft text-accent'
@@ -86,17 +103,22 @@ function NavItem({
       }
     >
       <Icon className="h-5 w-5 shrink-0" aria-hidden />
-      {expanded ? (
-        <span>{item.label}</span>
-      ) : (
-        <>
-          <span className="sr-only">{item.label}</span>
-          {/* Hover tooltip for the collapsed rail */}
-          <span className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-control bg-ink px-2 py-1 text-xs font-medium text-surface opacity-0 shadow-ambient transition-opacity group-hover:opacity-100">
+      {expanded ? <span>{item.label}</span> : <span className="sr-only">{item.label}</span>}
+      {!expanded &&
+        tooltipRect &&
+        createPortal(
+          <span
+            className="pointer-events-none fixed z-50 whitespace-nowrap rounded-control bg-ink px-2 py-1 text-xs font-medium text-surface shadow-ambient"
+            style={{
+              left: tooltipRect.right + 8,
+              top: tooltipRect.top + tooltipRect.height / 2,
+              transform: 'translateY(-50%)',
+            }}
+          >
             {item.label}
-          </span>
-        </>
-      )}
+          </span>,
+          document.body,
+        )}
     </NavLink>
   )
 }
