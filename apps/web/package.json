@@ -23,7 +23,7 @@
     "react-dom": "^19.0.0",
     "react-grid-layout": "^1.5.3",
     "react-hook-form": "^7.54.1",
-    "react-router-dom": "^7.1.0",
+    "react-router-dom": "^7.18.2",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "workbox-window": "^7.4.1",
