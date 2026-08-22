@@ -4,6 +4,7 @@ import type {
   HaBinSensor,
   HaCalendar,
   HaEntityState,
+  HaForecastEntry,
   HaServiceCallInput,
   HaServiceCallResult,
   HomeAssistantConfig,
@@ -19,6 +20,7 @@ import type { DashboardOwner } from './dashboard'
 
 const HA_KEY = ['home-assistant-config'] as const
 const HA_ENTITIES_KEY = ['home-assistant-entities'] as const
+const HA_FORECAST_KEY = ['home-assistant-forecast'] as const
 const HA_CALENDARS_KEY = ['home-assistant-calendars'] as const
 const HA_BIN_SENSORS_KEY = ['home-assistant-bin-sensors'] as const
 const HA_CONTROLS_KEY = ['home-assistant-controls'] as const
@@ -63,6 +65,17 @@ export function useHaEntities(enabled = true) {
     queryKey: HA_ENTITIES_KEY,
     queryFn: () => apiFetch<HaEntityState[]>('/api/home-assistant/entities'),
     enabled,
+  })
+}
+
+/** A weather entity's forecast for the widget's modal (spec §10). Only fetched
+ *  once the modal is open (`enabled`) — it's a live WS round-trip, not pushed. */
+export function useHaWeatherForecast(entityId: string | undefined, enabled: boolean) {
+  return useQuery<HaForecastEntry[]>({
+    queryKey: [...HA_FORECAST_KEY, entityId],
+    queryFn: () =>
+      apiFetch<HaForecastEntry[]>(`/api/home-assistant/weather/${entityId}/forecast?type=hourly`),
+    enabled: enabled && Boolean(entityId),
   })
 }
 

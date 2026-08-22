@@ -452,6 +452,37 @@ export const HaBinSensorSchema = z.object({
 })
 export type HaBinSensor = z.infer<typeof HaBinSensorSchema>
 
+/** The forecast granularity Hame requests (spec §10, weather forecast modal). Only
+ *  `hourly` is wired to a UI today; `daily` is the same HA call for a later toggle. */
+export const HA_FORECAST_TYPES = ['hourly', 'daily'] as const
+export type HaForecastType = (typeof HA_FORECAST_TYPES)[number]
+
+/**
+ * One point in a Home Assistant weather forecast (spec §10, weather forecast
+ * modal). HA's `weather/get_forecasts` WS command returns each entry already
+ * converted to the entity's display units, with the `native_` prefix stripped
+ * (e.g. `native_temperature` → `temperature`) — this is that shape, camelCased.
+ * Every field but `datetime` is nullable: not every weather integration (or every
+ * point in an hourly run) publishes all of them.
+ */
+export const HaForecastEntrySchema = z.object({
+  datetime: z.coerce.date(),
+  condition: z.string().nullable(),
+  temperature: z.number().nullable(),
+  precipitationProbability: z.number().nullable(),
+  humidity: z.number().nullable(),
+  windSpeed: z.number().nullable(),
+  isDaytime: z.boolean().nullable(),
+})
+export type HaForecastEntry = z.infer<typeof HaForecastEntrySchema>
+
+/** Query params for the forecast endpoint — `type` defaults to `hourly`, the
+ *  only granularity a UI reads today. */
+export const HaForecastQuerySchema = z.object({
+  type: z.enum(HA_FORECAST_TYPES).default('hourly'),
+})
+export type HaForecastQuery = z.infer<typeof HaForecastQuerySchema>
+
 /**
  * An owner's curated smart-home controls (spec §8.12, §10 Phase 6.3, 7.1b).
  * Rather than flood the dashboard with every controllable HA entity, each owner

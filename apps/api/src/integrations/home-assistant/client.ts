@@ -34,6 +34,13 @@ const RECONNECT_MAX_MS = 60_000
 const COMMAND_TIMEOUT_MS = 10_000
 const SINGLETON_ID = 'singleton'
 
+/** Pull HA's own explanation out of a `result` frame's `error` object, so a
+ *  rejected command surfaces *why* rather than a generic message. */
+function haErrorReason(error: unknown, fallback: string): string {
+  if (!error || typeof error !== 'object') return fallback
+  return String((error as { message?: unknown }).message ?? fallback)
+}
+
 /** A `call_service` command awaiting its `result` frame from HA. */
 interface PendingCommand {
   resolve: () => void
@@ -140,9 +147,30 @@ class HomeAssistantClient {
     return Array.isArray(result) ? result : []
   }
 
+  /**
+   * Fetch a weather entity's forecast over the live socket (spec §10, weather
+   * forecast modal). Home Assistant exposes this as the `weather.get_forecasts`
+   * *action* with response data, not a standalone WS command — confirmed live
+   * against a real server, which rejects a bare `weather/get_forecasts` command
+   * with "Unknown command." So it rides `call_service` with `return_response:
+   * true`, HA's general mechanism for an action that talks back; the answer
+   * arrives nested under the result's `response` key, keyed by entity id — left
+   * raw here for the pure `mapHaForecast` helper to parse and project.
+   */
+  async getForecast(entityId: string, forecastType: 'hourly' | 'daily'): Promise<unknown> {
+    const result = await this.request('call_service', {
+      domain: 'weather',
+      service: 'get_forecasts',
+      service_data: { type: forecastType },
+      target: { entity_id: entityId },
+      return_response: true,
+    })
+    return result && typeof result === 'object' ? (result as { response?: unknown }).response : null
+  }
+
   /** Send a read-only WS command and resolve with its `result` payload. Separate
    *  from {@link callService}'s pending map, so the control path is untouched. */
-  private request(type: string): Promise<unknown> {
+  private request(type: string, extra?: Record<string, unknown>): Promise<unknown> {
     const socket = this.ws
     if (this.status !== 'connected' || !socket) {
       return Promise.reject(new Error('Home Assistant is not connected'))
@@ -155,7 +183,7 @@ class HomeAssistantClient {
       )
       this.pendingRequests.set(id, { resolve, reject, timer })
       try {
-        socket.send(JSON.stringify({ id, type }))
+        socket.send(JSON.stringify({ id, type, ...extra }))
       } catch (err) {
         this.settleRequest(id, err instanceof Error ? err : new Error('Failed to send request'))
       }
@@ -305,28 +333,19 @@ class HomeAssistantClient {
       this.pending.has(message.id)
     ) {
       const ok = message.success !== false
-      const reason =
-        message.error && typeof message.error === 'object'
-          ? String(
-              (message.error as { message?: unknown }).message ??
-                'Home Assistant rejected the command',
-            )
-          : 'Home Assistant rejected the command'
+      const reason = haErrorReason(message.error, 'Home Assistant rejected the command')
       this.settlePending(message.id, ok ? null : new Error(reason))
       return
     }
-    // A read-only request's result (e.g. the device registry).
+    // A read-only request's result (e.g. the device registry, a forecast).
     if (
       message.type === 'result' &&
       typeof message.id === 'number' &&
       this.pendingRequests.has(message.id)
     ) {
       const ok = message.success !== false
-      this.settleRequest(
-        message.id,
-        ok ? null : new Error('Home Assistant rejected the request'),
-        message.result,
-      )
+      const reason = haErrorReason(message.error, 'Home Assistant rejected the request')
+      this.settleRequest(message.id, ok ? null : new Error(reason), message.result)
       return
     }
     if (message.type === 'result' && message.id === this.getStatesId) {

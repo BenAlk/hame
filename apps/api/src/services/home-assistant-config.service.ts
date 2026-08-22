@@ -1,6 +1,8 @@
 import type {
   HaBinSensor,
   HaCalendar,
+  HaForecastEntry,
+  HaForecastType,
   HaNotifyTarget,
   HaServiceCallInput,
   HaServiceCallResult,
@@ -23,6 +25,7 @@ import { haClient } from '../integrations/home-assistant/client.js'
 import { entityDomain } from '../integrations/home-assistant/entities.js'
 import { testHomeAssistantConnection } from '../integrations/home-assistant/test-connection.js'
 import { fetchHaCalendars } from '../integrations/home-assistant/calendars.js'
+import { mapHaForecast } from '../integrations/home-assistant/forecast.js'
 import {
   enrichWithDeviceNames,
   fetchNotifyTargets,
@@ -269,6 +272,25 @@ export function listHomeAssistantBinSensors(): HaBinSensor[] {
       ([name, { entityId, nextCollection }]): HaBinSensor => ({ entityId, name, nextCollection }),
     )
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Fetch a weather entity's forecast (spec §10, weather forecast modal). Goes
+ * over the already-open WS — HA has no REST equivalent for forecasts, unlike
+ * calendars — so there's no separate "configured but unreachable" check beyond
+ * the client's own connection state, which `getForecast` already rejects on.
+ */
+export async function getHomeAssistantForecast(
+  entityId: string,
+  forecastType: HaForecastType,
+): Promise<HaForecastEntry[]> {
+  try {
+    const result = await haClient.getForecast(entityId, forecastType)
+    return mapHaForecast(result, entityId)
+  } catch (err) {
+    logger.warn({ err, entityId, forecastType }, 'Could not fetch Home Assistant forecast')
+    throw HttpError.badGateway('Could not reach Home Assistant to fetch the forecast.')
+  }
 }
 
 /**

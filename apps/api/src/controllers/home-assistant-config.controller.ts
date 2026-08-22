@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express'
+import { HaForecastQuerySchema } from '@hame/shared'
 import type {
   HaServiceCallInput,
   SmartHomeEntityIdsInput,
@@ -9,6 +10,7 @@ import type {
 import {
   callHomeAssistantService,
   getHomeAssistantConfig,
+  getHomeAssistantForecast,
   listHomeAssistantBinSensors,
   listHomeAssistantCalendars,
   listHomeAssistantNotifyTargets,
@@ -58,6 +60,16 @@ export const getHomeAssistantEntitiesController: RequestHandler = (_req, res) =>
 export const controlHomeAssistantController: RequestHandler = async (req, res, next) => {
   try {
     res.json(await callHomeAssistantService(req.body as HaServiceCallInput))
+  } catch (err) {
+    next(err)
+  }
+}
+
+/** A weather entity's forecast for the dashboard widget's modal (spec §10). */
+export const getHomeAssistantForecastController: RequestHandler = async (req, res, next) => {
+  try {
+    const { type } = HaForecastQuerySchema.parse(req.query)
+    res.json(await getHomeAssistantForecast(req.params.entityId, type))
   } catch (err) {
     next(err)
   }

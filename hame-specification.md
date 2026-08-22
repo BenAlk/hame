@@ -1105,7 +1105,7 @@ enum NoteAudience {
 - **Dashboard switcher** (§10 Phase 7.5) — from any device you can view Household or any member's dashboard; **editing is limited to your own and the household layout** (others are read-only). The shared wall tablet uses this via the `TABLET` account (§8.1) to page through everyone's dashboards.
 - **Widgets** (all in v1):
   - 🕐 Clock & greeting
-  - 🌤️ Weather (via HA)
+  - 🌤️ Weather (via HA) — click for an hourly forecast, split into day tabs (§10 Phase 27)
   - 🍽️ Today's meals
   - 🛒 Active shopping list (top items)
   - ✅ Today's chores
@@ -3717,6 +3717,45 @@ shape as every other settings card.
 (4 new: the service's singleton-upsert read/write, the window-wrap arithmetic
 including the midnight and equal-times edge cases), all builds clean; the
 migration applied to a live dev database with no drift.
+
+### Phase 27 — The weather widget opens into an hourly forecast ✅ Complete (22-08-2026)
+
+The dashboard weather widget (§8.12, §10 Phase 6.2) only ever read current
+conditions off the live HA entity-state stream — no forecast call existed
+anywhere in the codebase. Clicking it now opens a modal with the hourly run,
+styled to the Hearth design system rather than embedding HA's own dialog.
+
+**Design**: Home Assistant does not expose forecasts as a standalone WebSocket
+command — a bare `weather/get_forecasts` command is rejected with "Unknown
+command." against a real server, confirmed live rather than assumed. The
+actual mechanism is the `weather.get_forecasts` *action*, which carries
+response data and is called like any other service (`call_service`) with
+`return_response: true`; the answer arrives nested under the result's
+`response` key, keyed by entity id — the same shape a standalone command would
+have returned, so the pure mapper doesn't care which route produced it. The
+run spans however many days it spans (met.no returns 2–3 depending on time of
+day), so the modal splits it into day tabs by reading the run itself rather
+than assuming a fixed count.
+
+**Delivered**: `HomeAssistantClient.getForecast` relays the action over the
+existing socket and unwraps the `response` envelope; a pure, unit-tested
+`mapHaForecast` (mirroring `mapHaCalendarEvents`) projects each entity's
+forecast into the new `HaForecastEntry` shared shape. A member-level
+`GET /api/home-assistant/weather/:entityId/forecast` (type defaults to
+`hourly`) degrades to a 502 rather than throwing Home Assistant's raw error.
+On the frontend, `useHaWeatherForecast` fetches only once the modal is open
+(a live round-trip, not pushed over the existing entity stream), and
+`groupForecastByDay` (pure, unit-tested) splits the flat hourly list into
+day-tabs labelled "Today" / "Tomorrow" / the weekday name. The
+condition-icon map moved out of `weather-widget.tsx` into a shared module so
+the widget and its new modal draw from the same source rather than
+duplicating it.
+
+**Verified**: typecheck / lint / format green, **765 API + 178 web tests**,
+all builds clean, plus a **live smoke against real Home Assistant** — the
+"Unknown command" rejection surfaced and diagnosed live, the corrected
+action-based call verified end-to-end, and the day-tab split checked against
+a real multi-day met.no run.
 
 ---
 

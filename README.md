@@ -52,7 +52,8 @@ surfaces, a dusty-rose accent, a reading serif for human moments._
   thermostat as a dial — its target on the arc, the room's actual temperature riding it, and
   steppers that repeat when held. Thermostats that run their own schedule keep it: the widget
   switches between the device's presets (auto/manual) and says when a change lasts only until the
-  next scheduled one. Plus HA as a calendar and bin-schedule source.
+  next scheduled one. Click the **weather** widget for an hourly forecast, split into day tabs.
+  Plus HA as a calendar and bin-schedule source.
 - **Dashboard & idle mode** — per-user and shared wall-tablet layouts with drag-and-drop widgets;
   left idle, the tablet becomes a photo frame cycling your **Immich** library with a large clock.
 

@@ -17,6 +17,7 @@ import {
   getHomeAssistantCalendarsController,
   getHomeAssistantConfigController,
   getHomeAssistantEntitiesController,
+  getHomeAssistantForecastController,
   getHomeAssistantNotifyTargetsController,
   getSmartHomeSettingsController,
   getSmartHomeSuggestionsController,
@@ -33,6 +34,13 @@ export const homeAssistantConfigRouter = Router()
 // paths aren't shadowed by the bare '/' config routes.
 homeAssistantConfigRouter.get('/entities', requireAuth, getHomeAssistantEntitiesController)
 homeAssistantConfigRouter.get('/stream', requireAuth, homeAssistantStreamController)
+// A weather entity's forecast for the dashboard widget's modal (spec §10) — the
+// same live-registry data as /entities, just a WS round-trip HA doesn't push.
+homeAssistantConfigRouter.get(
+  '/weather/:entityId/forecast',
+  requireAuth,
+  getHomeAssistantForecastController,
+)
 // Commands ride REST (the §10 Phase 6.2 SSE note); the API relays them on the socket.
 homeAssistantConfigRouter.post(
   '/service',
