@@ -22,6 +22,8 @@ export const IdleModeSettingsSchema = z.object({
   showWeatherInClockMode: z.boolean(),
   immichEnabled: z.boolean(),
   showBinsInIdle: z.boolean(),
+  /** Minutes since local midnight past which "due today" stops counting; null = shown all day. */
+  binDueCutoffMinutes: z.number().int().min(0).max(1439).nullable(),
   showMealsInIdle: z.boolean(),
   showNotesInIdle: z.boolean(),
   updatedAt: z.coerce.date(),

@@ -21,6 +21,7 @@ const settings: IdleModeSettings = {
   showWeatherInClockMode: true,
   immichEnabled: true,
   showBinsInIdle: true,
+  binDueCutoffMinutes: null,
   showMealsInIdle: true,
   showNotesInIdle: true,
   updatedAt: new Date(),

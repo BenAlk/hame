@@ -18,31 +18,31 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String // argon2 hashed
-  firstName String
-  surname   String
-  avatarUrl String?
-  colour    String // hex, e.g. "#3B82F6"
-  dob       DateTime @db.Date // birthday — no time component
-  role      Role     @default(MEMBER)
+  id           String   @id @default(uuid())
+  username     String   @unique
+  password     String // argon2 hashed
+  firstName    String
+  surname      String
+  avatarUrl    String?
+  colour       String // hex, e.g. "#3B82F6"
+  dob          DateTime @db.Date // birthday — no time component
+  role         Role     @default(MEMBER)
   // Bumped on a password or role change to invalidate outstanding session JWTs
   // (the token carries this value; requireAuth rejects a stale one). See §11.
-  tokenVersion Int   @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  tokenVersion Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations (added per phase as the referenced models land)
   itemsCreated         Item[]
   shoppingListsCreated ShoppingList[]
   shoppingItemsAdded   ShoppingListItem[]
   pantryEntriesAdded   PantryEntry[]
-  choresCreated        Chore[]            @relation("ChoreCreator")
-  choresAssigned       Chore[]            @relation("ChoreAssignee")
-  choresRotation       Chore[]            @relation("ChoreRotation")
-  instancesAssigned    ChoreInstance[]    @relation("InstanceAssignee")
-  instancesCompleted   ChoreInstance[]    @relation("InstanceCompleter")
+  choresCreated        Chore[]                 @relation("ChoreCreator")
+  choresAssigned       Chore[]                 @relation("ChoreAssignee")
+  choresRotation       Chore[]                 @relation("ChoreRotation")
+  instancesAssigned    ChoreInstance[]         @relation("InstanceAssignee")
+  instancesCompleted   ChoreInstance[]         @relation("InstanceCompleter")
   recipesCreated       Recipe[]
   mealPlanEntries      MealPlanEntry[]
   calendarObjects      CalendarObject[]
@@ -50,8 +50,8 @@ model User {
   dashboardLayout      DashboardLayout?
   smartHomeSettings    SmartHomeSettings?
   notificationPrefs    NotificationPreference?
-  notesAuthored        Note[]             @relation("NoteAuthor")
-  notesReceived        NoteRecipient[]    @relation("NoteRecipient")
+  notesAuthored        Note[]                  @relation("NoteAuthor")
+  notesReceived        NoteRecipient[]         @relation("NoteRecipient")
   noteAcks             NoteAck[]
 }
 
@@ -89,30 +89,30 @@ enum TagKind {
 }
 
 model Item {
-  id              String             @id @default(uuid())
-  name            String             @unique
-  defaultQuantity Float?
-  defaultUnit     String? // "g", "ml", "pack"
-  baseUnit         String? // canonical unit for stock maths — see spec §9.2
-  typicalUnitGrams Float? // grams of one countable unit (1 onion ≈ 110g) — see spec §10 Phase 4.5
-  minimumQuantity  Float? // triggers low stock (expressed in baseUnit)
-  isStaple        Boolean            @default(false) // pantry staple — excluded from generated shopping lists
-  isConsumable    Boolean            @default(false) // household consumable — surfaced as a re-order checklist (spec §8.3)
+  id                  String             @id @default(uuid())
+  name                String             @unique
+  defaultQuantity     Float?
+  defaultUnit         String? // "g", "ml", "pack"
+  baseUnit            String? // canonical unit for stock maths — see spec §9.2
+  typicalUnitGrams    Float? // grams of one countable unit (1 onion ≈ 110g) — see spec §10 Phase 4.5
+  minimumQuantity     Float? // triggers low stock (expressed in baseUnit)
+  isStaple            Boolean            @default(false) // pantry staple — excluded from generated shopping lists
+  isConsumable        Boolean            @default(false) // household consumable — surfaced as a re-order checklist (spec §8.3)
   reorderIntervalDays Int? // rough re-order cadence (days) — captured now; drives the "probably due" highlight later (spec §12)
-  shopId          String? // the one shop this is only buyable at (spec §8.3); null = buy anywhere
-  shop            Shop?              @relation(fields: [shopId], references: [id], onDelete: SetNull)
-  sectionId       String? // which part of the shop it's in (spec §8.3); null = groups under "Other"
-  section         Section?           @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  storageType     StorageType? // how it's kept (spec §10 Phase 25); drives the pantry's default location
-  createdById     String
-  createdBy       User               @relation(fields: [createdById], references: [id])
-  tags            Tag[]              @relation("ItemTags")
-  shoppingItems   ShoppingListItem[]
-  pantryEntries   PantryEntry[]
-  recipeUses      RecipeIngredient[]
-  barcodes        ItemBarcode[]
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  shopId              String? // the one shop this is only buyable at (spec §8.3); null = buy anywhere
+  shop                Shop?              @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  sectionId           String? // which part of the shop it's in (spec §8.3); null = groups under "Other"
+  section             Section?           @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  storageType         StorageType? // how it's kept (spec §10 Phase 25); drives the pantry's default location
+  createdById         String
+  createdBy           User               @relation(fields: [createdById], references: [id])
+  tags                Tag[]              @relation("ItemTags")
+  shoppingItems       ShoppingListItem[]
+  pantryEntries       PantryEntry[]
+  recipeUses          RecipeIngredient[]
+  barcodes            ItemBarcode[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
 }
 
 // ── Phase 2: Shopping ────────────────────────────────────────────────────────
@@ -130,24 +130,24 @@ model ShoppingList {
 }
 
 model ShoppingListItem {
-  id               String             @id @default(uuid())
+  id               String               @id @default(uuid())
   listId           String
-  list             ShoppingList       @relation(fields: [listId], references: [id], onDelete: Cascade)
+  list             ShoppingList         @relation(fields: [listId], references: [id], onDelete: Cascade)
   itemId           String
-  item             Item               @relation(fields: [itemId], references: [id])
+  item             Item                 @relation(fields: [itemId], references: [id])
   quantity         Float?
   unit             String?
   notes            String?
-  isBought         Boolean            @default(false)
+  isBought         Boolean              @default(false)
   boughtAt         DateTime?
   sources          ShoppingItemSource[] @default([MANUAL]) // distinct channels merged into this line — drives the ×N badge (spec §8.3)
   addedById        String
-  addedBy          User               @relation(fields: [addedById], references: [id])
+  addedBy          User                 @relation(fields: [addedById], references: [id])
   rolledOverFromId String? // self-relation: the item this one was rolled over from
-  rolledOverFrom   ShoppingListItem?  @relation("ItemRollover", fields: [rolledOverFromId], references: [id])
-  rolledOverTo     ShoppingListItem[] @relation("ItemRollover")
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  rolledOverFrom   ShoppingListItem?    @relation("ItemRollover", fields: [rolledOverFromId], references: [id])
+  rolledOverTo     ShoppingListItem[]   @relation("ItemRollover")
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 }
 
 enum ListStatus {
@@ -347,17 +347,17 @@ model MealPlanEntry {
 }
 
 model HouseholdSettings {
-  id                  String             @id @default("singleton") // enforce single row
-  enabledMealTypes    MealType[]         @default([DINNER])
-  ingredientNormaliser NormaliserStrategy @default(BASIC) // spec §10 Phase 4.5
-  caldavEnabled       Boolean            @default(false) // serve the calendar over CalDAV (spec §10 Phase 5.5)
-  autoConsumableCadence Boolean          @default(false) // Labs: estimate consumable re-order cadences from history (spec §10 Phase 8.5)
-  householdAlertsEnabled Boolean         @default(true) // mobile top-bar critical-alert "poke" between members (spec §10 Phase 12)
+  id                     String             @id @default("singleton") // enforce single row
+  enabledMealTypes       MealType[]         @default([DINNER])
+  ingredientNormaliser   NormaliserStrategy @default(BASIC) // spec §10 Phase 4.5
+  caldavEnabled          Boolean            @default(false) // serve the calendar over CalDAV (spec §10 Phase 5.5)
+  autoConsumableCadence  Boolean            @default(false) // Labs: estimate consumable re-order cadences from history (spec §10 Phase 8.5)
+  householdAlertsEnabled Boolean            @default(true) // mobile top-bar critical-alert "poke" between members (spec §10 Phase 12)
   // Look an unseen barcode up against Open Food Facts (spec §10 Phase 14). On by
   // default — without it a first scan can only be named by hand — but every
   // unknown scan tells a third party a barcode, so it stays a household's call.
-  barcodeLookupEnabled Boolean           @default(true)
-  updatedAt           DateTime           @updatedAt
+  barcodeLookupEnabled   Boolean            @default(true)
+  updatedAt              DateTime           @updatedAt
 }
 
 enum MealType {
@@ -508,20 +508,29 @@ enum BinSourceType {
 /// grid and the aggregated feed. Absorbs the former CustomEvent and is served
 /// read-write over CalDAV once the household enables it.
 model CalendarObject {
-  id          String    @id @default(uuid())
-  uid         String    @unique // iCalendar UID; also the CalDAV resource name
-  etag        String // opaque change tag for CalDAV concurrency (If-Match)
-  icalRaw     String // canonical VCALENDAR text (kept verbatim on phone writes)
-  title       String
-  description String?
-  startTime   DateTime
-  endTime     DateTime?
-  allDay      Boolean   @default(false)
-  colour      String?
-  createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id               String          @id @default(uuid())
+  uid              String          @unique // iCalendar UID; also the CalDAV resource name
+  etag             String // opaque change tag for CalDAV concurrency (If-Match)
+  icalRaw          String // canonical VCALENDAR text (kept verbatim on phone writes)
+  title            String
+  description      String?
+  startTime        DateTime
+  endTime          DateTime?
+  allDay           Boolean         @default(false)
+  colour           String?
+  // Recurrence (INTERVAL/WEEKLY/DATE_OF_MONTH only — ONE_OFF is unused here,
+  // since "doesn't repeat" is already `recurrenceType: null`). Mirrors the
+  // chore/bin recurrence shape so the aggregated calendar can reuse the same
+  // pure engine (`binOccurrencesInRange`) to expand a row into occurrences.
+  recurrenceType   RecurrenceType?
+  intervalDays     Int?
+  weekdays         Weekday[]       @default([])
+  dayOfMonth       Int?
+  recurrenceAnchor DateTime?       @db.Date // immutable first-occurrence day; INTERVAL anchor
+  createdById      String
+  createdBy        User            @relation(fields: [createdById], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 }
 
 // ── Phase 5: External calendar sync ──────────────────────────────────────────
@@ -633,6 +642,7 @@ model IdleModeSettings {
   showWeatherInClockMode Boolean  @default(true)
   immichEnabled          Boolean  @default(true)
   showBinsInIdle         Boolean  @default(true) // rotate in a "bin due today/tomorrow" screen
+  binDueCutoffMinutes    Int? // minutes since local midnight; past this, "due today" stops counting (null = shown all day)
   showMealsInIdle        Boolean  @default(true) // rotate in today's meal for the current slot
   showNotesInIdle        Boolean  @default(true) // rotate in the household QuickNotes board
   updatedAt              DateTime @updatedAt

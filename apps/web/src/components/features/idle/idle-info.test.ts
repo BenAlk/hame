@@ -88,6 +88,39 @@ describe('selectDueBins', () => {
       ),
     ).toBeNull()
   })
+
+  describe('with a cutoff', () => {
+    const cutoff = 360 // 06:00
+
+    it('still shows today before the cutoff', () => {
+      const due = selectDueBins([bin({ nextCollection: today })], at(5), cutoff)
+      expect(due?.when).toBe('today')
+    })
+
+    it('treats the cutoff minute itself as past', () => {
+      const due = selectDueBins([bin({ nextCollection: today })], at(6), cutoff)
+      expect(due).toBeNull()
+    })
+
+    it('falls through to tomorrow once past the cutoff', () => {
+      const due = selectDueBins(
+        [bin({ name: 'A', nextCollection: today }), bin({ name: 'B', nextCollection: tomorrow })],
+        at(7),
+        cutoff,
+      )
+      expect(due?.when).toBe('tomorrow')
+      expect(due?.bins.map((b) => b.name)).toEqual(['B'])
+    })
+
+    it('returns null past the cutoff when nothing is due tomorrow either', () => {
+      expect(selectDueBins([bin({ nextCollection: today })], at(7), cutoff)).toBeNull()
+    })
+
+    it('shows today all day when no cutoff is set', () => {
+      const due = selectDueBins([bin({ nextCollection: today })], at(23))
+      expect(due?.when).toBe('today')
+    })
+  })
 })
 
 describe('selectSlotMeal', () => {

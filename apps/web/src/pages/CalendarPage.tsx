@@ -21,6 +21,7 @@ import { ApiError } from '@/api/client'
 import { useCalendar } from '@/api/calendar'
 import {
   useCreateCustomEvent,
+  useCustomEvents,
   useDeleteCustomEvent,
   useUpdateCustomEvent,
 } from '@/api/custom-events'
@@ -78,6 +79,13 @@ export function CalendarPage() {
     format(gridStart, 'yyyy-MM-dd'),
     format(gridEnd, 'yyyy-MM-dd'),
   )
+  // The aggregated feed above is display-only (no description/recurrence); the
+  // edit form needs the full custom-event row, fetched separately over the
+  // same window and looked up by id when a pill is clicked.
+  const { data: customEvents } = useCustomEvents(
+    format(gridStart, 'yyyy-MM-dd'),
+    format(gridEnd, 'yyyy-MM-dd'),
+  )
 
   const createEvent = useCreateCustomEvent()
   const updateEvent = useUpdateCustomEvent()
@@ -109,10 +117,13 @@ export function CalendarPage() {
     if (event.type !== 'EVENT') return // only custom events are editable here
     setError(null)
     setDayDetail(null)
+    // Prefer the full row (description, recurrence) when it's loaded; fall
+    // back to the feed-only fields rather than blocking on the query.
+    const full = customEvents?.find((e) => e.id === event.sourceId)
     setEditing({
       mode: 'edit',
       sourceId: event.sourceId,
-      initial: {
+      initial: full ?? {
         title: event.title,
         startTime: event.startTime,
         endTime: event.endTime,

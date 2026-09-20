@@ -280,8 +280,9 @@ export function IdleScreensaver({ settings }: { settings: IdleModeSettings }) {
   const { data: mealEntries } = useMealPlan(today, today)
 
   const dueBins = useMemo(
-    () => (settings.showBinsInIdle ? selectDueBins(bins ?? [], now) : null),
-    [settings.showBinsInIdle, bins, now],
+    () =>
+      settings.showBinsInIdle ? selectDueBins(bins ?? [], now, settings.binDueCutoffMinutes) : null,
+    [settings.showBinsInIdle, settings.binDueCutoffMinutes, bins, now],
   )
   const slotMeal = useMemo(
     () => (settings.showMealsInIdle ? selectSlotMeal(mealEntries ?? [], now) : null),

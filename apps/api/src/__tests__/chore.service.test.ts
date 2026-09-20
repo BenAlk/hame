@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const choreCreate = vi.fn()
 const choreFindUnique = vi.fn()
+const choreFindUniqueOrThrow = vi.fn()
+const choreUpdate = vi.fn()
 const choreDelete = vi.fn()
 const instanceCreate = vi.fn()
 const instanceFindUnique = vi.fn()
+const instanceFindMany = vi.fn()
+const instanceFindFirst = vi.fn()
+const instanceUpdate = vi.fn()
+const instanceDeleteMany = vi.fn()
 const userCount = vi.fn()
 const userFindUnique = vi.fn()
 const petCount = vi.fn()
@@ -15,8 +21,21 @@ const txInstanceUpdate = vi.fn()
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
-    chore: { create: choreCreate, findUnique: choreFindUnique, delete: choreDelete },
-    choreInstance: { create: instanceCreate, findUnique: instanceFindUnique },
+    chore: {
+      create: choreCreate,
+      findUnique: choreFindUnique,
+      findUniqueOrThrow: choreFindUniqueOrThrow,
+      update: choreUpdate,
+      delete: choreDelete,
+    },
+    choreInstance: {
+      create: instanceCreate,
+      findUnique: instanceFindUnique,
+      findMany: instanceFindMany,
+      findFirst: instanceFindFirst,
+      update: instanceUpdate,
+      deleteMany: instanceDeleteMany,
+    },
     user: { count: userCount, findUnique: userFindUnique },
     pet: { count: petCount },
     tag: { count: tagCount },
@@ -24,7 +43,7 @@ vi.mock('../lib/prisma.js', () => ({
   },
 }))
 
-const { createChore, completeInstance } = await import('../services/chore.service.js')
+const { createChore, updateChore, completeInstance } = await import('../services/chore.service.js')
 
 const day = (y: number, m: number, d: number) => new Date(y, m, d)
 
@@ -54,9 +73,15 @@ beforeEach(() => {
   for (const fn of [
     choreCreate,
     choreFindUnique,
+    choreFindUniqueOrThrow,
+    choreUpdate,
     choreDelete,
     instanceCreate,
     instanceFindUnique,
+    instanceFindMany,
+    instanceFindFirst,
+    instanceUpdate,
+    instanceDeleteMany,
     userCount,
     userFindUnique,
     petCount,
@@ -68,6 +93,7 @@ beforeEach(() => {
     fn.mockReset()
   }
   choreFindUnique.mockResolvedValue(fullChoreRow)
+  choreUpdate.mockResolvedValue(fullChoreRow)
   // By default the completer is a real household member.
   userFindUnique.mockResolvedValue({ role: 'MEMBER' })
   transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
@@ -113,6 +139,139 @@ describe('createChore', () => {
       ),
     ).rejects.toMatchObject({ status: 400 })
     expect(choreCreate).not.toHaveBeenCalled()
+  })
+})
+
+describe('updateChore', () => {
+  /** The row `updateChore` reads before writing — a FIXED, active, INTERVAL chore. */
+  const existingRow = {
+    id: 'c1',
+    title: 'Worming',
+    isActive: true,
+    recurrenceType: 'INTERVAL' as const,
+    intervalDays: 30,
+    weekdays: [] as const,
+    dayOfMonth: null,
+    oneOffDate: null,
+    assignmentMode: 'FIXED' as const,
+    assignedToId: 'u1',
+    rotatingUsers: [] as { id: string }[],
+  }
+
+  /** The full field set `ChoreForm` always submits, unmodified from `existingRow`. */
+  const unchangedFields = {
+    recurrenceType: 'INTERVAL' as const,
+    intervalDays: 30,
+    weekdays: [],
+    dayOfMonth: null,
+    oneOffDate: null,
+    assignmentMode: 'FIXED' as const,
+    assignedToId: 'u1',
+    rotatingUsers: [],
+    petId: null,
+  }
+
+  beforeEach(() => {
+    // `updateChore`'s own `existing` fetch (call #1) is queued per-test below;
+    // the outer `beforeEach`'s persistent `fullChoreRow` fallback answers the
+    // later `getChore` call (call #2), which needs the fully-joined shape.
+    choreFindUniqueOrThrow.mockResolvedValue({ ...existingRow, rotatingUsers: [] })
+    userCount.mockResolvedValue(1)
+  })
+
+  it('leaves the open instance untouched on a title-only edit', async () => {
+    choreFindUnique.mockResolvedValueOnce(existingRow)
+    await updateChore('c1', { title: 'New title', ...unchangedFields })
+
+    expect(choreUpdate).toHaveBeenCalledTimes(1)
+    expect(choreFindUniqueOrThrow).not.toHaveBeenCalled()
+    expect(instanceFindMany).not.toHaveBeenCalled()
+    expect(instanceFindFirst).not.toHaveBeenCalled()
+    expect(instanceUpdate).not.toHaveBeenCalled()
+    expect(instanceCreate).not.toHaveBeenCalled()
+    expect(instanceDeleteMany).not.toHaveBeenCalled()
+  })
+
+  it('reassigning preserves the due date and only updates the assignee', async () => {
+    choreFindUnique.mockResolvedValueOnce(existingRow)
+    instanceFindFirst.mockResolvedValue({ id: 'i1', assignedToId: 'u1', dueDate: day(2026, 5, 1) })
+    choreFindUniqueOrThrow.mockResolvedValue({
+      ...existingRow,
+      assignedToId: 'u2',
+      rotatingUsers: [],
+    })
+
+    await updateChore('c1', { ...unchangedFields, assignedToId: 'u2' })
+
+    expect(instanceFindMany).not.toHaveBeenCalled() // reconcileOpenInstance's path, not taken
+    expect(instanceFindFirst).toHaveBeenCalledTimes(1)
+    expect(instanceUpdate).toHaveBeenCalledWith({
+      where: { id: 'i1' },
+      data: { assignedToId: 'u2' },
+    })
+  })
+
+  it('shifts the due date by the change in cadence, rather than making it due today', async () => {
+    choreFindUnique.mockResolvedValueOnce(existingRow) // intervalDays: 30
+    choreFindUniqueOrThrow.mockResolvedValue({
+      ...existingRow,
+      intervalDays: 28,
+      rotatingUsers: [],
+    })
+    instanceFindMany.mockResolvedValue([{ id: 'i1', dueDate: day(2026, 5, 1) }]) // 1 Jun 2026
+
+    await updateChore('c1', { ...unchangedFields, intervalDays: 28 }) // 30 -> 28 days
+
+    expect(instanceFindFirst).not.toHaveBeenCalled() // reassignOpenInstance's path, not taken
+    expect(instanceFindMany).toHaveBeenCalledTimes(1)
+    expect(instanceUpdate).toHaveBeenCalledTimes(1)
+    const data = instanceUpdate.mock.calls[0][0].data
+    // 2 days earlier than the old due date — not reset to today.
+    expect(new Date(data.dueDate).toDateString()).toBe(day(2026, 4, 30).toDateString())
+  })
+
+  it('recomputes the due date from today when the rule type itself changes', async () => {
+    choreFindUnique.mockResolvedValueOnce(existingRow)
+    choreFindUniqueOrThrow.mockResolvedValue({
+      ...existingRow,
+      recurrenceType: 'DATE_OF_MONTH',
+      intervalDays: null,
+      dayOfMonth: 15,
+      rotatingUsers: [],
+    })
+    instanceFindMany.mockResolvedValue([{ id: 'i1', dueDate: day(2026, 5, 1) }])
+
+    await updateChore('c1', {
+      ...unchangedFields,
+      recurrenceType: 'DATE_OF_MONTH',
+      intervalDays: null,
+      dayOfMonth: 15,
+    })
+
+    expect(instanceUpdate).toHaveBeenCalledTimes(1)
+    const data = instanceUpdate.mock.calls[0][0].data
+    expect(new Date(data.dueDate).toDateString()).not.toBe(day(2026, 5, 1).toDateString())
+  })
+
+  it('reactivating a chore opens a fresh instance even with an unchanged rule', async () => {
+    choreFindUnique.mockResolvedValueOnce({ ...existingRow, isActive: false })
+    choreFindUniqueOrThrow.mockResolvedValue({ ...existingRow, isActive: true, rotatingUsers: [] })
+    instanceFindMany.mockResolvedValue([])
+
+    await updateChore('c1', { ...unchangedFields, isActive: true })
+
+    expect(instanceCreate).toHaveBeenCalledTimes(1)
+    expect(instanceCreate.mock.calls[0][0].data.choreId).toBe('c1')
+  })
+
+  it('deactivating a chore removes its open instances without reconciling', async () => {
+    choreFindUnique.mockResolvedValueOnce(existingRow)
+    await updateChore('c1', { ...unchangedFields, isActive: false })
+
+    expect(instanceDeleteMany).toHaveBeenCalledWith({
+      where: { choreId: 'c1', completedAt: null },
+    })
+    expect(choreFindUniqueOrThrow).not.toHaveBeenCalled()
   })
 })
 

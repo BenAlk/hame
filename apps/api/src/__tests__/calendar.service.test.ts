@@ -179,6 +179,52 @@ describe('getCalendar', () => {
     expect(events[0].id).toBe('BIN:b9:2026-06-25')
   })
 
+  it('expands a repeating event into every occurrence in the window, even from an old anchor', async () => {
+    eventFindMany.mockResolvedValue([
+      {
+        id: 'e2',
+        title: 'Bin out',
+        startTime: new Date(2026, 0, 6, 18, 30), // an 18:30 event, first anchored months ago
+        endTime: null,
+        allDay: false,
+        colour: '#d16a6a',
+        recurrenceType: 'WEEKLY',
+        intervalDays: null,
+        weekdays: ['TUESDAY'],
+        dayOfMonth: null,
+        recurrenceAnchor: day(2026, 0, 6),
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    const occurrences = events.filter((e) => e.type === 'EVENT')
+    expect(occurrences).toHaveLength(1) // one Tuesday (23 Jun) in this window
+    expect(occurrences[0].id).toBe('EVENT:e2:2026-06-23')
+    expect(occurrences[0].startTime.getHours()).toBe(18) // time-of-day preserved
+    expect(occurrences[0].startTime.getMinutes()).toBe(30)
+    expect(occurrences[0].startTime.getDate()).toBe(23)
+  })
+
+  it('treats a non-repeating event as a single occurrence, unchanged', async () => {
+    eventFindMany.mockResolvedValue([
+      {
+        id: 'e3',
+        title: 'One-off',
+        startTime: day(2026, 5, 24),
+        endTime: null,
+        allDay: true,
+        colour: null,
+        recurrenceType: null,
+        intervalDays: null,
+        weekdays: [],
+        dayOfMonth: null,
+        recurrenceAnchor: null,
+      },
+    ])
+    const events = await getCalendar(day(2026, 5, 22), day(2026, 5, 28))
+    expect(events).toHaveLength(1)
+    expect(events[0].id).toBe('EVENT:e3')
+  })
+
   it('merges cached events from CALENDAR-kind integrations', async () => {
     integrationEventFindMany.mockResolvedValue([
       {

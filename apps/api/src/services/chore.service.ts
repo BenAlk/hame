@@ -193,11 +193,19 @@ export async function createChore(input: CreateChoreInput, userId: string): Prom
 }
 
 export async function updateChore(id: string, input: UpdateChoreInput): Promise<Chore> {
-  const existing = await prisma.chore.findUnique({ where: { id } })
+  const existing = await prisma.chore.findUnique({
+    where: { id },
+    include: { rotatingUsers: { select: { id: true } } },
+  })
   if (!existing) throw HttpError.notFound('Chore not found')
   await assertReferencesExist(input)
 
   const rotatingIds = input.rotatingUsers
+  const reactivating = input.isActive === true && !existing.isActive
+  const deactivating = input.isActive === false && existing.isActive
+  const scheduleChanged = ruleChanged(existing, input)
+  const reassignmentNeeded = assignmentChanged(existing, input)
+
   await prisma.chore.update({
     where: { id },
     data: {
@@ -217,8 +225,18 @@ export async function updateChore(id: string, input: UpdateChoreInput): Promise<
     },
   })
 
-  // Re-derive the open instance when scheduling or assignment changed.
-  if (touchesSchedule(input)) await reconcileOpenInstance(id)
+  // Only a genuine schedule change (or reactivation) should move the due date —
+  // it recomputes from today, which is correct there since the old date may no
+  // longer even be valid under the new rule. A pure reassignment keeps the due
+  // date and only updates who the open instance is for. Anything else (title,
+  // description, pet, tags) touches neither (spec §8.7).
+  if (deactivating) {
+    await prisma.choreInstance.deleteMany({ where: { choreId: id, completedAt: null } })
+  } else if (scheduleChanged || reactivating) {
+    await reconcileOpenInstance(id, reactivating ? undefined : existing)
+  } else if (reassignmentNeeded) {
+    await reassignOpenInstance(id)
+  }
   return getChore(id)
 }
 
@@ -317,26 +335,81 @@ function endOfToday(): Date {
   return d
 }
 
-/** Did this update touch anything that changes when/who the next instance is? */
-function touchesSchedule(input: UpdateChoreInput): boolean {
-  return [
-    input.recurrenceType,
-    input.intervalDays,
-    input.weekdays,
-    input.dayOfMonth,
-    input.oneOffDate,
-    input.assignmentMode,
-    input.assignedToId,
+type ExistingChore = {
+  recurrenceType: Chore['recurrenceType']
+  intervalDays: number | null
+  weekdays: Chore['weekdays']
+  dayOfMonth: number | null
+  oneOffDate: Date | null
+  assignmentMode: Chore['assignmentMode']
+  assignedToId: string | null
+  rotatingUsers: { id: string }[]
+}
+
+/** Same members, regardless of order. */
+function sameIdSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const setB = new Set(b)
+  return a.every((id) => setB.has(id))
+}
+
+/**
+ * Did this edit actually change the recurrence rule itself — as opposed to the
+ * field simply being resent unchanged, which the web form always does? Only a
+ * real change should move the open instance's due date (spec §8.7).
+ */
+function ruleChanged(existing: ExistingChore, input: UpdateChoreInput): boolean {
+  const type = input.recurrenceType ?? existing.recurrenceType
+  if (type !== existing.recurrenceType) return true
+  switch (type) {
+    case 'INTERVAL':
+      return (input.intervalDays ?? existing.intervalDays) !== existing.intervalDays
+    case 'WEEKLY':
+      return !sameIdSet(input.weekdays ?? existing.weekdays, existing.weekdays)
+    case 'DATE_OF_MONTH':
+      return (input.dayOfMonth ?? existing.dayOfMonth) !== existing.dayOfMonth
+    case 'ONE_OFF': {
+      const next = input.oneOffDate ?? existing.oneOffDate
+      return +new Date(next ?? 0) !== +new Date(existing.oneOffDate ?? 0)
+    }
+  }
+}
+
+/** Did this edit change who the chore goes to, independent of its schedule? */
+function assignmentChanged(existing: ExistingChore, input: UpdateChoreInput): boolean {
+  const mode = input.assignmentMode ?? existing.assignmentMode
+  if (mode !== existing.assignmentMode) return true
+  if (mode === 'FIXED') {
+    return (input.assignedToId ?? existing.assignedToId) !== existing.assignedToId
+  }
+  if (input.rotatingUsers === undefined) return false
+  return !sameIdSet(
     input.rotatingUsers,
-    input.isActive,
-  ].some((v) => v !== undefined)
+    existing.rotatingUsers.map((u) => u.id),
+  )
+}
+
+/** `d` shifted by `deltaDays` whole days (may be negative). */
+function shiftDate(d: Date, deltaDays: number): Date {
+  const x = new Date(d)
+  x.setDate(x.getDate() + deltaDays)
+  return x
 }
 
 /**
  * Keep exactly one open instance in sync with the chore's current rule: inactive
  * chores have none; active chores have one matching the recomputed due/assignee.
+ *
+ * `previousRule` is the chore's rule *before* this edit. When it's an INTERVAL
+ * chore whose cadence (not its type) just changed, the open instance's due date
+ * shifts by the change in interval instead of resetting to today — editing "every
+ * 30 days" to "every 28 days" should move the due date 2 days earlier, not make
+ * an unfinished chore suddenly due right now (spec §8.7). Every other schedule
+ * change (a different rule type, weekdays, day-of-month, one-off date, or a fresh
+ * instance from reactivation) recomputes from today, since the old due date may
+ * no longer even be valid under the new rule.
  */
-async function reconcileOpenInstance(choreId: string): Promise<void> {
+async function reconcileOpenInstance(choreId: string, previousRule?: ExistingChore): Promise<void> {
   const chore = await prisma.chore.findUniqueOrThrow({
     where: { id: choreId },
     include: { rotatingUsers: { orderBy: { createdAt: 'asc' } } },
@@ -352,7 +425,17 @@ async function reconcileOpenInstance(choreId: string): Promise<void> {
     return
   }
 
-  const dueDate = firstDueDate(ruleOf(chore))
+  const cadenceShift =
+    open.length > 0 &&
+    previousRule?.recurrenceType === 'INTERVAL' &&
+    chore.recurrenceType === 'INTERVAL' &&
+    previousRule.intervalDays &&
+    chore.intervalDays
+      ? chore.intervalDays - previousRule.intervalDays
+      : null
+
+  const dueDate =
+    cadenceShift !== null ? shiftDate(open[0].dueDate, cadenceShift) : firstDueDate(ruleOf(chore))
   const rotatingIds = chore.rotatingUsers.map((u) => u.id)
   const assigneeId = firstAssignee(chore.assignmentMode, chore.assignedToId, rotatingIds)
   if (!dueDate || !assigneeId) return
@@ -368,6 +451,31 @@ async function reconcileOpenInstance(choreId: string): Promise<void> {
   })
   if (open.length > 1)
     await prisma.choreInstance.deleteMany({ where: { id: { in: open.slice(1).map((i) => i.id) } } })
+}
+
+/**
+ * Re-point the earliest open instance to whoever the chore is now assigned to,
+ * without touching its due date — a reassignment is not a reschedule.
+ */
+async function reassignOpenInstance(choreId: string): Promise<void> {
+  const chore = await prisma.chore.findUniqueOrThrow({
+    where: { id: choreId },
+    include: { rotatingUsers: { orderBy: { createdAt: 'asc' } } },
+  })
+  const open = await prisma.choreInstance.findFirst({
+    where: { choreId, completedAt: null },
+    orderBy: { dueDate: 'asc' },
+  })
+  if (!open) return
+
+  const rotatingIds = chore.rotatingUsers.map((u) => u.id)
+  const assigneeId = firstAssignee(chore.assignmentMode, chore.assignedToId, rotatingIds)
+  if (assigneeId && assigneeId !== open.assignedToId) {
+    await prisma.choreInstance.update({
+      where: { id: open.id },
+      data: { assignedToId: assigneeId },
+    })
+  }
 }
 
 /** Validate every referenced user / pet / tag exists before writing. */

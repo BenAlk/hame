@@ -1525,6 +1525,7 @@ function IdleModeCard() {
         showWeatherInClockMode: form.showWeatherInClockMode,
         immichEnabled: form.immichEnabled,
         showBinsInIdle: form.showBinsInIdle,
+        binDueCutoffMinutes: form.binDueCutoffMinutes,
         showMealsInIdle: form.showMealsInIdle,
         showNotesInIdle: form.showNotesInIdle,
       })
@@ -1598,6 +1599,32 @@ function IdleModeCard() {
               disabled={!form.enabled || update.isPending}
               onChange={(v) => set('showBinsInIdle', v)}
             />
+            <div className={cn('flex flex-col gap-1.5 pl-1', !form.showBinsInIdle && 'opacity-60')}>
+              <label className="flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={form.binDueCutoffMinutes != null}
+                  disabled={!form.enabled || !form.showBinsInIdle || update.isPending}
+                  onChange={(e) => set('binDueCutoffMinutes', e.target.checked ? 360 : null)}
+                  className="size-4 accent-accent"
+                />
+                Stop showing &quot;due today&quot; at a set time
+              </label>
+              {form.binDueCutoffMinutes != null && (
+                <Input
+                  id="idle-bin-cutoff"
+                  type="time"
+                  value={minutesToTimeString(form.binDueCutoffMinutes)}
+                  disabled={!form.enabled || !form.showBinsInIdle || update.isPending}
+                  onChange={(e) => set('binDueCutoffMinutes', timeStringToMinutes(e.target.value))}
+                  className="w-32"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                E.g. if collection is at 6am, the &quot;due today&quot; reminder stops there instead
+                of showing all day.
+              </p>
+            </div>
             <ToggleRow
               label="Show today's meal (for the current time of day)"
               checked={form.showMealsInIdle}

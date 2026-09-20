@@ -35,11 +35,33 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
       include: { occurrences: { where: { date: { gte: start, lte: end } } } },
     }),
     prisma.calendarObject.findMany({
+      // A repeating row's own `startTime` may sit outside the window while it
+      // still recurs into it (its cached "current CalDAV occurrence" can even
+      // be in the past — see custom-event.service's roll-forward), so it's
+      // fetched unconditionally and expanded in memory, the same shape as bins.
       where: {
-        startTime: { lte: end },
-        OR: [{ endTime: { gte: start } }, { endTime: null, startTime: { gte: start } }],
+        OR: [
+          {
+            recurrenceType: null,
+            startTime: { lte: end },
+            OR: [{ endTime: { gte: start } }, { endTime: null, startTime: { gte: start } }],
+          },
+          { recurrenceType: { not: null } },
+        ],
       },
-      select: { id: true, title: true, startTime: true, endTime: true, allDay: true, colour: true },
+      select: {
+        id: true,
+        title: true,
+        startTime: true,
+        endTime: true,
+        allDay: true,
+        colour: true,
+        recurrenceType: true,
+        intervalDays: true,
+        weekdays: true,
+        dayOfMonth: true,
+        recurrenceAnchor: true,
+      },
     }),
     prisma.syncedEvent.findMany({
       where: {
@@ -130,16 +152,43 @@ export async function getCalendar(start: Date, end: Date): Promise<CalendarEvent
   }
 
   for (const e of events) {
-    out.push({
-      id: `EVENT:${e.id}`,
-      type: 'EVENT',
-      title: e.title,
-      startTime: e.startTime,
-      endTime: e.endTime,
-      allDay: e.allDay,
-      colour: e.colour,
-      sourceId: e.id,
-    })
+    if (!e.recurrenceType || e.recurrenceType === 'ONE_OFF' || !e.recurrenceAnchor) {
+      out.push({
+        id: `EVENT:${e.id}`,
+        type: 'EVENT',
+        title: e.title,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        allDay: e.allDay,
+        colour: e.colour,
+        sourceId: e.id,
+      })
+      continue
+    }
+    // A repeating event's own row keeps only one cached occurrence (spec —
+    // custom-event.service's CalDAV roll-forward); every occurrence in the
+    // window is instead expanded live from the immutable `recurrenceAnchor`,
+    // reusing the same engine bins already use for their own recurrence.
+    const rule: BinScheduleRule = {
+      recurrenceType: e.recurrenceType,
+      intervalDays: e.intervalDays,
+      weekdays: e.weekdays,
+      dayOfMonth: e.dayOfMonth,
+      startDate: e.recurrenceAnchor,
+    }
+    for (const date of binOccurrencesInRange(rule, start, end)) {
+      const startTime = withDay(e.startTime, date)
+      out.push({
+        id: `EVENT:${e.id}:${isoDate(date)}`,
+        type: 'EVENT',
+        title: e.title,
+        startTime,
+        endTime: e.endTime ? withDay(e.endTime, date) : null,
+        allDay: e.allDay,
+        colour: e.colour,
+        sourceId: e.id,
+      })
+    }
   }
 
   for (const s of synced) {
@@ -182,4 +231,11 @@ function isoDate(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+/** `base`'s time-of-day transplanted onto `day`'s calendar date. */
+function withDay(base: Date, day: Date): Date {
+  const out = new Date(base)
+  out.setFullYear(day.getFullYear(), day.getMonth(), day.getDate())
+  return out
 }

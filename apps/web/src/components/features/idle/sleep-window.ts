@@ -22,7 +22,8 @@ export function isWithinSleepWindow(
   return nowMinutes >= startMinutes || nowMinutes < endMinutes
 }
 
-function minutesSinceMidnight(date: Date): number {
+/** Minutes since local midnight, e.g. `06:00` → `360`. */
+export function minutesSinceMidnight(date: Date): number {
   return date.getHours() * 60 + date.getMinutes()
 }
 
